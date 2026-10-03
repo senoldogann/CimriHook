@@ -23,6 +23,9 @@ from cimrihook.report import render_table, total_line
 
 SECONDS_PER_DAY: Final = 86_400
 WORKFLOW_JOURNAL: Final = "journal.jsonl"
+# CimriHook'un kendi A/B çalıştırmalarının proje dizinleri (çalışma alanı .../cimrihook-bench/...):
+# kullanıcının işi değildir, maliyet anatomisini ve pencere önerisini çarpıtır.
+BENCH_PROJECT_MARKER: Final = "cimrihook-bench"
 BOUNDARY_SUBTYPES: Final = frozenset({"compact_boundary", "microcompact_boundary"})
 # Taban girdi fiyatına göre çarpanlar (Anthropic prompt caching fiyatlandırması).
 WRITE_5M_WEIGHT: Final = 1.25
@@ -151,14 +154,32 @@ def first_by_tool_use(decisions: Sequence[Replayed]) -> list[Replayed]:
 
 
 def recent_transcripts(projects_dir: Path, days: int, now: float) -> tuple[Path, ...]:
-    """Son `days` günde değişmiş transcript'ler, eskiden yeniye. Hiç yoksa hata: boş bir rapor
-    "harcama yok" diye okunurdu."""
-    files = transcript_files(projects_dir, now - days * SECONDS_PER_DAY)
+    """Son `days` günde değişmiş transcript'ler, eskiden yeniye; CimriHook'un kendi A/B
+    çalıştırmaları hariç. Hiç yoksa hata: boş bir rapor "harcama yok" diye okunurdu."""
+    files = [
+        path
+        for path in transcript_files(projects_dir, now - days * SECONDS_PER_DAY)
+        if not is_bench_transcript(path, projects_dir)
+    ]
     if not files:
         raise ConfigError(
             f"no Claude Code transcripts under {projects_dir} modified in the last {days} days"
         )
     return tuple(sorted(files, key=lambda path: path.stat().st_mtime))
+
+
+def bench_transcripts(projects_dir: Path, days: int, now: float) -> int:
+    """Son `days` günde değişmiş, CimriHook'un kendi A/B çalıştırmalarına ait transcript sayısı."""
+    return sum(
+        1
+        for path in transcript_files(projects_dir, now - days * SECONDS_PER_DAY)
+        if is_bench_transcript(path, projects_dir)
+    )
+
+
+def is_bench_transcript(path: Path, projects_dir: Path) -> bool:
+    """Transcript CimriHook'un A/B düzeneğinin bir çalışma alanına mı ait?"""
+    return any(BENCH_PROJECT_MARKER in part for part in path.relative_to(projects_dir).parts)
 
 
 def entry_time(entry: JsonObject) -> float | None:

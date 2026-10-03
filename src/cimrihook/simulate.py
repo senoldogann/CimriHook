@@ -39,6 +39,9 @@ COLD_READ_SHARE: Final = 0.5
 # maliyetin altında kaldığı payı açıklayan yeniden okuma, sıkıştırma başına medyan (0-13k arası).
 MEASURED_REFETCH_TOKENS: Final = 7_000
 MEASURED_REFETCH_REQUESTS: Final = 1
+# Önerilen pencere, en düşük simüle maliyetin bu kadar puan yakınındaki en büyük penceredir. Her
+# sıkıştırma ayrıntıyı özete indirir; neredeyse aynı tasarruf için daha az sıkıştırma daha az risk.
+RECOMMENDATION_SLACK: Final = 0.01
 CLAUDE_MIN_COMPACT_WINDOW: Final = 100_000  # autoCompactWindow ve ortam değişkeninin alt sınırı
 CLAUDE_MAX_COMPACT_WINDOW: Final = 1_000_000  # autoCompactWindow ayarının üst sınırı
 # Claude Code 2.1.288 otomatik sıkıştırmayı pencere − min(çıktı sınırı, 20000) − 13000 tokenlık
@@ -638,19 +641,52 @@ def render_simulation(result: SimulationResult, hint: ApplyHint) -> str:
     return "\n".join([*lines, *recommendation(result, hint)])
 
 
-def recommendation(result: SimulationResult, hint: ApplyHint) -> list[str]:
-    """En düşük simüle maliyetli pencere politikası ve nasıl uygulanacağı."""
+def recommended_window(result: SimulationResult) -> tuple[Outcome, Outcome] | None:
+    """(önerilen, en ucuz) pencere politikası; hiçbir pencere maliyeti düşürmüyorsa None.
+
+    Önerilen, maliyeti en ucuzun RECOMMENDATION_SLACK puan yakınındaki en büyük penceredir. Soğuk
+    önbellek koşulu olan politikalar bir ayarla uygulanamadığı için aday değildir.
+    """
+    baseline = result.outcomes[0].cost
     windows = [
-        (outcome, outcome.policy.window)
+        outcome
         for outcome in result.outcomes
-        if outcome.policy.window is not None
+        if outcome.policy.window is not None and outcome.policy.cold_window is None
     ]
     if not windows:
-        return []
-    best, window = min(windows, key=lambda pair: pair[0].cost)
-    if best.cost >= result.outcomes[0].cost:
+        return None
+    cheapest = min(windows, key=lambda outcome: outcome.cost)
+    if cheapest.cost >= baseline:
+        return None
+    near = [o for o in windows if o.cost <= cheapest.cost + RECOMMENDATION_SLACK * baseline]
+    return max(near, key=lambda outcome: outcome.policy.window or 0), cheapest
+
+
+def recommendation_text(chosen: Outcome, cheapest: Outcome, baseline: float) -> str:
+    """Önerilen pencerenin etkisi; en ucuzdan farklıysa neden seçildiği."""
+    effect = (
+        f"{100 * (chosen.cost - baseline) / baseline:+.1f}%, {chosen.compactions:,} compactions"
+    )
+    if chosen is cheapest:
+        return f"'{chosen.policy.name}' ({effect})"
+    return (
+        f"'{chosen.policy.name}' ({effect}); the cheapest, '{cheapest.policy.name}' "
+        f"({100 * (cheapest.cost - baseline) / baseline:+.1f}%, {cheapest.compactions:,} "
+        f"compactions), saves at most {100 * RECOMMENDATION_SLACK:.0f} point more with more "
+        "compactions, and each compaction loses detail"
+    )
+
+
+def recommendation(result: SimulationResult, hint: ApplyHint) -> list[str]:
+    """Önerilen pencere politikası ve nasıl uygulanacağı."""
+    found = recommended_window(result)
+    if found is None:
         return ["No compaction window lowers the simulated cost of these logs; keep the default."]
+    chosen, cheapest = found
+    window = chosen.policy.window
+    if window is None:
+        raise ValueError(f"recommended policy {chosen.policy.name!r} has no window")
     return [
-        f"Lowest simulated cost with a window: {best.policy.name}. Apply it with "
-        f"{hint(window)} and confirm task quality with an A/B run first.",
+        f"Recommended window: {recommendation_text(chosen, cheapest, result.outcomes[0].cost)}. "
+        f"Apply it with {hint(window)} and confirm task quality with an A/B run first.",
     ]

@@ -18,6 +18,7 @@ from cimrihook.audit import (
     SECONDS_PER_DAY,
     Usage,
     average_write_weight,
+    bench_transcripts,
     entry_time,
     message_usage,
     parse_line,
@@ -35,6 +36,8 @@ from cimrihook.simulate import (
     compact_metadata_tokens,
     context_of,
     load_claude_traces,
+    recommendation_text,
+    recommended_window,
     simulate_traces,
     total_usage,
     written_of,
@@ -331,6 +334,7 @@ class Diagnosis:
     anatomy: Anatomy
     simulation: SimulationResult | None  # kayıtlarda gerçek sıkıştırma yoksa ölçülemez
     guard_check: str
+    bench_transcripts: int  # dışarıda bırakılan CimriHook A/B çalıştırma transcript'leri
 
 
 def diagnose_claude(projects_dir: Path, days: int, now: float) -> Diagnosis:
@@ -349,8 +353,9 @@ def diagnose_claude(projects_dir: Path, days: int, now: float) -> Diagnosis:
     )
     anatomy = build_anatomy(scans, days)
     guard = guard_check(files)
+    bench = bench_transcripts(projects_dir, days, now)
     if anatomy.compactions == 0:
-        return Diagnosis(anatomy, None, guard)
+        return Diagnosis(anatomy, None, guard, bench)
     traces = load_claude_traces(files)
     requests = [usage for trace in traces for usage in trace.requests]
     simulation = simulate_traces(
@@ -360,7 +365,7 @@ def diagnose_claude(projects_dir: Path, days: int, now: float) -> Diagnosis:
         average_write_weight(total_usage(requests)),
         CostOverrides(None, None, None, MEASURED_REFETCH_TOKENS, MEASURED_REFETCH_REQUESTS, None),
     )
-    return Diagnosis(anatomy, simulation, guard)
+    return Diagnosis(anatomy, simulation, guard, bench)
 
 
 def unique_scans(scans: Sequence[TranscriptScan]) -> list[TranscriptScan]:
@@ -447,7 +452,12 @@ def render_doctor(diagnosis: Diagnosis) -> str:
     lines = [
         f"CimriHook doctor (Claude Code, last {anatomy.days} days): {anatomy.transcripts:,} "
         f"transcripts, {anatomy.requests:,} API requests, ${total:,.0f} at API list prices"
-        f"{unpriced}",
+        f"{unpriced}"
+        + (
+            f"; {diagnosis.bench_transcripts:,} transcripts of CimriHook's A/B runs left out"
+            if diagnosis.bench_transcripts
+            else ""
+        ),
         f"  main sessions ${anatomy.main_usd:,.0f} ({percent(anatomy.main_usd, total)}), "
         f"subagents ${anatomy.subagent_usd:,.0f} ({percent(anatomy.subagent_usd, total)})",
         "Spend by the context size of the request (every request re-reads the whole conversation):",
@@ -494,20 +504,19 @@ def recommendations(anatomy: Anatomy, simulation: SimulationResult | None) -> li
             "--post-compact-cached and --summary-tokens"
         )
     else:
-        baseline = simulation.outcomes[0].cost
-        windows = [outcome for outcome in simulation.outcomes if outcome.policy.window]
-        best = min(windows, key=lambda outcome: outcome.cost)
-        window = best.policy.window
-        if window is not None and best.cost < baseline:
-            lines.append(
-                f"  compact earlier: '{best.policy.name}' would cost "
-                f"{100 * (best.cost - baseline) / baseline:+.1f}% (simulation with "
-                f"{MEASURED_REFETCH_TOKENS // 1000}k tokens re-read after each compaction; the "
-                "A/B runs so far found the simulator a few points optimistic, see `cimrihook "
-                f"bench-calibrate`). Apply with {claude_hint(window)}"
-            )
-        else:
+        found = recommended_window(simulation)
+        window = None if found is None else found[0].policy.window
+        if found is None or window is None:
             lines.append("  compaction window: no window lowers the simulated cost of these logs")
+        else:
+            chosen, cheapest = found
+            lines.append(
+                "  compact earlier: "
+                f"{recommendation_text(chosen, cheapest, simulation.outcomes[0].cost)} "
+                f"(simulation with {MEASURED_REFETCH_TOKENS // 1000}k tokens re-read after each "
+                "compaction; the A/B runs so far found the simulator a few points optimistic, see "
+                f"`cimrihook bench-calibrate`). Apply with {claude_hint(window)}"
+            )
     if idle.count:
         lines.append(
             f"  ask before cold sends: ${idle.usd:,.0f} went to re-caching contexts after more "
