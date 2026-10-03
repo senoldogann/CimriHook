@@ -9,7 +9,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Final, Self
 
-from cimrihook.model import Decision, Encoding, Observation, SavingsRow, View
+from cimrihook.model import Decision, Encoding, Observation, QuotaSample, SavingsRow, View
 
 SCHEMA: Final = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -48,6 +48,15 @@ CREATE TABLE IF NOT EXISTS views (
 CREATE INDEX IF NOT EXISTS views_by_stream ON views (context_key, generation, stream, step);
 CREATE INDEX IF NOT EXISTS views_by_request ON views (context_key, generation, request_key, step);
 CREATE INDEX IF NOT EXISTS views_by_session ON views (session_id);
+CREATE TABLE IF NOT EXISTS quota_samples (
+    limit_window TEXT NOT NULL,
+    resets_at INTEGER NOT NULL,
+    used_percentage REAL NOT NULL,
+    taken_at REAL NOT NULL,
+    session_id TEXT NOT NULL,
+    model TEXT NOT NULL,
+    PRIMARY KEY (limit_window, resets_at, used_percentage)
+);
 """
 VIEW_COLUMNS: Final = (
     "step, stream, request_key, encoding, start_line, total_lines, whole, line_count, body"
@@ -221,6 +230,23 @@ class Ledger:
             (session_id,),
         ).fetchall()
         return tuple(savings_from_row(row) for row in rows)
+
+    def record_quota(self, samples: Sequence[QuotaSample]) -> None:
+        """Kullanım limiti gözlemlerini kaydeder; aynı penceredeki aynı yüzde bir kez tutulur."""
+        self._db.executemany(
+            "INSERT OR IGNORE INTO quota_samples VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    sample.window,
+                    sample.resets_at,
+                    sample.used_percentage,
+                    sample.taken_at,
+                    sample.session_id,
+                    sample.model,
+                )
+                for sample in samples
+            ],
+        )
 
 
 def encode_lines(lines: Sequence[str]) -> bytes:

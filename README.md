@@ -15,6 +15,7 @@ largest lever is **how long content stays in the context**. CimriHook works on a
 |---|---|---|
 | Measure | replays your own transcripts: where the money goes and what each policy would cost | `cimrihook doctor`, `cimrihook audit`, `cimrihook simulate` |
 | Govern | picks the auto-compaction window from your data and applies it with Claude Code's own setting | `cimrihook settings --compact-window N` |
+| Show | live context size, prompt-cache warmth, next-request cost and usage limits | `cimrihook statusline` |
 | Encode | re-encodes new tool results against what the agent already holds (lossless) | `PostToolUse` hooks |
 
 It complements RTK: RTK shrinks what enters the context, CimriHook decides how long it stays and
@@ -42,6 +43,23 @@ Claude Code compacts once the context reaches the window minus 33,000 tokens (a 
 output reserve and a 13,000-token buffer) and raises windows below 100,000 to 100,000, so
 compaction cannot start before about 67,000 tokens. `simulate` prints the setting for its best
 policy.
+
+## See it live
+
+Add CimriHook's status line to Claude Code (`~/.claude/settings.json`):
+
+```json
+"statusLine": {"type": "command", "command": "cimrihook statusline"}
+```
+
+`412k ctx · cache warm 38m · next $0.08 · 5h 42% · 7d 18% · $4.12`
+
+It shows the session's context, whether the prompt cache is still warm and for how long, what
+the next request costs at list prices (a cache read while warm, a full re-cache once cold), your
+5-hour and 7-day usage limits and the session's spend. The cache lifetime comes from the
+transcript: the time of the last response and whether it was cached for 5 minutes or 1 hour.
+Every change in the usage limits is recorded in the ledger, so CimriHook can learn how your plan
+counts cache reads, writes and output.
 
 ## Evaluate with your real subscriptions
 

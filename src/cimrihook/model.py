@@ -60,6 +60,18 @@ class Decision:
 
 
 @dataclass(frozen=True, slots=True)
+class QuotaSample:
+    """Abonelik kullanım limitinin bir anlık gözlemi (Claude Code durum satırı girdisinden)."""
+
+    window: str  # five_hour ya da seven_day
+    resets_at: int  # pencerenin sıfırlandığı an (epoch saniye)
+    used_percentage: float
+    taken_at: float
+    session_id: str
+    model: str
+
+
+@dataclass(frozen=True, slots=True)
 class SavingsRow:
     """Bir kodlama + araç çifti için toplam token muhasebesi."""
 

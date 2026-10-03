@@ -1,5 +1,5 @@
-"""Komut satırı: hook | report | doctor | audit | simulate | settings | bench-run | bench-report |
-bench-remeasure | bench-calibrate."""
+"""Komut satırı: hook | statusline | report | doctor | audit | simulate | settings | bench-run |
+bench-report | bench-remeasure | bench-calibrate."""
 
 import argparse
 import json
@@ -38,6 +38,7 @@ from cimrihook.simulate import (
     simulate_claude,
     simulate_codex,
 )
+from cimrihook.statusline import run_statusline
 
 DEFAULT_PROJECTS_DIR: Final = "~/.claude/projects"
 DEFAULT_AUDIT_DAYS: Final = 30
@@ -67,6 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("hook", help="process one Claude Code hook payload from stdin")
+    commands.add_parser(
+        "statusline", help="print the Claude Code status line from its JSON input on stdin"
+    )
     report = commands.add_parser("report", help="show token savings recorded by the live hook")
     report.add_argument("--session", help="limit the report to one Claude Code session id")
     doctor = commands.add_parser(
@@ -251,6 +255,8 @@ def main() -> None:
         config = load_config(os.environ)
         if command == "hook":
             sys.stdout.write(run_hook(sys.stdin.read(), config))
+        elif command == "statusline":
+            sys.stdout.write(run_statusline(sys.stdin.read(), config, time.time()))
         elif command == "report":
             session: str | None = args.session
             print(live_report(config, session))
