@@ -41,6 +41,7 @@ from cimrihook.ledger import BUSY_TIMEOUT_SECONDS, Ledger
 from cimrihook.report import render_savings
 from cimrihook.settings import (
     brief_settings,
+    cache_ttl_settings,
     governor_settings,
     guard_settings,
     hook_settings,
@@ -176,6 +177,8 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--codex-config", default=DEFAULT_CODEX_CONFIG_PATH)
     init.add_argument("--compact-window", type=int, help="also set the auto-compact window")
     init.add_argument("--brief", action="store_true", help="also ask compactions for brevity")
+    init.add_argument("--cache-ttl", choices=("5m", "1h"), help="main conversation cache lifetime")
+    init.add_argument("--subagent-cache-ttl", choices=("5m", "1h"), help="subagent cache lifetime")
     init.add_argument("--codec", action="store_true", help="also re-encode tool results")
     init.add_argument("--dry-run", action="store_true", help="show the change, write nothing")
     init.add_argument("--remove", action="store_true", help="take out only what CimriHook added")
@@ -194,6 +197,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     settings.add_argument(
         "--codec", action="store_true", help="also re-encode tool results (REF/DELTA/OUTLINE)"
+    )
+    settings.add_argument("--cache-ttl", choices=("5m", "1h"), help="main conversation cache")
+    settings.add_argument(
+        "--subagent-cache-ttl", choices=("5m", "1h"), help="subagent cache lifetime"
     )
     bench = commands.add_parser(
         "bench-run", help="A/B runs on real tasks with the logged-in Claude Code and Codex CLI"
@@ -293,6 +300,11 @@ def selected_blocks(args: argparse.Namespace) -> list[dict[str, object]]:
         *([brief_settings(python)] if args.brief else []),
         *([hook_settings(python)] if args.codec else []),
         *([] if window is None else [governor_settings(window)]),
+        *(
+            []
+            if args.cache_ttl is None and args.subagent_cache_ttl is None
+            else [cache_ttl_settings(args.cache_ttl, args.subagent_cache_ttl)]
+        ),
     ]
 
 

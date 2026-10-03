@@ -20,7 +20,12 @@ from cimrihook.install import (
     plan_remove,
     settings_diff,
 )
-from cimrihook.settings import governor_settings, guard_settings, statusline_settings
+from cimrihook.settings import (
+    cache_ttl_settings,
+    governor_settings,
+    guard_settings,
+    statusline_settings,
+)
 
 PYTHON = "/opt/cimrihook/bin/python"
 USER_SETTINGS: dict[str, object] = {
@@ -131,3 +136,14 @@ def test_chained_status_line_runs_the_previous_command_first(tmp_path: Path) -> 
     )
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout == "theirs · 50k ctx"
+
+
+def test_cache_lifetimes_are_set_and_restored(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"promptCacheTtl": "1h"}), encoding="utf-8")
+    home = tmp_path / "home"
+    apply_init(plan_init(path, [cache_ttl_settings("5m", "1h")], home), home, 2.0)
+    installed = json.loads(path.read_text())
+    assert (installed["promptCacheTtl"], installed["subagentPromptCacheTtl"]) == ("5m", "1h")
+    apply_remove(plan_remove(path, home), home, 3.0)
+    assert json.loads(path.read_text()) == {"promptCacheTtl": "1h"}

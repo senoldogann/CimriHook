@@ -67,12 +67,11 @@ def plan_codex_remove(path: Path, home: Path) -> CodexPlan:
     before = read_config(path)
     current = top_level_integer(parse_toml(before, path), path)
     ours = next((c for c in load_record(home, path).settings if c.key == KEY), None)
-    after = (
-        before
-        if ours is None or ours.value != current
-        else checked_edit(before, ours.previous, path)
-    )
-    return CodexPlan(path, before, after, EMPTY_RECORD, ())
+    if ours is None or ours.value != current:
+        return CodexPlan(path, before, before, EMPTY_RECORD, ())
+    if isinstance(ours.previous, str):
+        raise ConfigError(f"the install record holds a text value for {KEY}: {ours.previous!r}")
+    return CodexPlan(path, before, checked_edit(before, ours.previous, path), EMPTY_RECORD, ())
 
 
 def read_config(path: Path) -> str:

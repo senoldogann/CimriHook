@@ -38,13 +38,19 @@ INSTALL_RECORD: Final = "installed.json"
 RECORD_VERSION: Final = 2
 MANAGED_ENV: Final = frozenset({"CLAUDE_CODE_AUTO_COMPACT_WINDOW"})  # farkta değeri görünenler
 WINDOW_ENV: Final = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"  # ayarlanmışsa autoCompactWindow'u ezer
-MANAGED_KEYS: Final = ("autoCompactWindow",)  # CimriHook'un yazdığı üst düzey tam sayı ayarları
+# CimriHook'un yazdığı üst düzey ayarlar: sıkıştırma penceresi ve önbellek ömürleri.
+MANAGED_KEYS: Final = ("autoCompactWindow", "promptCacheTtl", "subagentPromptCacheTtl")
+CACHE_TTL_ENV: Final = (
+    "FORCE_PROMPT_CACHING_5M",
+    "ENABLE_PROMPT_CACHING_1H",
+)  # ömür ayarlarını ezer
 SECRET_CONTAINERS: Final = frozenset({"env", "headers"})  # değerleri farkta gizlenen nesneler
 HIDDEN: Final = "<hidden>"
 PRIVATE_FILE_MODE: Final = 0o600
 PRIVATE_DIR_MODE: Final = 0o700
 
 type Settings = dict[str, object]
+type SettingValue = int | str
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,11 +64,11 @@ class EnvChange:
 
 @dataclass(frozen=True, slots=True)
 class SettingChange:
-    """Kurulumun yazdığı üst düzey tam sayı ayarı ve CimriHook'tan önceki değeri."""
+    """Kurulumun yazdığı üst düzey ayar (tam sayı ya da metin) ve CimriHook'tan önceki değeri."""
 
     key: str
-    value: int
-    previous: int | None
+    value: SettingValue
+    previous: SettingValue | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,13 +122,15 @@ def install(
             if wanted_value is None:
                 continue
             setting_changes.append(
-                SettingChange(key, integer_setting(wanted_value, key), current_integer(clean, key))
+                SettingChange(key, setting_value(wanted_value, key), current_setting(clean, key))
             )
             values[key] = wanted_value
-            if WINDOW_ENV in env:
-                notes.append(
-                    f"{WINDOW_ENV} in your env overrides {key}; remove it for this window to apply"
-                )
+            overriding = [WINDOW_ENV] if key == "autoCompactWindow" else list(CACHE_TTL_ENV)
+            notes.extend(
+                f"{name} in your env overrides {key}; remove it for this setting to apply"
+                for name in overriding
+                if name in env
+            )
         wanted = block.get("statusLine")
         if wanted is None:
             continue
@@ -140,20 +148,20 @@ def install(
     return after, InstallRecord(tuple(changes), tuple(setting_changes), None), tuple(notes)
 
 
-def integer_setting(value: object, key: str) -> int:
-    """Bloktaki tam sayı ayar değeri."""
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ConfigError(f"setting {key!r} must be an integer, got {value!r}")
+def setting_value(value: object, key: str) -> SettingValue:
+    """Bloktaki ayar değeri: tam sayı ya da metin."""
+    if isinstance(value, bool) or not isinstance(value, int | str):
+        raise ConfigError(f"setting {key!r} must be an integer or a string, got {value!r}")
     return value
 
 
-def current_integer(settings: Settings, key: str) -> int | None:
-    """Ayar dosyasındaki tam sayı ayarı; yoksa None. Başka tipte bir değer el ile ayarlanmıştır:
-    üzerine yazmak yerine hata."""
+def current_setting(settings: Settings, key: str) -> SettingValue | None:
+    """Ayar dosyasındaki değer; yoksa None. Başka tipte bir değer el ile ayarlanmıştır: üzerine
+    yazmak yerine hata."""
     value = settings.get(key)
     if value is None:
         return None
-    if isinstance(value, bool) or not isinstance(value, int):
+    if isinstance(value, bool) or not isinstance(value, int | str):
         raise ConfigError(f"settings {key!r} is {value!r}; set it by hand or remove it first")
     return value
 
@@ -439,9 +447,9 @@ def parse_setting(entry: object, file: Path) -> SettingChange:
     key = entry.get("key") if isinstance(entry, dict) else None
     value = entry.get("value") if isinstance(entry, dict) else None
     previous = entry.get("previous") if isinstance(entry, dict) else None
-    if not isinstance(key, str) or isinstance(value, bool) or not isinstance(value, int):
+    if not isinstance(key, str) or isinstance(value, bool) or not isinstance(value, int | str):
         raise ConfigError(f"{file}: malformed setting entry {entry!r}")
-    if previous is not None and (isinstance(previous, bool) or not isinstance(previous, int)):
+    if previous is not None and (isinstance(previous, bool) or not isinstance(previous, int | str)):
         raise ConfigError(f"{file}: malformed previous value in {entry!r}")
     return SettingChange(key, value, previous)
 

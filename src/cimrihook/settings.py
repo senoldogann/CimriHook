@@ -75,6 +75,19 @@ def governor_settings(window: int) -> dict[str, object]:
     return {"autoCompactWindow": window}
 
 
+def cache_ttl_settings(main: str | None, subagent: str | None) -> dict[str, object]:
+    """Önbellek ömürleri: ana konuşma (promptCacheTtl) ve alt ajanlar (subagentPromptCacheTtl).
+
+    Claude Code 2.1.242 ve sonrası; değer "5m" ya da "1h". 1 saatlik yazım 2×, 5 dakikalık 1.25×
+    fiyatlıdır, ama boşluk ömrü aşarsa sonraki istek bütün bağlamı yeniden yazar; hangisinin ucuz
+    olduğunu `cimrihook doctor` kullanıcının kendi duraklamalarından hesaplar.
+    """
+    return {
+        **({} if main is None else {"promptCacheTtl": main}),
+        **({} if subagent is None else {"subagentPromptCacheTtl": subagent}),
+    }
+
+
 def governor_env(window: int) -> dict[str, object]:
     """Bağlam yöneticisi, ortam değişkeniyle: CLAUDE_CODE_AUTO_COMPACT_WINDOW her ayarı ezer.
 

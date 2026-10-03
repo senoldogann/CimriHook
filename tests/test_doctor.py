@@ -6,15 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from cimrihook.doctor import (
-    IDLE_HOUR,
-    build_anatomy,
-    diagnose_claude,
-    recent_requests,
-    scan_transcript,
-    unique_scans,
-)
+from cimrihook.doctor import IDLE_HOUR, build_anatomy, diagnose_claude
 from cimrihook.errors import ConfigError
+from cimrihook.lifetime import recommended_lifetime, replay_lifetimes
+from cimrihook.scan import recent_requests, scan_transcript, unique_scans
 
 T0 = 1_791_000_000.0
 
@@ -98,3 +93,22 @@ def test_a_forked_transcript_and_old_requests_are_not_counted_again(tmp_path: Pa
 def test_an_empty_log_directory_is_an_error_not_a_zero_report(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="no Claude Code transcripts"):
         diagnose_claude(tmp_path, tmp_path / "settings.json", 7, T0)
+
+
+def test_cache_lifetime_replay_prices_pauses_with_both_lifetimes(tmp_path: Path) -> None:
+    # Ana oturum, 1 saatlik önbellek: 100k bağlam, sonra 10 dakika ara ve 2k yeni girdi.
+    lines = [
+        assistant("m1", "claude-opus-5-5", 0, 0, 100_000),
+        assistant("m2", "claude-opus-5-5", 600, 100_100, 2_000),
+    ]
+    path = tmp_path / "session.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    main, _ = replay_lifetimes([scan_transcript(path, False)])
+    # 1h: ilk istek 100k x 2 = 200,000; ikincisi 100.1k okur (x0.05) ve 2k yazar (x2): 209,005
+    # taban. 5m: 10 dakikalık ara önbelleği soğutur, ikinci istek 102.1k'yı x1.25 yeniden yazar:
+    # 125,000 + 127,625 = 252,625 taban. Opus 5.x: $4/MTok.
+    assert main.current == "1h"
+    assert main.one_hour_usd == pytest.approx(209_005 * 4e-6)
+    assert main.five_minutes_usd == pytest.approx(252_625 * 4e-6)
+    assert main.replay_error() == pytest.approx(0.0)
+    assert recommended_lifetime(main) is None

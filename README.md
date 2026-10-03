@@ -119,6 +119,27 @@ the window they recommend: the largest one whose simulated cost is within 1 poin
 because every compaction trades detail for a smaller context. On the author's last week that is a
 200k trigger (-38.1%, 384 compactions) rather than 150k (-38.3%, 707 compactions).
 
+## Pick the cache lifetime
+
+Claude Code writes the prompt cache with a 1-hour lifetime for the main conversation on a
+subscription and a 5-minute lifetime with an API key and for subagents. A 1-hour write costs 2x
+the input price, a 5-minute write 1.25x, but a pause longer than the lifetime makes the next
+request write the whole context again. `doctor` re-prices every request of your last days with
+both lifetimes, using your own pauses, and prints both costs per group (main sessions and
+subagents) with the replay's own error against your bill. It recommends a switch only when the
+other lifetime is cheaper by more than that error and at least 5%:
+
+```bash
+cimrihook init --cache-ttl 1h              # promptCacheTtl: main conversation
+cimrihook init --subagent-cache-ttl 1h     # subagentPromptCacheTtl
+```
+
+On the author's last week a 5-minute main-session cache would have cost 69% more (pauses between
+prompts often pass 5 minutes), and a 1-hour subagent cache 2% less, which is within the replay's
+error, so both defaults stay. With an API key, where the main conversation gets 5-minute caches,
+the same replay is where the saving usually is. `FORCE_PROMPT_CACHING_5M` and
+`ENABLE_PROMPT_CACHING_1H` in your env override these settings; `init` warns about them.
+
 ## Guard the cache
 
 When a session sits idle past its prompt-cache lifetime (1 hour on subscriptions, 5 minutes
