@@ -25,7 +25,7 @@ import shutil
 import stat
 import tempfile
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final, TypeGuard
 
@@ -71,6 +71,7 @@ class InstallRecord:
 
     env: tuple[EnvChange, ...]
     settings: tuple[SettingChange, ...]
+    installed_at: float | None  # ayarları değiştiren son kurulumun zamanı (cimrihook gain)
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +85,7 @@ class Plan:
     notes: tuple[str, ...]
 
 
-EMPTY_RECORD: Final = InstallRecord(env=(), settings=())
+EMPTY_RECORD: Final = InstallRecord(env=(), settings=(), installed_at=None)
 
 
 def install(
@@ -136,7 +137,7 @@ def install(
         with_values(settings, {key: clean.get(key) for key in MANAGED_KEYS}),
         {"hooks": hooks or None, "env": env or None, "statusLine": status_line, **values},
     )
-    return after, InstallRecord(tuple(changes), tuple(setting_changes)), tuple(notes)
+    return after, InstallRecord(tuple(changes), tuple(setting_changes), None), tuple(notes)
 
 
 def integer_setting(value: object, key: str) -> int:
@@ -421,8 +422,15 @@ def parse_record(value: object, file: Path) -> InstallRecord:
         if previous is not None and not isinstance(previous, str):
             raise ConfigError(f"{file}: malformed previous value in {entry!r}")
         changes.append(EnvChange(name, current, previous))
+    installed_at = value.get("installed_at") if isinstance(value, dict) else None
+    if installed_at is not None and (
+        isinstance(installed_at, bool) or not isinstance(installed_at, int | float)
+    ):
+        raise ConfigError(f"{file}: malformed installed_at {installed_at!r}")
     return InstallRecord(
-        tuple(changes), tuple(parse_setting(entry, file) for entry in raw_settings)
+        tuple(changes),
+        tuple(parse_setting(entry, file) for entry in raw_settings),
+        None if installed_at is None else float(installed_at),
     )
 
 
@@ -456,6 +464,7 @@ def save_record(home: Path, path: Path, record: InstallRecord) -> None:
                 "settings": [
                     {"key": c.key, "value": c.value, "previous": c.previous} for c in item.settings
                 ],
+                "installed_at": item.installed_at,
             }
             for key, item in records.items()
         },
@@ -490,7 +499,7 @@ def apply_init(plan: Plan, home: Path, now: float) -> str:
     önceki değerleri bilir."""
     if plan.after == plan.before:
         return f"{render_plan(plan)}\nalready installed"
-    save_record(home, plan.path, plan.record)
+    save_record(home, plan.path, replace(plan.record, installed_at=now))
     backup = write_settings(plan.path, plan.after, now)
     saved = f"backup: {backup}" if backup is not None else "created a new settings file"
     return f"{render_plan(plan)}\nwritten: {plan.path}\n{saved}"

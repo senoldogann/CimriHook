@@ -212,9 +212,16 @@ stays opt-in.
 
 ```bash
 cimrihook doctor --days 7   # where your spend goes and what would change it
+cimrihook gain              # the time since your last init vs the same time before it
 cimrihook audit --days 30   # replay your past transcripts: what would CimriHook have saved?
 cimrihook report            # savings recorded by the live hook
 ```
+
+`gain` compares the time since your last `cimrihook init` that changed your settings with the same
+length of time before it: requests, spend at list prices, spend per request, mean context, the
+share of spend in requests above 200k tokens, compactions, re-caching after an hour idle and the
+prompts the guard stopped. Your work differs between the two periods, so it is a before/after
+view, not an A/B test; spend per request and mean context depend least on how much you worked.
 
 `doctor` prices every real request in your Claude Code transcripts at API list prices and splits
 the spend by the context size of the request, by token type, by cache rewrites over 100k tokens

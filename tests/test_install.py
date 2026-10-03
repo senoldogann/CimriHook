@@ -58,7 +58,7 @@ def test_the_users_window_variable_is_reported_because_it_overrides_the_setting(
 
 def test_an_install_that_used_the_environment_variable_moves_to_the_setting() -> None:
     earlier: dict[str, object] = {"env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "183000"}}
-    record = InstallRecord((EnvChange("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "183000", None),), ())
+    record = InstallRecord((EnvChange("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "183000", None),), (), 1.0)
     settings, new_record, _ = install(earlier, [governor_settings(183_000)], record)
     assert settings == {"autoCompactWindow": 183_000}
     assert new_record.env == () and new_record.settings[0].previous is None

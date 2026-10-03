@@ -1,5 +1,5 @@
-"""Komut satırı: hook | statusline | guard | brief | report | doctor | audit | simulate | init |
-settings | bench-run | bench-report | bench-remeasure | bench-calibrate."""
+"""Komut satırı: hook | statusline | guard | brief | report | doctor | gain | audit | simulate |
+init | settings | bench-run | bench-report | bench-remeasure | bench-calibrate."""
 
 import argparse
 import json
@@ -26,6 +26,7 @@ from cimrihook.bench import (
 from cimrihook.config import Config, load_config
 from cimrihook.doctor import diagnose_claude, render_doctor
 from cimrihook.errors import BenchError, CimriHookError, ConfigError
+from cimrihook.gain import measure_gain, render_gain
 from cimrihook.guard import compaction_brief, guard_prompt
 from cimrihook.hook import ledger_path, run_hook
 from cimrihook.install import apply_init, apply_remove, plan_init, plan_remove, render_plan
@@ -111,6 +112,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     doctor.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
     doctor.add_argument("--days", type=int, default=DEFAULT_DOCTOR_DAYS)
+    gain = commands.add_parser(
+        "gain", help="the time since your last init vs the same time before it"
+    )
+    gain.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    gain.add_argument("--settings", default=DEFAULT_SETTINGS_PATH)
     audit = commands.add_parser(
         "audit", help="replay past Claude Code transcripts and estimate what CimriHook would save"
     )
@@ -350,6 +356,17 @@ def main() -> None:
                 render_doctor(
                     diagnose_claude(
                         Path(str(args.projects_dir)).expanduser(), int(args.days), time.time()
+                    )
+                )
+            )
+        elif command == "gain":
+            print(
+                render_gain(
+                    measure_gain(
+                        Path(str(args.projects_dir)).expanduser(),
+                        config.home,
+                        Path(str(args.settings)).expanduser(),
+                        time.time(),
                     )
                 )
             )
