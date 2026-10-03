@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Final
 
 from cimrihook.audit import (
+    BENCH_PROJECT_MARKER,
     SECONDS_PER_DAY,
     Usage,
     average_write_weight,
@@ -184,7 +185,10 @@ def simulate_codex(
     """Codex CLI rollout kayıtları üzerinde politikaları çalıştırır."""
     min_mtime = now - days * SECONDS_PER_DAY
     files = sorted(
-        path for path in logs_dir.rglob("rollout-*.jsonl") if path.stat().st_mtime >= min_mtime
+        path
+        for path in logs_dir.rglob("rollout-*.jsonl")
+        if path.stat().st_mtime >= min_mtime
+        and BENCH_PROJECT_MARKER not in (rollout_cwd(path) or "")
     )
     if not files:
         raise ConfigError(f"no Codex rollouts under {logs_dir} modified in the last {days} days")
@@ -362,6 +366,23 @@ def content_text(content: object) -> str:
         for block in content
         if isinstance(block, dict) and block.get("type") == "text"
     )
+
+
+def rollout_cwd(path: Path) -> str | None:
+    """Codex rollout'unun çalışma dizini (session_meta); kayıt yoksa None. CimriHook'un kendi A/B
+    çalıştırmaları bununla dışarıda bırakılır."""
+    with path.open("rb") as handle:
+        for raw_line in handle:
+            entry = parse_line(raw_line)
+            payload = None if entry is None else entry.get("payload")
+            if (
+                entry is not None
+                and entry.get("type") == "session_meta"
+                and isinstance(payload, dict)
+            ):
+                cwd = payload.get("cwd")
+                return cwd if isinstance(cwd, str) else None
+    return None
 
 
 def load_codex_trace(path: Path) -> SessionTrace:
@@ -598,7 +619,7 @@ def claude_hint(window: int) -> str:
 
 def codex_hint(window: int) -> str:
     """Codex sıkıştırma eşiğini toplam bağlam üzerinden uygular."""
-    return f"`model_auto_compact_token_limit = {window}` in ~/.codex/config.toml"
+    return f"`cimrihook init --agent codex --compact-window {window}`"
 
 
 def render_simulation(result: SimulationResult, hint: ApplyHint) -> str:

@@ -52,6 +52,22 @@ setting, so `init` warns when one is set. The A/B harness uses that variable on 
 arm's window cannot be changed by your settings. `simulate` and `doctor` print the setting for
 their best policy.
 
+## Codex CLI
+
+```bash
+cimrihook simulate --agent codex --days 7               # cost of each compaction limit on your rollouts
+cimrihook init --agent codex --compact-window 100000    # sets model_auto_compact_token_limit
+cimrihook init --agent codex --remove                   # puts your previous value back
+```
+
+Codex hooks cannot rewrite tool output and OpenAI does not document how long its prompt cache
+lives, so on Codex CimriHook's lever is the compaction limit. Codex applies
+`model_auto_compact_token_limit` to the whole context and caps it at 90% of the model's window.
+The standard library cannot write TOML, so `init` changes only that one line of
+`~/.codex/config.toml`, reads the result back and refuses to write if anything else would change.
+It keeps a backup and the file's permissions, prints the changed line without context lines, and
+remembers your previous value for `--remove`.
+
 ## See it live
 
 Add CimriHook's status line to Claude Code (`~/.claude/settings.json`):

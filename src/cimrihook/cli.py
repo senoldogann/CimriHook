@@ -23,6 +23,13 @@ from cimrihook.bench import (
     run_plan,
     select_tasks,
 )
+from cimrihook.codex_config import (
+    apply_codex_remove,
+    apply_codex_window,
+    plan_codex_remove,
+    plan_codex_window,
+    render_codex_plan,
+)
 from cimrihook.config import Config, load_config
 from cimrihook.doctor import diagnose_claude, render_doctor
 from cimrihook.errors import BenchError, CimriHookError, ConfigError
@@ -59,6 +66,7 @@ DEFAULT_PROJECTS_DIR: Final = "~/.claude/projects"
 DEFAULT_AUDIT_DAYS: Final = 30
 DEFAULT_DOCTOR_DAYS: Final = 7
 DEFAULT_SETTINGS_PATH: Final = "~/.claude/settings.json"
+DEFAULT_CODEX_CONFIG_PATH: Final = "~/.codex/config.toml"
 # Sıkıştırmadan sonraki ilk isteğin bağlamı yeniden eklenen dosyaları zaten içerir; gerçek
 # oturumlarda bunun dışında yeniden okuma medyanı sıfırdır.
 DEFAULT_REFETCH_TOKENS: Final = MEASURED_REFETCH_TOKENS
@@ -159,9 +167,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init = commands.add_parser(
         "init",
-        help="add CimriHook to Claude Code's settings (backup first; --dry-run shows the diff)",
+        help="add CimriHook to Claude Code's settings or set Codex's compaction limit "
+        "(backup first; --dry-run shows the diff)",
     )
+    init.add_argument("--agent", choices=("claude", "codex"), default="claude")
     init.add_argument("--settings", default=DEFAULT_SETTINGS_PATH)
+    init.add_argument("--codex-config", default=DEFAULT_CODEX_CONFIG_PATH)
     init.add_argument("--compact-window", type=int, help="also set the auto-compact window")
     init.add_argument("--brief", action="store_true", help="also ask compactions for brevity")
     init.add_argument("--codec", action="store_true", help="also re-encode tool results")
@@ -241,6 +252,26 @@ def live_report(config: Config, session: str | None) -> str:
         return render_savings(
             f"CimriHook live savings (session {session})", ledger.savings_for_session(session)
         )
+
+
+def run_codex_init(args: argparse.Namespace, home: Path, now: float) -> str:
+    """Codex'in sıkıştırma eşiğini ayarlar ya da (--remove) geri alır; Codex'te hook yok."""
+    if args.brief or args.codec:
+        raise ConfigError("--brief and --codec are Claude Code hooks; Codex has no equivalent")
+    path = Path(str(args.codex_config)).expanduser()
+    if args.remove:
+        plan = plan_codex_remove(path, home)
+    elif args.compact_window is None:
+        raise ConfigError(
+            "init --agent codex needs --compact-window (see `cimrihook simulate --agent codex`)"
+        )
+    else:
+        plan = plan_codex_window(path, int(args.compact_window), home)
+    if args.dry_run:
+        return f"{render_codex_plan(plan)}\ndry run: nothing written"
+    if args.remove:
+        return apply_codex_remove(plan, home, now)
+    return apply_codex_window(plan, home, now)
 
 
 def selected_blocks(args: argparse.Namespace) -> list[dict[str, object]]:
@@ -394,6 +425,8 @@ def main() -> None:
                 ),
             )
             print(render_simulation(simulation, APPLY_HINTS[agent]))
+        elif command == "init" and args.agent == "codex":
+            print(run_codex_init(args, config.home, time.time()))
         elif command == "init":
             path = Path(str(args.settings)).expanduser()
             plan = (
