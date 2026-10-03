@@ -25,6 +25,7 @@ from cimrihook.audit import (
     recent_transcripts,
 )
 from cimrihook.errors import TranscriptError
+from cimrihook.install import MARKER, WINDOW_ENV, env_of, hooks_of, is_ours, load_settings
 from cimrihook.simulate import (
     MEASURED_REFETCH_REQUESTS,
     MEASURED_REFETCH_TOKENS,
@@ -319,9 +320,10 @@ class Diagnosis:
     simulation: SimulationResult | None  # kayıtlarda gerçek sıkıştırma yoksa ölçülemez
     guard_check: str
     bench_transcripts: int  # dışarıda bırakılan CimriHook A/B çalıştırma transcript'leri
+    setup: str  # ayar dosyasındaki pencere, koruma ve durum satırı
 
 
-def diagnose_claude(projects_dir: Path, days: int, now: float) -> Diagnosis:
+def diagnose_claude(projects_dir: Path, settings_path: Path, days: int, now: float) -> Diagnosis:
     """Son `days` gündeki istekler üzerinde maliyet anatomisi, pencere politikalarının
     simülasyonu ve soğuk istem korumasının öz denetimi.
 
@@ -338,8 +340,9 @@ def diagnose_claude(projects_dir: Path, days: int, now: float) -> Diagnosis:
     anatomy = build_anatomy(scans, days)
     guard = guard_check(files)
     bench = bench_transcripts(projects_dir, days, now)
+    setup = setup_line(settings_path)
     if anatomy.compactions == 0:
-        return Diagnosis(anatomy, None, guard, bench)
+        return Diagnosis(anatomy, None, guard, bench, setup)
     traces = load_claude_traces(files)
     requests = [usage for trace in traces for usage in trace.requests]
     simulation = simulate_traces(
@@ -350,7 +353,7 @@ def diagnose_claude(projects_dir: Path, days: int, now: float) -> Diagnosis:
         CostOverrides(None, None, None, MEASURED_REFETCH_TOKENS, MEASURED_REFETCH_REQUESTS, None),
         dollar_weight,
     )
-    return Diagnosis(anatomy, simulation, guard, bench)
+    return Diagnosis(anatomy, simulation, guard, bench, setup)
 
 
 def unique_scans(scans: Sequence[TranscriptScan]) -> list[TranscriptScan]:
@@ -382,6 +385,44 @@ def recent_requests(scans: Sequence[TranscriptScan], cutoff: float) -> list[Tran
             ),
         )
         for scan in scans
+    ]
+
+
+def setup_line(settings_path: Path) -> str:
+    """Ayar dosyasında CimriHook'un neyi etkin: sıkıştırma penceresi, koruma, durum satırı."""
+    settings = load_settings(settings_path)
+    override = env_of(settings).get(WINDOW_ENV)
+    window = settings.get("autoCompactWindow")
+    if override is not None:
+        compaction = f"{WINDOW_ENV}={override} (overrides every window setting)"
+    elif isinstance(window, int) and not isinstance(window, bool):
+        compaction = (
+            f"autoCompactWindow {window} (compacts at about {tokens_text(window - 33_000)} on "
+            "models with a larger context window)"
+        )
+    else:
+        compaction = "Claude Code's default (about 33k below each model's context window)"
+    guard = any(
+        f"{MARKER}guard" in command
+        for entry in hooks_of(settings).get("UserPromptSubmit", [])
+        for command in hook_commands(entry)
+    )
+    status = is_ours(settings.get("statusLine"))
+    return (
+        f"Setup ({settings_path}): compaction window {compaction}; cold-prompt guard "
+        f"{'on' if guard else 'off'}; status line {'on' if status else 'off'}"
+    )
+
+
+def hook_commands(entry: object) -> list[str]:
+    """Bir hook grubundaki komut metinleri."""
+    handlers = entry.get("hooks") if isinstance(entry, dict) else None
+    if not isinstance(handlers, list):
+        return []
+    return [
+        str(handler.get("command"))
+        for handler in handlers
+        if isinstance(handler, dict) and isinstance(handler.get("command"), str)
     ]
 
 
@@ -473,6 +514,7 @@ def render_doctor(diagnosis: Diagnosis) -> str:
         f"{tokens_text(anatomy.compaction_trigger)} tokens, next request "
         f"{tokens_text(anatomy.after_compaction_context)} tokens",
         *recommendations(anatomy, simulation),
+        diagnosis.setup,
         diagnosis.guard_check,
     ]
     return "\n".join(lines)

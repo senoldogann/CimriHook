@@ -97,4 +97,4 @@ def test_a_forked_transcript_and_old_requests_are_not_counted_again(tmp_path: Pa
 
 def test_an_empty_log_directory_is_an_error_not_a_zero_report(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="no Claude Code transcripts"):
-        diagnose_claude(tmp_path, 7, T0)
+        diagnose_claude(tmp_path, tmp_path / "settings.json", 7, T0)

@@ -119,6 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
         "doctor", help="where your Claude Code spend goes and what would change it"
     )
     doctor.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    doctor.add_argument("--settings", default=DEFAULT_SETTINGS_PATH)
     doctor.add_argument("--days", type=int, default=DEFAULT_DOCTOR_DAYS)
     gain = commands.add_parser(
         "gain", help="the time since your last init vs the same time before it"
@@ -386,7 +387,10 @@ def main() -> None:
             print(
                 render_doctor(
                     diagnose_claude(
-                        Path(str(args.projects_dir)).expanduser(), int(args.days), time.time()
+                        Path(str(args.projects_dir)).expanduser(),
+                        Path(str(args.settings)).expanduser(),
+                        int(args.days),
+                        time.time(),
                     )
                 )
             )
