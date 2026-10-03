@@ -7,7 +7,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Final
+from typing import Final, NoReturn
 
 from cimrihook.audit import audit_transcripts, render_audit
 from cimrihook.bench import (
@@ -28,8 +28,8 @@ from cimrihook.doctor import diagnose_claude, render_doctor
 from cimrihook.errors import BenchError, CimriHookError, ConfigError
 from cimrihook.guard import compaction_brief, guard_prompt
 from cimrihook.hook import ledger_path, run_hook
-from cimrihook.install import run_init, run_remove
-from cimrihook.ledger import Ledger
+from cimrihook.install import apply_init, apply_remove, plan_init, plan_remove, render_plan
+from cimrihook.ledger import BUSY_TIMEOUT_SECONDS, Ledger
 from cimrihook.report import render_savings
 from cimrihook.settings import (
     brief_settings,
@@ -49,7 +49,7 @@ from cimrihook.simulate import (
     simulate_claude,
     simulate_codex,
 )
-from cimrihook.statusline import run_chained_statusline, run_statusline
+from cimrihook.statusline import run_chained_statusline, status_or_error
 
 DEFAULT_PROJECTS_DIR: Final = "~/.claude/projects"
 DEFAULT_AUDIT_DAYS: Final = 30
@@ -71,13 +71,24 @@ DEFAULT_EFFORT: Final = "medium"
 DEFAULT_WINDOW: Final = 100_000
 DEFAULT_CONCURRENCY: Final = 2
 DEFAULT_TIMEOUT_SECONDS: Final = 2_400
+PRIVATE_UMASK: Final = 0o077
+
+
+class CliParser(argparse.ArgumentParser):
+    """Hatalı argümanda argparse'ın 2 koduyla çıkması yerine ConfigError yükseltir.
+
+    Komutlar hook olarak çalışır; Claude Code'da 2 çıkış kodu istemi ya da sıkıştırmayı engeller.
+    Ayar dosyasındaki komut ile kurulu sürüm uyuşmazsa (ör. bilinmeyen bir argüman) bu, her istemi
+    durdururdu. Alt komut ayrıştırıcıları bu sınıfı devralır.
+    """
+
+    def error(self, message: str) -> NoReturn:
+        raise ConfigError(f"{self.prog}: {message}")
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Alt komutlarıyla argüman ayrıştırıcı."""
-    parser = argparse.ArgumentParser(
-        prog="cimrihook", description="Context economics for AI coding agents."
-    )
+    parser = CliParser(prog="cimrihook", description="Context economics for AI coding agents.")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("hook", help="process one Claude Code hook payload from stdin")
     statusline = commands.add_parser(
@@ -169,12 +180,14 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--name", required=True, help="result set name (resumable)")
     bench.add_argument("--tasks-dir", default=DEFAULT_TASKS_DIR)
     bench.add_argument("--tasks", help="comma-separated task ids (default: all)")
-    bench.add_argument("--protocols", default="single", help="single and/or sequential")
+    bench.add_argument(
+        "--protocols", default="single", help="single, sequential and/or deep (deep: claude only)"
+    )
     bench.add_argument("--agents", default="claude,codex")
     bench.add_argument(
         "--variants",
         default="baseline,governor",
-        help="baseline, governor, codec, combined (codec and combined: claude only)",
+        help="baseline, governor, codec, combined, brief (codec, combined, brief: claude only)",
     )
     bench.add_argument("--reps", type=int, default=1)
     bench.add_argument("--claude-model", default=DEFAULT_CLAUDE_MODEL)
@@ -184,7 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--window",
         type=int,
         default=DEFAULT_WINDOW,
-        help="compaction window of the governor and combined arms (claude: at least 100000)",
+        help="compaction window of the governor, combined and brief arms (claude: at least 100000)",
     )
     bench.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY)
     bench.add_argument(
@@ -213,7 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def live_report(config: Config, session: str | None) -> str:
     """Defterdeki canlı kararların raporu."""
-    with Ledger(ledger_path(config.home)) as ledger:
+    with Ledger(ledger_path(config.home), BUSY_TIMEOUT_SECONDS) as ledger:
         if session is None:
             return render_savings("CimriHook live savings (all sessions)", ledger.savings_all())
         return render_savings(
@@ -261,7 +274,7 @@ def parse_agents(raw: str) -> tuple[Agent, ...]:
 
 
 def parse_protocols(raw: str) -> tuple[Protocol, ...]:
-    """Protokol listesi (single, sequential)."""
+    """Protokol listesi (single, sequential, deep)."""
     allowed = {protocol.value for protocol in Protocol}
     values = split_csv(raw)
     unknown = [value for value in values if value not in allowed]
@@ -271,7 +284,7 @@ def parse_protocols(raw: str) -> tuple[Protocol, ...]:
 
 
 def parse_variants(raw: str) -> tuple[Variant, ...]:
-    """Varyant listesi (baseline, cimrihook)."""
+    """Varyant listesi (baseline, governor, codec, combined, brief)."""
     allowed = {variant.value for variant in Variant}
     values = split_csv(raw)
     unknown = [value for value in values if value not in allowed]
@@ -306,10 +319,14 @@ def bench_run(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    """CLI giriş noktası; CimriHook hataları tek satırlık mesaj ve çıkış kodu 1 ile biter."""
-    args = build_parser().parse_args()
-    command: str = args.command
+    """CLI giriş noktası; CimriHook hataları tek satırlık mesaj ve çıkış kodu 1 ile biter.
+
+    Oluşturulan dosyalar (defter, kurulum kaydı, yedekler) yalnızca kullanıcıya açıktır.
+    """
+    os.umask(PRIVATE_UMASK)
     try:
+        args = build_parser().parse_args()
+        command: str = args.command
         config = load_config(os.environ)
         if command == "hook":
             sys.stdout.write(run_hook(sys.stdin.read(), config))
@@ -317,7 +334,7 @@ def main() -> None:
             raw = sys.stdin.read()
             sys.stdout.write(run_chained_statusline(raw, config, time.time(), str(args.after)))
         elif command == "statusline":
-            sys.stdout.write(run_statusline(sys.stdin.read(), config, time.time()))
+            sys.stdout.write(status_or_error(sys.stdin.read(), config, time.time()))
         elif command == "guard":
             sys.stdout.write(guard_prompt(sys.stdin.read(), config, time.time()))
         elif command == "brief":
@@ -356,11 +373,17 @@ def main() -> None:
             print(render_simulation(simulation, APPLY_HINTS[agent]))
         elif command == "init":
             path = Path(str(args.settings)).expanduser()
-            if args.remove:
-                print(run_remove(path, config.home, bool(args.dry_run), time.time()))
+            plan = (
+                plan_remove(path, config.home)
+                if args.remove
+                else plan_init(path, selected_blocks(args), config.home)
+            )
+            if args.dry_run:
+                print(f"{render_plan(plan)}\ndry run: nothing written")
+            elif args.remove:
+                print(apply_remove(plan, config.home, time.time()))
             else:
-                blocks = selected_blocks(args)
-                print(run_init(path, blocks, config.home, bool(args.dry_run), time.time()))
+                print(apply_init(plan, config.home, time.time()))
         elif command == "bench-run":
             bench_run(args)
         elif command == "bench-report":
@@ -375,8 +398,10 @@ def main() -> None:
         elif command == "bench-calibrate":
             results_dir = Path(str(args.results_dir)) / str(args.name)
             print(render_calibration(load_results(results_dir)))
-        else:
+        elif command == "settings":
             print(json.dumps(merge_settings(selected_blocks(args)), indent=2))
+        else:
+            raise ConfigError(f"unhandled command {command!r}")
     except CimriHookError as error:
         print(f"cimrihook: {error}", file=sys.stderr)
         raise SystemExit(1) from error

@@ -15,3 +15,11 @@ class ConfigError(CimriHookError):
 
 class BenchError(CimriHookError):
     """Değerlendirme düzeneği kurulamadı ya da bir çalıştırma ölçülemedi."""
+
+
+class TranscriptError(CimriHookError):
+    """Transcript okunamadı ya da kaydı beklenen biçimde değil."""
+
+
+class LedgerError(CimriHookError):
+    """Defter veritabanına erişilemedi (kilit, izin ya da bozuk dosya)."""

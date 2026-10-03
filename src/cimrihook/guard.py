@@ -3,8 +3,15 @@
 Soğuk istem koruması (UserPromptSubmit): önbellek ömrü dolduğunda bir sonraki istek konuşmanın
 tamamını yeniden önbelleğe yazar; büyük bir oturumda bu tek istek birkaç dolar tutar. Koruma istemi
 bu boşluk döneminde bir kez durdurur, maliyeti söyler ve önce /compact önerir; kullanıcı istemi
-yeniden gönderirse geçer. Eğik çizgiyle başlayan komutlar durdurulmaz. Bir hata istemi durdurmaz:
-CLI çıkış kodu 1 ile biter, Claude Code bunu engellemeyen bir hata sayar.
+yeniden gönderirse geçer. Bir hata istemi durdurmaz: CLI çıkış kodu 1 ile biter, Claude Code bunu
+engellemeyen bir hata sayar.
+
+Durdurulan istemi yalnızca bir insan yeniden gönderebilir; Claude Code'un kendi ilettiği istemler
+(arka plan bildirimleri, döngüler, alt ajanlar) durdurulursa düşer. Claude Code 2.1.288 istemin
+kaynağını hook'a vermez, bu yüzden insan dışı olduğu belli istemler hiç durdurulmaz: alt ajan
+istemleri (agent_id), eğik çizgiyle başlayan komutlar (/compact, /loop), etiketle başlayan
+iletiler (<task-notification> gibi) ve sistem bildirimleri. Düz metin olarak gelen zamanlanmış
+istemler insan isteminden ayırt edilemez.
 
 Sıkıştırma özeti (PreCompact): hook'un çıktısı Claude Code'un özetleme isteğine ek talimat olarak
 eklenir. Talimat özeti kısa ve yapılandırılmış tutar: kod gövdeleri yerine dosya yolları ve satır
@@ -21,7 +28,7 @@ from cimrihook.config import Config
 from cimrihook.doctor import usd_per_token
 from cimrihook.errors import HookPayloadError
 from cimrihook.hook import ledger_path
-from cimrihook.ledger import Ledger
+from cimrihook.ledger import claim_guard
 from cimrihook.simulate import claude_prices
 from cimrihook.statusline import compact_tokens
 from cimrihook.tail import ONE_HOUR, SessionTail, read_session_tail
@@ -34,6 +41,9 @@ Keep this summary compact: it is re-read on every later request.
 - Open: unanswered questions.
 Refer to code by file path and line numbers instead of pasting it; files can be read again.
 Leave out tool outputs and finished side tasks."""
+# Claude Code'un otomatik ilettiği istemlerin başı: bildirimler, etiketli iletiler, komutlar.
+AUTOMATED_PREFIXES: Final = ("[SYSTEM NOTIFICATION", "<", "/")
+GUARD_BUSY_TIMEOUT_SECONDS: Final = 2.0  # hook zaman aşımının (10 s) çok altında
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,21 +53,32 @@ class PromptEvent:
     session_id: str
     transcript_path: str
     prompt: str
+    agent_id: str | None  # alt ajanın istemi; ana oturumda yok
 
 
 def guard_prompt(raw: str, config: Config, now: float) -> str:
     """UserPromptSubmit hook yanıtı: istem durdurulacaksa JSON karar, değilse boş metin."""
     event = parse_prompt_event(raw)
-    if not config.guard_enabled or event.prompt.lstrip().startswith("/"):
+    if not config.guard_enabled or is_automated(event):
         return ""
     tail = read_session_tail(event.transcript_path)
     if tail is None or not cache_expired(tail, config.guard_min_tokens, now):
         return ""
-    with Ledger(ledger_path(config.home)) as ledger:
-        first = ledger.claim_guard_block(event.session_id, tail.last_response_at, now)
+    first = claim_guard(
+        ledger_path(config.home),
+        event.session_id,
+        tail.last_response_at,
+        now,
+        GUARD_BUSY_TIMEOUT_SECONDS,
+    )
     if not first:
         return ""
     return json.dumps({"decision": "block", "reason": guard_reason(tail, now)})
+
+
+def is_automated(event: PromptEvent) -> bool:
+    """İnsan dışı olduğu belli istem: durdurulursa yeniden gönderen olmaz."""
+    return event.agent_id is not None or event.prompt.lstrip().startswith(AUTOMATED_PREFIXES)
 
 
 def parse_prompt_event(raw: str) -> PromptEvent:
@@ -67,7 +88,16 @@ def parse_prompt_event(raw: str) -> PromptEvent:
         session_id=require_str(payload, "session_id", "UserPromptSubmit"),
         transcript_path=require_str(payload, "transcript_path", "UserPromptSubmit"),
         prompt=require_str(payload, "prompt", "UserPromptSubmit"),
+        agent_id=optional_str(payload, "agent_id", "UserPromptSubmit"),
     )
+
+
+def optional_str(payload: dict[str, object], key: str, where: str) -> str | None:
+    """İsteğe bağlı metin alanı: yoksa None, varsa metin olmalı."""
+    value = payload.get(key)
+    if value is None or isinstance(value, str):
+        return value
+    raise HookPayloadError(f"{where}.{key}: expected a string, got {type(value).__name__}")
 
 
 def parse_payload(raw: str, event: str) -> dict[str, object]:

@@ -3,58 +3,95 @@ geri alma."""
 
 import json
 import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
 
-from cimrihook.install import EMPTY_RECORD, install, run_init, run_remove
+from cimrihook.install import (
+    EMPTY_RECORD,
+    INSTALL_RECORD,
+    apply_init,
+    apply_remove,
+    install,
+    plan_init,
+    plan_remove,
+    settings_diff,
+)
 from cimrihook.settings import governor_env, guard_settings, statusline_settings
 
 PYTHON = "/opt/cimrihook/bin/python"
 USER_SETTINGS: dict[str, object] = {
     "model": "opus",
-    "env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000", "OTHER": "1"},
+    "env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000", "OTHER": "secret-value"},
     "hooks": {
         "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "rtk"}]}]
     },
-    "statusLine": {"type": "command", "command": "'/apps/my status.sh'"},
+    "statusLine": {"type": "command", "command": "'/apps/my status.sh'", "padding": 0},
 }
 BLOCKS = [guard_settings(PYTHON), statusline_settings(PYTHON), governor_env(183_000)]
 
 
 def test_install_chains_the_user_status_line_and_is_idempotent() -> None:
-    first = install(USER_SETTINGS, BLOCKS, EMPTY_RECORD)
-    hooks = first.settings["hooks"]
+    settings, record, _ = install(USER_SETTINGS, BLOCKS, EMPTY_RECORD)
+    hooks = settings["hooks"]
     assert isinstance(hooks, dict)
     assert hooks["PreToolUse"] == [
         {"matcher": "Bash", "hooks": [{"type": "command", "command": "rtk"}]}
     ]
-    status = first.settings["statusLine"]
-    assert isinstance(status, dict)
-    assert status["command"] == (
-        "/opt/cimrihook/bin/python -m cimrihook statusline --after "
-        "''\"'\"'/apps/my status.sh'\"'\"''"
-    )
-    assert first.record.status_line == USER_SETTINGS["statusLine"]
-    assert install(first.settings, BLOCKS, first.record).settings == first.settings
+    assert settings["statusLine"] == {
+        "type": "command",
+        "command": "/opt/cimrihook/bin/python -I -m cimrihook statusline --after "
+        "''\"'\"'/apps/my status.sh'\"'\"''",
+        "padding": 0,
+    }
+    assert install(settings, BLOCKS, record)[0] == settings
+
+
+def test_reinstall_from_another_interpreter_replaces_our_hooks() -> None:
+    first, record, _ = install(USER_SETTINGS, BLOCKS, EMPTY_RECORD)
+    moved = [guard_settings("/new/python"), statusline_settings("/new/python")]
+    second, _, _ = install(first, moved, record)
+    assert json.dumps(second).count("-m cimrihook guard") == 1
+    assert "/opt/cimrihook" not in json.dumps(second)
+    env = second["env"]
+    assert isinstance(env, dict) and env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "400000"
+
+
+def test_diff_hides_values_of_variables_cimrihook_does_not_manage(tmp_path: Path) -> None:
+    settings, _, _ = install(USER_SETTINGS, BLOCKS, EMPTY_RECORD)
+    diff = settings_diff(tmp_path / "settings.json", USER_SETTINGS, settings)
+    assert "secret-value" not in diff
+    assert '"183000"' in diff
 
 
 def test_init_backs_up_and_remove_restores_the_original(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
     path.write_text(json.dumps(USER_SETTINGS), encoding="utf-8")
+    path.chmod(0o600)
     home = tmp_path / "home"
-    report = run_init(path, BLOCKS, home, True, 1.0)
-    assert "dry run" in report and json.loads(path.read_text()) == USER_SETTINGS
-    run_init(path, BLOCKS, home, False, 2.0)
+    apply_init(plan_init(path, BLOCKS, home), home, 2.0)
     assert (tmp_path / "settings.json.cimrihook-backup-2").exists()
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert stat.S_IMODE((home / INSTALL_RECORD).stat().st_mode) == 0o600
     installed = json.loads(path.read_text())
     assert installed["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "183000"
-    assert "-m cimrihook guard" in json.dumps(installed["hooks"]["UserPromptSubmit"])
+    assert "-I -m cimrihook guard" in json.dumps(installed["hooks"]["UserPromptSubmit"])
     # Aynı saniyede ikinci kurulum farklı pencereyle: ilk yedek korunur, kaldırma yine
     # kullanıcının asıl değerlerini ve durum satırını geri yükler.
-    run_init(path, [*BLOCKS[:2], governor_env(233_000)], home, False, 2.0)
+    apply_init(plan_init(path, [*BLOCKS[:2], governor_env(233_000)], home), home, 2.0)
     assert (tmp_path / "settings.json.cimrihook-backup-2-1").exists()
-    run_remove(path, home, False, 4.0)
+    apply_remove(plan_remove(path, home), home, 4.0)
+    assert json.loads(path.read_text()) == USER_SETTINGS
+
+
+def test_remove_without_a_record_still_restores_the_chained_status_line(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(USER_SETTINGS), encoding="utf-8")
+    home = tmp_path / "home"
+    apply_init(plan_init(path, BLOCKS[:2], home), home, 2.0)
+    (home / INSTALL_RECORD).unlink()
+    apply_remove(plan_remove(path, home), home, 3.0)
     assert json.loads(path.read_text()) == USER_SETTINGS
 
 

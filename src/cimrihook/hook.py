@@ -23,7 +23,7 @@ from cimrihook.claude import (
 )
 from cimrihook.codec import agent_wants_raw, decide, raw_tokens
 from cimrihook.config import Config
-from cimrihook.ledger import Ledger
+from cimrihook.ledger import BUSY_TIMEOUT_SECONDS, Ledger
 from cimrihook.model import Decision, Encoding
 
 LEDGER_FILE: Final = "ledger.sqlite3"
@@ -45,14 +45,14 @@ def run_hook(raw_payload: str, config: Config) -> str:
 
 def reset_context(event: ContextReset, config: Config) -> None:
     """Sıkıştırma ya da oturum (yeniden) başlangıcı: önceki kuşağın bilgisi artık geçersiz."""
-    with Ledger(ledger_path(config.home)) as ledger:
+    with Ledger(ledger_path(config.home), BUSY_TIMEOUT_SECONDS) as ledger:
         ledger.reset_session(event.session_id, transcript_size(event.transcript_path))
 
 
 def encode_tool_result(event: ToolResult, config: Config) -> str:
     """Araç sonucunu codec ile kodlar ve gerekiyorsa updatedToolOutput yanıtı üretir."""
     key = context_key(event.session)
-    with Ledger(ledger_path(config.home)) as ledger:
+    with Ledger(ledger_path(config.home), BUSY_TIMEOUT_SECONDS) as ledger:
         generation = current_generation(ledger, event.session)
         step = ledger.next_step(key, generation)
         if is_unchanged_read(event.tool_name, event.tool_response):

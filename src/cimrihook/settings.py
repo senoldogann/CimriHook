@@ -13,8 +13,13 @@ HOOK_TIMEOUT_SECONDS: Final = 10
 
 
 def command(python: str, subcommand: str) -> str:
-    """CimriHook alt komutunu verilen Python yorumlayıcısıyla çalıştıran kabuk komutu."""
-    return f"{shlex.quote(python)} -m cimrihook {subcommand}"
+    """CimriHook alt komutunu verilen Python yorumlayıcısıyla çalıştıran kabuk komutu.
+
+    Hook'lar ve durum satırı Claude Code'un izin istemlerinin dışında, oturumun çalışma dizininde
+    çalışır. `-I` yorumlayıcının o dizini (ve PYTHON* değişkenlerini) içe aktarma yoluna katmasını
+    engeller; yoksa projedeki bir `json.py` ya da `statistics.py` CimriHook'un yerine çalışırdı.
+    """
+    return f"{shlex.quote(python)} -I -m cimrihook {subcommand}"
 
 
 def handler(python: str, subcommand: str) -> dict[str, object]:
