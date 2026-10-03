@@ -1,31 +1,94 @@
 # CimriHook
 
-> *cimri* (Turkish): miser. CimriHook makes AI coding agents never pay twice for the same information.
+> *cimri* (Turkish): miser. CimriHook stops AI coding agents from paying again and again for
+> context they no longer need.
 
-AI coding agents keep re-sending information their context window already holds. They re-read files
-that have not changed, re-read a whole file after a two-line edit, re-run a command and paste the
-same 300-line output again, or read a 3,000-line file to find one function. Every token that enters
-the context is paid again on every following request (as a prompt-cache read) until compaction.
+Every request an agent makes re-reads the whole conversation from the prompt cache, so a session's
+cost grows with the square of its length. In the author's last week of Claude Code use, 98% of the
+input tokens were such cache re-reads and 57% of the spend went to requests carrying more than 400k
+tokens of context. Shrinking each new tool output (what RTK does) helps with what enters the
+context; CimriHook manages how long it stays there, through the agents' own settings and hooks.
 
-Measured on real sessions, 96–98% of an agent's input tokens are such re-reads of context it
-already has, not new information. Shrinking each new tool output (what RTK does) helps, but the
-largest lever is **how long content stays in the context**. CimriHook works on all three layers:
-
-| Layer | What it does | How |
+| Part | What it does | How |
 |---|---|---|
-| Measure | replays your own transcripts: where the money goes and what each policy would cost | `cimrihook doctor`, `cimrihook audit`, `cimrihook simulate` |
-| Govern | picks the auto-compaction window from your data and applies it with Claude Code's own setting | `cimrihook init --compact-window N` |
-| Show | live context size, prompt-cache warmth, next-request cost and usage limits | `cimrihook statusline` |
-| Encode | re-encodes new tool results against what the agent already holds (lossless) | `PostToolUse` hooks |
+| Measure | where your spend goes and what each compaction window would cost on your own sessions | `cimrihook doctor`, `simulate`, `gain` |
+| Govern | sets the compaction window your data calls for, with the agent's own setting | `cimrihook init --compact-window N`, also `--agent codex` |
+| Guard | asks once before an idle session re-caches its whole context | `UserPromptSubmit` hook |
+| Show | context, prompt-cache warmth, next-request cost and usage limits | status line |
+| Evaluate | A/B runs on your own subscriptions, with honest statistics | `cimrihook bench-run` |
+| Encode (experimental) | re-encodes tool results against what the agent already holds | `init --codec` |
 
-It complements RTK: RTK shrinks what enters the context, CimriHook decides how long it stays and
-never sends the same information twice.
+**Measured** (Claude Code with Opus 5.5 and a 1M context, 5 runs per arm,
+[details](docs/evaluation.md)): in 20-step bug-fixing sessions that start from about 230k tokens of
+context, compacting at 150k tokens cut the provider-billed cost by 40% (95% CI 38-42%), and all 100
+steps passed in both arms. In shorter sessions that peak below 125k tokens the effect is small
+(Claude Code x0.95) or uncertain (Codex x0.80, interval includes 1).
+
+It complements RTK: RTK shrinks what enters the context, CimriHook decides how long it stays.
+
+## Install
+
+```bash
+uv tool install /path/to/CimriHook
+cimrihook doctor                                # where the spend goes and the window it suggests
+cimrihook init --compact-window 233000 --dry-run  # show the change to ~/.claude/settings.json
+cimrihook init --compact-window 233000          # guard, status line and the window from doctor
+cimrihook gain                                  # an hour or more later: before vs after
+cimrihook init --remove                         # take out only what CimriHook added
+```
+
+`init` backs the settings file up before writing, keeps the file's permissions, and hides the
+values of `env` and `headers` entries in the diff it prints. It is declarative: it first takes
+out what an earlier `init` added, then adds the parts you selected now, so re-running it after an
+upgrade or a move replaces the old commands instead of adding new ones next to them. A status line
+you already have is chained (its command is kept in CimriHook's `--after` argument, which is also
+where `--remove` restores it from), and the setting and environment values it replaced are
+remembered per settings file in `~/.cimrihook/installed.json`, with the time of the change for
+`gain`, so `--remove` can put them back. `--brief` and
+`--codec` add the compaction brief and the tool codec. `cimrihook settings` prints the same blocks
+for merging by hand or for a single run: `claude --settings "$(cimrihook settings)"`.
+
+The hook and status line commands run Python with `-I`: they run in your project directory,
+outside Claude Code's permission prompts, and without `-I` a `json.py` or `statistics.py` in that
+directory would run in CimriHook's place. Everything CimriHook writes under `~/.cimrihook` is
+readable by you only. After changing the source of an installed copy, reinstall it with
+`uv tool install --force --reinstall --refresh /path/to/CimriHook`: the version number does not
+change, so uv would otherwise reuse the old build.
+
+## Measure
+
+```bash
+cimrihook doctor --days 7   # where your spend goes and what would change it
+cimrihook gain              # the time since your last init vs the same time before it
+cimrihook audit --days 30   # replay your past transcripts: what would CimriHook have saved?
+cimrihook report            # savings recorded by the live hook
+```
+
+`gain` compares the time since your last `cimrihook init` that changed your settings with the same
+length of time before it: requests, spend at list prices, spend per request, mean context, the
+share of spend in requests above 200k tokens, compactions, re-caching after an hour idle and the
+prompts the guard stopped. Your work differs between the two periods, so it is a before/after
+view, not an A/B test; spend per request and mean context depend least on how much you worked.
+
+`doctor` prices every real request in your Claude Code transcripts at API list prices and splits
+the spend by the context size of the request, by token type, by cache rewrites over 100k tokens
+and their likely cause (idle past the cache lifetime, compaction, model switch), by main session
+and subagents, and by the static prefix every request carries. It ends with what would change the
+largest items; the compaction-window estimate comes from `simulate` and is labelled as a
+simulation until an A/B run confirms it.
+
+`audit` runs the same codec over the tool results stored in `~/.claude/projects`. Subagent
+transcripts do not store the structured tool result, so their Read and Bash results are parsed
+from the text the model received. It reports direct token savings and a context-residency
+weighted share of your input cost. The weighting reflects
+that each saved token would have been re-read from cache on every later request until compaction,
+priced with the 5-minute/1-hour cache-write mix found in your own usage data.
 
 ## Govern the context window
 
 ```bash
 cimrihook simulate --days 30                   # cost of each compaction policy on your sessions
-cimrihook init --compact-window 183000         # sets Claude Code's autoCompactWindow
+cimrihook init --compact-window 233000         # sets Claude Code's autoCompactWindow
 cimrihook bench-calibrate --name <set>         # simulated vs measured savings of an A/B set
 ```
 
@@ -39,9 +102,10 @@ the agent behaves the same otherwise. `bench-calibrate` replays the baseline run
 the treatment's real trigger point and prints how far the prediction is from the measured ratio.
 So far its errors were all on the optimistic side (0 to 7 points), which is why the replay adds
 7,000 re-read tokens after every compaction (the median the A/B runs imply); change it with
-`--refetch-tokens`. Sessions are replayed whole, costs are summed in base input units across
-models, and a forked or resumed session's copied history counts once. Check task quality with an
-A/B run before adopting a small window.
+`--refetch-tokens`. Sessions are replayed whole, each Claude session is weighed by its model's
+list price (Codex stays in base input units), a forked or resumed session's copied history counts
+once, and CimriHook's own A/B runs are left out. Check task quality with an A/B run before
+adopting a small window.
 
 Claude Code compacts once the context reaches the window minus 33,000 tokens (a 20,000-token
 output reserve and a 13,000-token buffer). `init --compact-window` writes Claude Code's own
@@ -50,23 +114,37 @@ compaction cannot start before about 67,000 tokens; `/autocompact` and per-model
 can still override it. A `CLAUDE_CODE_AUTO_COMPACT_WINDOW` environment variable overrides every
 setting, so `init` warns when one is set. The A/B harness uses that variable on purpose, so an
 arm's window cannot be changed by your settings. `simulate` and `doctor` print the setting for
-their best policy.
+the window they recommend: the largest one whose simulated cost is within 1 point of the cheapest,
+because every compaction trades detail for a smaller context. On the author's last week that is a
+200k trigger (-38.1%, 384 compactions) rather than 150k (-38.3%, 707 compactions).
 
-## Codex CLI
+## Guard the cache
 
-```bash
-cimrihook simulate --agent codex --days 7               # cost of each compaction limit on your rollouts
-cimrihook init --agent codex --compact-window 100000    # sets model_auto_compact_token_limit
-cimrihook init --agent codex --remove                   # puts your previous value back
-```
+When a session sits idle past its prompt-cache lifetime (1 hour on subscriptions, 5 minutes
+elsewhere), the next message re-caches the whole conversation. On a 900k-token session that is
+one request of about $7 at list prices. The cold-prompt guard (`UserPromptSubmit` hook) stops that
+message once, says what it would cost and suggests `/compact`; sending the message again goes
+ahead. It only steps in above `CIMRIHOOK_GUARD_MIN_TOKENS` of context, reads the cache lifetime
+from the last cache write in the transcript, stays quiet right after a compaction (the context is
+small again), and never blocks on its own errors: they exit 1, which Claude Code shows without
+stopping the prompt. `cimrihook doctor` ends with a check that the guard can read your newest
+session.
 
-Codex hooks cannot rewrite tool output and OpenAI does not document how long its prompt cache
-lives, so on Codex CimriHook's lever is the compaction limit. Codex applies
-`model_auto_compact_token_limit` to the whole context and caps it at 90% of the model's window.
-The standard library cannot write TOML, so `init` changes only that one line of
-`~/.codex/config.toml`, reads the result back and refuses to write if anything else would change.
-It keeps a backup and the file's permissions, prints the changed line without context lines, and
-remembers your previous value for `--remove`.
+A stopped prompt can only be sent again by a person. Claude Code 2.1.288 does not tell hooks
+where a prompt came from, so the guard never stops prompts that are clearly not typed by you:
+system notifications (`[SYSTEM NOTIFICATION ...]`), tagged messages such as
+`<task-notification>`, commands starting with `/` (including `/compact` and `/loop`) and subagent
+prompts. A scheduled prompt that arrives as plain text cannot be told apart from yours; if you
+deliver such prompts into long idle sessions, switch the guard off with
+`CIMRIHOOK_DISABLE=guard`.
+
+`--brief` adds a `PreCompact` hook whose output Claude Code appends to its compaction prompt
+(every compaction path does this in 2.1.288, though the hooks reference does not document it):
+keep the summary short and structured, refer to code by file path and line instead of pasting it.
+Claude Code's own nine-section summary template still dominates, and Claude Code shows the hook's
+output to you at every compaction. A summary is a small part of the context that follows it, so
+expect little cost effect; in the one deep pilot run it was within noise of the plain window. It
+stays opt-in.
 
 ## See it live
 
@@ -89,7 +167,26 @@ ledger, so CimriHook can learn how your plan counts cache reads, writes and outp
 line of its output is kept and CimriHook's part ends the last line. If CimriHook's part fails, its
 error is shown in the line instead (Claude Code blanks the whole status line on a non-zero exit).
 
+## Codex CLI
+
+```bash
+cimrihook simulate --agent codex --days 7               # cost of each compaction limit on your rollouts
+cimrihook init --agent codex --compact-window 100000    # sets model_auto_compact_token_limit
+cimrihook init --agent codex --remove                   # puts your previous value back
+```
+
+Codex hooks cannot rewrite tool output and OpenAI does not document how long its prompt cache
+lives, so on Codex CimriHook's lever is the compaction limit. Codex applies
+`model_auto_compact_token_limit` to the whole context and caps it at 90% of the model's window.
+The standard library cannot write TOML, so `init` changes only that one line of
+`~/.codex/config.toml`, reads the result back and refuses to write if anything else would change.
+It keeps a backup and the file's permissions, prints the changed line without context lines, and
+remembers your previous value for `--remove`.
+
 ## Evaluate with your real subscriptions
+
+Results so far, with the method and the corrections to earlier figures, are in
+[docs/evaluation.md](docs/evaluation.md).
 
 ```bash
 cimrihook bench-run --name claude-ablation --agents claude --protocols sequential \
@@ -141,7 +238,11 @@ Codex CLI (`codex exec`) in one arm per mechanism:
 - **Re-measuring:** `cimrihook bench-remeasure --name <set>` recomputes a result set from the
   agents' logs with the current schema without running the agents again.
 
-## Encode tool results
+## Encode tool results (experimental)
+
+Opt in with `cimrihook init --codec`. On the author's sessions the codec would have saved about 1%
+of the input cost, and no A/B run has shown a measurable effect; the context window is the lever
+that matters.
 
 The context codec works on the tool layer, so it behaves the same with every model and every effort
 level. The tool always really runs. Only the *encoding* of its result changes, relative to what the
@@ -153,7 +254,7 @@ agent already has in its context:
 | DELTA | the result changed compared with the last full version (keyframe) the agent received | a unified diff against that keyframe | lossless |
 | OUTLINE | the agent asks for a whole large file (≥ 6k tokens) it has never seen | declarations with line numbers and how to read ranges | recoverable |
 
-## Safety rules
+## Codec safety rules
 
 - **Nothing is hidden twice.** If the agent repeats a request whose answer was re-encoded and nothing
   changed in between, it gets the raw result. A request gets an outline at most once.
@@ -167,91 +268,6 @@ agent already has in its context:
   offset/limit, same mtime) with `file_unchanged`. CimriHook covers what that misses: changed files,
   sub-ranges, mtime-only changes and command output. If the agent only ever saw an outline,
   CimriHook replaces the native `file_unchanged` answer with the real content.
-
-## Install
-
-```bash
-uv tool install --editable /path/to/CimriHook
-cimrihook doctor                                # see where the spend goes first
-cimrihook init --dry-run                        # show the change to ~/.claude/settings.json
-cimrihook init                                  # cold-prompt guard and status line
-cimrihook init --compact-window 183000          # also compact earlier (value from doctor)
-cimrihook init --remove                         # take out only what CimriHook added
-```
-
-`init` backs the settings file up before writing, keeps the file's permissions, and hides the
-values of `env` and `headers` entries in the diff it prints. It is declarative: it first takes
-out what an earlier `init` added, then adds the parts you selected now, so re-running it after an
-upgrade or a move replaces the old commands instead of adding new ones next to them. A status line
-you already have is chained (its command is kept in CimriHook's `--after` argument, which is also
-where `--remove` restores it from), and the environment values it replaced are remembered per
-settings file in `~/.cimrihook/installed.json` so `--remove` can put them back. `--brief` and
-`--codec` add the compaction brief and the tool codec. `cimrihook settings` prints the same blocks
-for merging by hand or for a single run: `claude --settings "$(cimrihook settings)"`.
-
-The hook and status line commands run Python with `-I`: they run in your project directory,
-outside Claude Code's permission prompts, and without `-I` a `json.py` or `statistics.py` in that
-directory would run in CimriHook's place. Everything CimriHook writes under `~/.cimrihook` is
-readable by you only. After changing the source of an installed copy, reinstall it with
-`uv tool install --force --reinstall --refresh /path/to/CimriHook`: the version number does not
-change, so uv would otherwise reuse the old build.
-
-## Guard the cache
-
-When a session sits idle past its prompt-cache lifetime (1 hour on subscriptions, 5 minutes
-elsewhere), the next message re-caches the whole conversation. On a 900k-token session that is
-one request of about $7 at list prices. The cold-prompt guard (`UserPromptSubmit` hook) stops that
-message once, says what it would cost and suggests `/compact`; sending the message again goes
-ahead. It only steps in above `CIMRIHOOK_GUARD_MIN_TOKENS` of context, reads the cache lifetime
-from the last cache write in the transcript, stays quiet right after a compaction (the context is
-small again), and never blocks on its own errors: they exit 1, which Claude Code shows without
-stopping the prompt. `cimrihook doctor` ends with a check that the guard can read your newest
-session.
-
-A stopped prompt can only be sent again by a person. Claude Code 2.1.288 does not tell hooks
-where a prompt came from, so the guard never stops prompts that are clearly not typed by you:
-system notifications (`[SYSTEM NOTIFICATION ...]`), tagged messages such as
-`<task-notification>`, commands starting with `/` (including `/compact` and `/loop`) and subagent
-prompts. A scheduled prompt that arrives as plain text cannot be told apart from yours; if you
-deliver such prompts into long idle sessions, switch the guard off with
-`CIMRIHOOK_DISABLE=guard`.
-
-`--brief` adds a `PreCompact` hook whose output Claude Code appends to its compaction prompt
-(every compaction path does this in 2.1.288, though the hooks reference does not document it):
-keep the summary short and structured, refer to code by file path and line instead of pasting it.
-Claude Code's own nine-section summary template still dominates, and Claude Code shows the hook's
-output to you at every compaction. A summary is a small part of the context that follows it, so
-expect little cost effect; in the one deep pilot run it was within noise of the plain window. It
-stays opt-in.
-
-## Measure
-
-```bash
-cimrihook doctor --days 7   # where your spend goes and what would change it
-cimrihook gain              # the time since your last init vs the same time before it
-cimrihook audit --days 30   # replay your past transcripts: what would CimriHook have saved?
-cimrihook report            # savings recorded by the live hook
-```
-
-`gain` compares the time since your last `cimrihook init` that changed your settings with the same
-length of time before it: requests, spend at list prices, spend per request, mean context, the
-share of spend in requests above 200k tokens, compactions, re-caching after an hour idle and the
-prompts the guard stopped. Your work differs between the two periods, so it is a before/after
-view, not an A/B test; spend per request and mean context depend least on how much you worked.
-
-`doctor` prices every real request in your Claude Code transcripts at API list prices and splits
-the spend by the context size of the request, by token type, by cache rewrites over 100k tokens
-and their likely cause (idle past the cache lifetime, compaction, model switch), by main session
-and subagents, and by the static prefix every request carries. It ends with what would change the
-largest items; the compaction-window estimate comes from `simulate` and is labelled as a
-simulation until an A/B run confirms it.
-
-`audit` runs the same codec over the tool results stored in `~/.claude/projects`. Subagent
-transcripts do not store the structured tool result, so their Read and Bash results are parsed
-from the text the model received. It reports direct token savings and a context-residency
-weighted share of your input cost. The weighting reflects
-that each saved token would have been re-read from cache on every later request until compaction,
-priced with the 5-minute/1-hour cache-write mix found in your own usage data.
 
 ## Configuration
 
