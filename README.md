@@ -139,13 +139,18 @@ agent already has in its context:
 
 ```bash
 uv tool install --editable /path/to/CimriHook
-cimrihook settings                              # cold-prompt guard and status line
-cimrihook settings --compact-window 183000      # also compact earlier (value from doctor)
-cimrihook settings --brief --codec              # also short compactions and the tool codec
+cimrihook doctor                                # see where the spend goes first
+cimrihook init --dry-run                        # show the change to ~/.claude/settings.json
+cimrihook init                                  # cold-prompt guard and status line
+cimrihook init --compact-window 183000          # also compact earlier (value from doctor)
+cimrihook init --remove                         # take out only what CimriHook added
 ```
 
-Merge the printed block into `~/.claude/settings.json` (all projects) or `.claude/settings.json`
-(one project). To try it for a single run: `claude --settings "$(cimrihook settings)"`.
+`init` backs the settings file up before writing, never adds the same hook twice, keeps a status
+line you already have, and remembers the environment values it replaced so `--remove` can put
+them back. `--brief` and `--codec` add the compaction brief and the tool codec.
+`cimrihook settings` prints the same blocks for merging by hand or for a single run:
+`claude --settings "$(cimrihook settings)"`.
 
 ## Guard the cache
 
