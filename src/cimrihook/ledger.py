@@ -1,0 +1,256 @@
+"""SQLite tabanlı bağlam defteri: her bağlamda ajanın hangi bilgiyi hangi biçimde aldığını tutar."""
+
+import sqlite3
+import time
+import zlib
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from types import TracebackType
+from typing import Final, Self
+
+from cimrihook.model import Decision, Encoding, Observation, SavingsRow, View
+
+SCHEMA: Final = """
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id TEXT PRIMARY KEY,
+    generation INTEGER NOT NULL,
+    transcript_offset INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS steps (
+    context_key TEXT NOT NULL,
+    generation INTEGER NOT NULL,
+    step INTEGER NOT NULL,
+    tool TEXT NOT NULL,
+    request_key TEXT NOT NULL,
+    mutating INTEGER NOT NULL,
+    PRIMARY KEY (context_key, generation, step)
+);
+CREATE TABLE IF NOT EXISTS views (
+    context_key TEXT NOT NULL,
+    generation INTEGER NOT NULL,
+    step INTEGER NOT NULL,
+    session_id TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    stream TEXT NOT NULL,
+    request_key TEXT NOT NULL,
+    encoding TEXT NOT NULL,
+    start_line INTEGER NOT NULL,
+    total_lines INTEGER NOT NULL,
+    whole INTEGER NOT NULL,
+    line_count INTEGER NOT NULL,
+    body BLOB NOT NULL,
+    tokens_raw INTEGER NOT NULL,
+    tokens_sent INTEGER NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (context_key, generation, step)
+);
+CREATE INDEX IF NOT EXISTS views_by_stream ON views (context_key, generation, stream, step);
+CREATE INDEX IF NOT EXISTS views_by_request ON views (context_key, generation, request_key, step);
+CREATE INDEX IF NOT EXISTS views_by_session ON views (session_id);
+"""
+VIEW_COLUMNS: Final = (
+    "step, stream, request_key, encoding, start_line, total_lines, whole, line_count, body"
+)
+SAVINGS_COLUMNS: Final = "encoding, tool, COUNT(*), SUM(tokens_raw), SUM(tokens_sent)"
+BUSY_TIMEOUT_SECONDS: Final = 10.0
+
+type ViewRow = tuple[int, str, str, str, int, int, int, int, bytes]
+type SavingsTuple = tuple[str, str, int, int, int]
+
+
+@dataclass(frozen=True, slots=True)
+class SessionState:
+    """Oturumun bağlam kuşağı ve transcript tarama konumu."""
+
+    generation: int  # sıkıştırma ya da oturum (yeniden) başlangıcıyla artar
+    transcript_offset: int  # transcript'in en son taranan bayt konumu
+
+
+class Ledger:
+    """Defter veritabanına bağlayıcı; her kullanım tek bir yazma işlemidir (BEGIN IMMEDIATE)."""
+
+    def __init__(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._db = sqlite3.connect(path, timeout=BUSY_TIMEOUT_SECONDS, isolation_level=None)
+        self._db.execute("PRAGMA journal_mode=WAL")
+        self._db.executescript(SCHEMA)
+
+    def __enter__(self) -> Self:
+        self._db.execute("BEGIN IMMEDIATE")
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self._db.execute("COMMIT" if exc_type is None else "ROLLBACK")
+        self._db.close()
+
+    def session_state(self, session_id: str, transcript_size: int) -> SessionState:
+        """Oturum durumunu döndürür; ilk görülen oturum transcript'in sonundan izlenmeye başlar."""
+        row = self._db.execute(
+            "SELECT generation, transcript_offset FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if row is not None:
+            return SessionState(generation=int(row[0]), transcript_offset=int(row[1]))
+        self._db.execute("INSERT INTO sessions VALUES (?, 0, ?)", (session_id, transcript_size))
+        return SessionState(generation=0, transcript_offset=transcript_size)
+
+    def reset_session(self, session_id: str, transcript_size: int) -> None:
+        """Yeni bağlam kuşağı başlatır; önceki kuşağın bilgisi artık kullanılmaz."""
+        self._db.execute(
+            "INSERT INTO sessions VALUES (?, 1, ?) ON CONFLICT (session_id) DO UPDATE SET "
+            "generation = generation + 1, transcript_offset = excluded.transcript_offset",
+            (session_id, transcript_size),
+        )
+
+    def bump_generation(self, session_id: str) -> None:
+        """Transcript'te sıkıştırma sınırı görüldü: kuşağı ilerletir."""
+        self._db.execute(
+            "UPDATE sessions SET generation = generation + 1 WHERE session_id = ?", (session_id,)
+        )
+
+    def set_transcript_offset(self, session_id: str, offset: int) -> None:
+        """Transcript'in taranan son konumunu kaydeder."""
+        self._db.execute(
+            "UPDATE sessions SET transcript_offset = ? WHERE session_id = ?", (offset, session_id)
+        )
+
+    def next_step(self, context_key: str, generation: int) -> int:
+        """Bağlam içindeki bir sonraki araç sonucu sırası."""
+        row = self._db.execute(
+            "SELECT COALESCE(MAX(step), 0) + 1 FROM steps WHERE context_key = ? AND generation = ?",
+            (context_key, generation),
+        ).fetchone()
+        return int(row[0])
+
+    def record_step(
+        self,
+        context_key: str,
+        generation: int,
+        step: int,
+        tool: str,
+        request_key: str,
+        mutating: bool,
+    ) -> None:
+        """Her araç sonucunu (yeniden kodlanmasa da) sırasıyla kaydeder."""
+        self._db.execute(
+            "INSERT INTO steps VALUES (?, ?, ?, ?, ?, ?)",
+            (context_key, generation, step, tool, request_key, int(mutating)),
+        )
+
+    def stream_views(self, context_key: str, generation: int, stream: str) -> tuple[View, ...]:
+        """Aynı akışın bu kuşaktaki tüm görünümleri, eskiden yeniye."""
+        rows = self._db.execute(
+            f"SELECT {VIEW_COLUMNS} FROM views "
+            "WHERE context_key = ? AND generation = ? AND stream = ? ORDER BY step",
+            (context_key, generation, stream),
+        ).fetchall()
+        return tuple(view_from_row(row) for row in rows)
+
+    def latest_request_view(
+        self, context_key: str, generation: int, request_key: str
+    ) -> View | None:
+        """Birebir aynı isteğin bu kuşaktaki en son görünümü."""
+        row = self._db.execute(
+            f"SELECT {VIEW_COLUMNS} FROM views "
+            "WHERE context_key = ? AND generation = ? AND request_key = ? "
+            "ORDER BY step DESC LIMIT 1",
+            (context_key, generation, request_key),
+        ).fetchone()
+        return None if row is None else view_from_row(row)
+
+    def mutated_since(self, context_key: str, generation: int, step: int, request_key: str) -> bool:
+        """Verilen adımdan sonra (bu istek dışında) sonucu değiştirebilecek bir çağrı oldu mu?"""
+        row = self._db.execute(
+            "SELECT 1 FROM steps WHERE context_key = ? AND generation = ? AND step > ? "
+            "AND mutating = 1 AND request_key != ? LIMIT 1",
+            (context_key, generation, step, request_key),
+        ).fetchone()
+        return row is not None
+
+    def record_view(
+        self,
+        session_id: str,
+        context_key: str,
+        generation: int,
+        step: int,
+        obs: Observation,
+        decision: Decision,
+    ) -> None:
+        """Ajanın bu adımda edindiği bilgiyi ve token muhasebesini kaydeder."""
+        known = () if decision.encoding is Encoding.OUTLINE else obs.lines
+        self._db.execute(
+            "INSERT INTO views VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                context_key,
+                generation,
+                step,
+                session_id,
+                obs.tool.value,
+                obs.stream,
+                obs.request_key,
+                decision.encoding.value,
+                obs.start_line,
+                obs.total_lines,
+                int(obs.whole),
+                len(known),
+                encode_lines(known),
+                decision.tokens_raw,
+                decision.tokens_sent,
+                time.time(),
+            ),
+        )
+
+    def savings_all(self) -> tuple[SavingsRow, ...]:
+        """Tüm oturumlardaki kararların token muhasebesi."""
+        rows = self._db.execute(
+            f"SELECT {SAVINGS_COLUMNS} FROM views GROUP BY encoding, tool ORDER BY encoding, tool"
+        ).fetchall()
+        return tuple(savings_from_row(row) for row in rows)
+
+    def savings_for_session(self, session_id: str) -> tuple[SavingsRow, ...]:
+        """Tek oturumdaki kararların token muhasebesi."""
+        rows = self._db.execute(
+            f"SELECT {SAVINGS_COLUMNS} FROM views WHERE session_id = ? "
+            "GROUP BY encoding, tool ORDER BY encoding, tool",
+            (session_id,),
+        ).fetchall()
+        return tuple(savings_from_row(row) for row in rows)
+
+
+def encode_lines(lines: Sequence[str]) -> bytes:
+    """Satırları sıkıştırılmış UTF-8 olarak saklar (yalnız vekil karakterler de korunur)."""
+    return zlib.compress("\n".join(lines).encode("utf-8", "surrogatepass"))
+
+
+def decode_lines(body: bytes, line_count: int) -> tuple[str, ...]:
+    """encode_lines'ın tersi; boş liste ile tek boş satırı line_count ayırt eder."""
+    if line_count == 0:
+        return ()
+    return tuple(zlib.decompress(body).decode("utf-8", "surrogatepass").split("\n"))
+
+
+def view_from_row(row: ViewRow) -> View:
+    """Veritabanı satırını görünüme çevirir."""
+    step, stream, request_key, encoding, start_line, total_lines, whole, line_count, body = row
+    return View(
+        step=step,
+        stream=stream,
+        request_key=request_key,
+        encoding=Encoding(encoding),
+        start_line=start_line,
+        lines=decode_lines(body, line_count),
+        total_lines=total_lines,
+        whole=bool(whole),
+    )
+
+
+def savings_from_row(row: SavingsTuple) -> SavingsRow:
+    """Toplama sorgusunun satırını tasarruf kaydına çevirir."""
+    encoding, tool, results, tokens_raw, tokens_sent = row
+    return SavingsRow(Encoding(encoding), tool, results, tokens_raw, tokens_sent)

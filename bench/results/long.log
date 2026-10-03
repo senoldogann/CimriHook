@@ -1,0 +1,35 @@
+{"event": "run_finished", "run_id": "boltons-twenty-steps.sequential.claude.baseline.r1", "success": true, "steps_passed": "20/20", "cost_base": 432469, "reported_usd": 16.3277502, "requests": 83, "compactions": 0, "max_context": 85382, "minutes": 6.1, "error": null}
+{"event": "run_finished", "run_id": "boltons-twenty-steps.sequential.claude.cimrihook.r1", "success": true, "steps_passed": "20/20", "cost_base": 417243, "reported_usd": 17.178142400000002, "requests": 84, "compactions": 1, "max_context": 65964, "minutes": 6.6, "error": null}
+{"event": "run_finished", "run_id": "boltons-twenty-steps.sequential.claude.baseline.r2", "success": true, "steps_passed": "20/20", "cost_base": 452186, "reported_usd": 17.025447000000003, "requests": 82, "compactions": 0, "max_context": 89123, "minutes": 6.2, "error": null}
+{"event": "run_finished", "run_id": "mi-twenty-steps.sequential.claude.baseline.r1", "success": true, "steps_passed": "20/20", "cost_base": 461812, "reported_usd": 17.6132284, "requests": 89, "compactions": 0, "max_context": 83706, "minutes": 17.7, "error": null}
+{"event": "run_finished", "run_id": "boltons-twenty-steps.sequential.claude.cimrihook.r2", "success": true, "steps_passed": "20/20", "cost_base": 436647, "reported_usd": 17.596073800000003, "requests": 87, "compactions": 1, "max_context": 66669, "minutes": 7.0, "error": null}
+{"event": "run_finished", "run_id": "boltons-twenty-steps.sequential.codex.baseline.r1", "success": true, "steps_passed": "20/20", "cost_base": 1149869, "reported_usd": null, "requests": 123, "compactions": 0, "max_context": 127026, "minutes": 21.4, "error": null}
+{"event": "run_finished", "run_id": "boltons-twenty-steps.sequential.codex.cimrihook.r1", "success": true, "steps_passed": "20/20", "cost_base": 760466, "reported_usd": null, "requests": 118, "compactions": 3, "max_context": 59647, "minutes": 22.3, "error": null}
+{"event": "run_finished", "run_id": "mi-twenty-steps.sequential.claude.cimrihook.r1", "success": true, "steps_passed": "20/20", "cost_base": 413450, "reported_usd": 17.2600464, "requests": 87, "compactions": 1, "max_context": 66105, "minutes": 21.5, "error": null}
+{"event": "run_finished", "run_id": "mi-twenty-steps.sequential.codex.baseline.r1", "success": true, "steps_passed": "20/20", "cost_base": 845827, "reported_usd": null, "requests": 107, "compactions": 0, "max_context": 95142, "minutes": 28.8, "error": null}
+{"event": "run_finished", "run_id": "mi-twenty-steps.sequential.claude.baseline.r2", "success": true, "steps_passed": "20/20", "cost_base": 463373, "reported_usd": 18.132309000000003, "requests": 87, "compactions": 0, "max_context": 87541, "minutes": 19.7, "error": null}
+{"event": "run_finished", "run_id": "mi-twenty-steps.sequential.claude.cimrihook.r2", "success": true, "steps_passed": "20/20", "cost_base": 392643, "reported_usd": 16.7560492, "requests": 84, "compactions": 1, "max_context": 65985, "minutes": 19.1, "error": null}
+{"event": "run_finished", "run_id": "boltons-twenty-steps.sequential.codex.baseline.r2", "success": false, "steps_passed": "19/20", "cost_base": 1088614, "reported_usd": null, "requests": 118, "compactions": 0, "max_context": 114333, "minutes": 20.0, "error": null}
+{"event": "run_finished", "run_id": "boltons-twenty-steps.sequential.codex.cimrihook.r2", "success": false, "steps_passed": "14/20", "cost_base": 450547, "reported_usd": null, "requests": 75, "compactions": 1, "max_context": 59224, "minutes": 14.1, "error": null}
+{"event": "run_finished", "run_id": "mi-twenty-steps.sequential.codex.cimrihook.r1", "success": false, "steps_passed": "14/20", "cost_base": 503357, "reported_usd": null, "requests": 96, "compactions": 1, "max_context": 59471, "minutes": 22.7, "error": null}
+{"event": "run_finished", "run_id": "mi-twenty-steps.sequential.codex.baseline.r2", "success": false, "steps_passed": "0/20", "cost_base": 0, "reported_usd": null, "requests": 0, "compactions": 0, "max_context": 0, "minutes": 9.2, "error": null}
+{"event": "run_finished", "run_id": "mi-twenty-steps.sequential.codex.cimrihook.r2", "success": false, "steps_passed": "0/20", "cost_base": 0, "reported_usd": null, "requests": 0, "compactions": 0, "max_context": 0, "minutes": 9.2, "error": null}
+CimriHook bench: 16 runs, 0 unmeasured
+  agent   scenario                       variant     n   pass   steps   cost(base)     usd   req   max ctx  compact    min
+  claude  boltons-twenty-steps/sequential baseline    2    2/2   40/40      442,327   16.68    82    87,252        0    6.2
+  claude  boltons-twenty-steps/sequential cimrihook   2    2/2   40/40      426,945   17.39    86    66,316        2    6.8
+  claude  mi-twenty-steps/sequential     baseline    2    2/2   40/40      462,592   17.87    88    85,624        0   18.7
+  claude  mi-twenty-steps/sequential     cimrihook   2    2/2   40/40      403,047   17.01    86    66,045        2   20.3
+  codex   boltons-twenty-steps/sequential baseline    2    1/2   39/40    1,119,242       -   120   120,680        0   20.7
+  codex   boltons-twenty-steps/sequential cimrihook   2    1/2   34/40      605,507       -    96    59,436        4   18.2
+  codex   mi-twenty-steps/sequential     baseline    2    1/2   20/40      422,913       -    54    47,571        0   19.0
+  codex   mi-twenty-steps/sequential     cimrihook   2    0/2   14/40      251,679       -    48    29,736        1   15.9
+A/B per scenario (cimrihook vs baseline, median cost ratio):
+  claude  boltons-twenty-steps/sequential cost x0.97  pass 2/2 -> 2/2
+  claude  mi-twenty-steps/sequential     cost x0.87  pass 2/2 -> 2/2
+  codex   boltons-twenty-steps/sequential cost x0.54  pass 1/2 -> 1/2
+  codex   mi-twenty-steps/sequential     cost x0.60  pass 1/2 -> 0/2
+A/B per agent (sum of costs, 95% bootstrap interval):
+  claude  cost x0.92 (95% interval 0.89-0.94) over 2 scenarios; pass 4/4 -> 4/4
+  codex   cost x0.56 (95% interval 0.29-0.99) over 2 scenarios; pass 2/4 -> 1/4
+LONG_DONE

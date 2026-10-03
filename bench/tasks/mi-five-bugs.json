@@ -1,0 +1,43 @@
+{
+  "id": "mi-five-bugs",
+  "repo": "https://github.com/more-itertools/more-itertools.git",
+  "ref": "v11.1.0",
+  "packages": [
+    "pytest"
+  ],
+  "test_command": [
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-q"
+  ],
+  "expected_failures": 10,
+  "prompt": "The test suite of this repository fails because of several independent bugs in the library code. Find and fix all of them in the library code. Do not modify, add, or delete any test files. The test environment is ready: run the tests with `.venv/bin/python -m pytest -q`. You are done when the whole test suite passes.",
+  "mutations": [
+    {
+      "path": "more_itertools/more.py",
+      "find": "stop += q + 1 if i <= r else q",
+      "replace": "stop += q + 1 if i < r else q"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "return chain(first, map(func, b, a))",
+      "replace": "return chain(first, map(func, a, b))"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "if (count is None) or (n < count):",
+      "replace": "if (count is None) or (n <= count):"
+    },
+    {
+      "path": "more_itertools/recipes.py",
+      "find": "(true_queue if pred(value) else false_queue).append(value)",
+      "replace": "(false_queue if pred(value) else true_queue).append(value)"
+    },
+    {
+      "path": "more_itertools/recipes.py",
+      "find": "def tabulate(function, start=0):",
+      "replace": "def tabulate(function, start=1):"
+    }
+  ]
+}

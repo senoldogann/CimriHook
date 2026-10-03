@@ -1,0 +1,33 @@
+{
+  "id": "boltons-three-bugs",
+  "repo": "https://github.com/mahmoud/boltons.git",
+  "ref": "26.2.0",
+  "packages": [
+    "pytest"
+  ],
+  "test_command": [
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-q"
+  ],
+  "expected_failures": 8,
+  "prompt": "The test suite of this repository fails because of several independent bugs in the library code. Find and fix all of them in the library code. Do not modify, add, or delete any test files. The test environment is ready: run the tests with `.venv/bin/python -m pytest -q`. You are done when the whole test suite passes.",
+  "mutations": [
+    {
+      "path": "boltons/strutils.py",
+      "find": "{delimiter if oxford else \" \"}",
+      "replace": "{delimiter if not oxford else \" \"}"
+    },
+    {
+      "path": "boltons/iterutils.py",
+      "find": "if input_offset + initial_chunk_len >= input_stop:",
+      "replace": "if input_offset + initial_chunk_len > input_stop:"
+    },
+    {
+      "path": "boltons/cacheutils.py",
+      "find": "if len(self) < self.max_size:",
+      "replace": "if len(self) <= self.max_size:"
+    }
+  ]
+}

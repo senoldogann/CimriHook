@@ -1,0 +1,118 @@
+{
+  "id": "boltons-twenty-steps",
+  "repo": "https://github.com/mahmoud/boltons.git",
+  "ref": "26.2.0",
+  "packages": [
+    "pytest"
+  ],
+  "test_command": [
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-q"
+  ],
+  "expected_failures": 47,
+  "prompt": "The test suite of this repository fails because of several independent bugs in the library code. Find and fix all of them in the library code. Do not modify, add, or delete any test files. The test environment is ready: run the tests with `.venv/bin/python -m pytest -q`. You are done when the whole test suite passes.",
+  "mutations": [
+    {
+      "path": "boltons/strutils.py",
+      "find": "if abs_bytes < next_size:",
+      "replace": "if abs_bytes <= next_size:"
+    },
+    {
+      "path": "boltons/dictutils.py",
+      "find": "return super_self.pop(k, default)",
+      "replace": "return super_self.pop(default, k)"
+    },
+    {
+      "path": "boltons/mathutils.py",
+      "find": "return options[i - 1]",
+      "replace": "return options[i]"
+    },
+    {
+      "path": "boltons/setutils.py",
+      "find": "real_index += d_stop - d_start",
+      "replace": "real_index += d_start - d_stop"
+    },
+    {
+      "path": "boltons/iterutils.py",
+      "find": "parts = [[] for _ in range(len(key_funcs) + 1)]",
+      "replace": "parts = [[] for _ in range(len(key_funcs) - 1)]"
+    },
+    {
+      "path": "boltons/pathutils.py",
+      "find": "if len(path) == len(userhome_dpath):",
+      "replace": "if len(path) != len(userhome_dpath):"
+    },
+    {
+      "path": "boltons/cacheutils.py",
+      "find": "self.total += 1",
+      "replace": "self.total += 2"
+    },
+    {
+      "path": "boltons/timeutils.py",
+      "find": "finished = operator.lt if inclusive else operator.le",
+      "replace": "finished = operator.le if inclusive else operator.lt"
+    },
+    {
+      "path": "boltons/funcutils.py",
+      "find": "def get_arg_names(self, only_required=False):",
+      "replace": "def get_arg_names(self, only_required=True):"
+    },
+    {
+      "path": "boltons/statsutils.py",
+      "find": "idx = q / 1.0 * (n - 1)",
+      "replace": "idx = q / 1.0 * (n - 2)"
+    },
+    {
+      "path": "boltons/queueutils.py",
+      "find": "if task is _REMOVED:",
+      "replace": "if task is not _REMOVED:"
+    },
+    {
+      "path": "boltons/urlutils.py",
+      "find": "elif part == '..':",
+      "replace": "elif part != '..':"
+    },
+    {
+      "path": "boltons/tableutils.py",
+      "find": "if rem > 0:",
+      "replace": "if rem > 1:"
+    },
+    {
+      "path": "boltons/strutils.py",
+      "find": "output += list(range(min(range_limits), max(range_limits)+1))",
+      "replace": "output += list(range(min(range_limits), max(range_limits)+2))"
+    },
+    {
+      "path": "boltons/listutils.py",
+      "find": "stop_list_idx, stop_rel_idx = len(self.lists) - 1, len(self.lists[-1])",
+      "replace": "stop_list_idx, stop_rel_idx = len(self.lists), len(self.lists[-1])"
+    },
+    {
+      "path": "boltons/formatutils.py",
+      "find": "if group == '{{' or group == '}}':",
+      "replace": "if group == '{{' and group == '}}':"
+    },
+    {
+      "path": "boltons/jsonutils.py",
+      "find": "if rs == 0.0:",
+      "replace": "if rs != 0.0:"
+    },
+    {
+      "path": "boltons/iterutils.py",
+      "find": "count = 1 + math.ceil(math.log(stop/denom, factor))",
+      "replace": "count = 2 + math.ceil(math.log(stop/denom, factor))"
+    },
+    {
+      "path": "boltons/ioutils.py",
+      "find": "self._tell = start_pos + pos",
+      "replace": "self._tell = start_pos - pos"
+    },
+    {
+      "path": "boltons/fileutils.py",
+      "find": "os.remove(kept_names[-1])",
+      "replace": "os.remove(kept_names[1])"
+    }
+  ]
+}

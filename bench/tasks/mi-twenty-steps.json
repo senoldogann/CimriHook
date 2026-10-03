@@ -1,0 +1,118 @@
+{
+  "id": "mi-twenty-steps",
+  "repo": "https://github.com/more-itertools/more-itertools.git",
+  "ref": "v11.1.0",
+  "packages": [
+    "pytest"
+  ],
+  "test_command": [
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-q"
+  ],
+  "expected_failures": 71,
+  "prompt": "The test suite of this repository fails because of several independent bugs in the library code. Find and fix all of them in the library code. Do not modify, add, or delete any test files. The test environment is ready: run the tests with `.venv/bin/python -m pytest -q`. You are done when the whole test suite passes.",
+  "mutations": [
+    {
+      "path": "more_itertools/more.py",
+      "find": "yield islice(iterator_with_repeat, n - 1)",
+      "replace": "yield islice(iterator_with_repeat, n - 2)"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "if pred(cur_item, next_item):",
+      "replace": "if pred(next_item, cur_item):"
+    },
+    {
+      "path": "more_itertools/recipes.py",
+      "find": "return islice(iterable, max(0, size - n), None)",
+      "replace": "return islice(iterable, min(0, size - n), None)"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "if reducefunc is not None:",
+      "replace": "if reducefunc is None:"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "(seq[i : i + L], i, i + L) for L in r for i in range(len(seq) - L + 1)",
+      "replace": "(seq[i : i + L], i, i + L) for L in r for i in range(len(seq) - L)"
+    },
+    {
+      "path": "more_itertools/recipes.py",
+      "find": "for num_active in range(len(iterables), 0, -1):",
+      "replace": "for num_active in range(len(iterables), 1, -1):"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "return int(q) + int(r != self._zero)",
+      "replace": "return int(q) - int(r != self._zero)"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "full_size = q + (1 if r > 0 else 0)",
+      "replace": "full_size = q + (2 if r > 0 else 0)"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "if (base_type is not None) and isinstance(obj, base_type):",
+      "replace": "if (base_type is not None) or isinstance(obj, base_type):"
+    },
+    {
+      "path": "more_itertools/recipes.py",
+      "find": "c, n, r = c * r // n, n - 1, r - 1",
+      "replace": "c, n, r = c * r // n, n, r - 1"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "if hi_key < y_key:",
+      "replace": "if hi_key > y_key:"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "return [islice(it, index, None, n) for index, it in enumerate(children)]",
+      "replace": "return [islice(it, index, n, None) for index, it in enumerate(children)]"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "return max(enumerate(iterable), key=itemgetter(1))[0]",
+      "replace": "return max(enumerate(iterable), key=itemgetter(0))[0]"
+    },
+    {
+      "path": "more_itertools/recipes.py",
+      "find": "for x in chain(signal, repeat(0, n - 1)):",
+      "replace": "for x in chain(signal, repeat(0, n + 1)):"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "return (len_iter - i - 1 for i in locate(reversed(iterable), pred))",
+      "replace": "return (len_iter - i for i in locate(reversed(iterable), pred))"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "if len(chunk) != n:",
+      "replace": "if len(chunk) == n:"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "reached_count = batch_count == max_count",
+      "replace": "reached_count = batch_count != max_count"
+    },
+    {
+      "path": "more_itertools/recipes.py",
+      "find": "return prod(map(comb, accumulate(counts), counts))",
+      "replace": "return prod(map(comb, counts, accumulate(counts)))"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "for k in range(1, n + 1):",
+      "replace": "for k in range(1, n + 2):"
+    },
+    {
+      "path": "more_itertools/more.py",
+      "find": "return all(map(all_equal, zip(*iterables, strict=True)))",
+      "replace": "return any(map(all_equal, zip(*iterables, strict=True)))"
+    }
+  ]
+}

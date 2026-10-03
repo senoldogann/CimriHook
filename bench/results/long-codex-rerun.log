@@ -1,0 +1,24 @@
+{"event": "run_finished", "run_id": "boltons-twenty-steps.sequential.codex.baseline.r2", "success": true, "steps_passed": "20/20", "cost_base": 1095738, "reported_usd": null, "requests": 121, "compactions": 0, "max_context": 113526, "minutes": 18.6, "error": null}
+{"event": "run_finished", "run_id": "boltons-twenty-steps.sequential.codex.cimrihook.r2", "success": true, "steps_passed": "20/20", "cost_base": 833064, "reported_usd": null, "requests": 128, "compactions": 3, "max_context": 59498, "minutes": 22.3, "error": null}
+{"event": "run_finished", "run_id": "mi-twenty-steps.sequential.codex.cimrihook.r1", "success": true, "steps_passed": "20/20", "cost_base": 740864, "reported_usd": null, "requests": 123, "compactions": 2, "max_context": 59968, "minutes": 24.7, "error": null}
+{"event": "run_finished", "run_id": "mi-twenty-steps.sequential.codex.baseline.r2", "success": true, "steps_passed": "20/20", "cost_base": 706280, "reported_usd": null, "requests": 82, "compactions": 0, "max_context": 97684, "minutes": 23.0, "error": null}
+{"event": "run_finished", "run_id": "mi-twenty-steps.sequential.codex.cimrihook.r2", "success": true, "steps_passed": "20/20", "cost_base": 535285, "reported_usd": null, "requests": 82, "compactions": 2, "max_context": 59916, "minutes": 24.4, "error": null}
+CimriHook bench: 16 runs, 0 unmeasured
+  agent   scenario                       variant     n   pass   steps   cost(base)     usd   req   max ctx  compact    min
+  claude  boltons-twenty-steps/sequential baseline    2    2/2   40/40      442,327    1.77    82    87,252        0    6.2
+  claude  boltons-twenty-steps/sequential cimrihook   2    2/2   40/40      426,945    1.77    86    66,316        2    6.8
+  claude  mi-twenty-steps/sequential     baseline    2    2/2   40/40      462,592    1.86    88    85,624        0   18.7
+  claude  mi-twenty-steps/sequential     cimrihook   2    2/2   40/40      403,047    1.68    86    66,045        2   20.3
+  codex   boltons-twenty-steps/sequential baseline    2    2/2   40/40    1,122,803       -   122   120,276        0   20.0
+  codex   boltons-twenty-steps/sequential cimrihook   2    2/2   40/40      796,765       -   123    59,572        6   22.3
+  codex   mi-twenty-steps/sequential     baseline    2    2/2   40/40      776,053       -    94    96,413        0   25.9
+  codex   mi-twenty-steps/sequential     cimrihook   2    2/2   40/40      638,074       -   102    59,942        4   24.6
+A/B per scenario (cimrihook vs baseline, median cost ratio):
+  claude  boltons-twenty-steps/sequential cost x0.97  pass 2/2 -> 2/2
+  claude  mi-twenty-steps/sequential     cost x0.87  pass 2/2 -> 2/2
+  codex   boltons-twenty-steps/sequential cost x0.71  pass 2/2 -> 2/2
+  codex   mi-twenty-steps/sequential     cost x0.82  pass 2/2 -> 2/2
+A/B per agent (sum of costs, 95% bootstrap interval):
+  claude  cost x0.92 (95% interval 0.89-0.94) over 2 scenarios; pass 4/4 -> 4/4
+  codex   cost x0.76 (95% interval 0.67-0.84) over 2 scenarios; pass 4/4 -> 4/4
+CODEX_RERUN_DONE
