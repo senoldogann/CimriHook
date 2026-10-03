@@ -11,6 +11,7 @@ from cimrihook.bench import (
     RunSpec,
     Task,
     Variant,
+    claude_settings,
     codex_provider,
     load_codex_records,
     spec_problem,
@@ -81,14 +82,26 @@ def test_step_without_model_requests_is_a_measurement_error(tmp_path: Path) -> N
         codex_provider(load_codex_records(rollout), 2)
 
 
-def spec(agent: Agent, variant: Variant, window: int) -> RunSpec:
+def spec(agent: Agent, protocol: Protocol, variant: Variant, window: int) -> RunSpec:
     """Doğrulama için asgari çalıştırma tanımı."""
     task = Task("t", "repo", "ref", (), (), 0, "prompt", ())
-    return RunSpec(task, Protocol.SEQUENTIAL, agent, variant, "model", "medium", window, 1)
+    return RunSpec(task, protocol, agent, variant, "model", "medium", window, 1)
 
 
 def test_run_matrix_rejects_arms_the_agent_cannot_apply() -> None:
-    assert spec_problem(spec(Agent.CODEX, Variant.CODEC, 60_000)) is not None
-    assert spec_problem(spec(Agent.CLAUDE, Variant.GOVERNOR, 40_000)) is not None
-    assert spec_problem(spec(Agent.CLAUDE, Variant.COMBINED, 100_000)) is None
-    assert spec_problem(spec(Agent.CODEX, Variant.GOVERNOR, 60_000)) is None
+    sequential = Protocol.SEQUENTIAL
+    assert spec_problem(spec(Agent.CODEX, sequential, Variant.CODEC, 60_000)) is not None
+    assert spec_problem(spec(Agent.CODEX, sequential, Variant.BRIEF, 60_000)) is not None
+    assert spec_problem(spec(Agent.CODEX, Protocol.DEEP, Variant.GOVERNOR, 60_000)) is not None
+    assert spec_problem(spec(Agent.CLAUDE, sequential, Variant.GOVERNOR, 40_000)) is not None
+    assert spec_problem(spec(Agent.CLAUDE, sequential, Variant.COMBINED, 100_000)) is None
+    assert spec_problem(spec(Agent.CLAUDE, Protocol.DEEP, Variant.BRIEF, 183_000)) is None
+    assert spec_problem(spec(Agent.CODEX, sequential, Variant.GOVERNOR, 60_000)) is None
+
+
+def test_brief_arm_sets_the_window_and_the_compaction_brief_only() -> None:
+    settings = claude_settings(spec(Agent.CLAUDE, Protocol.DEEP, Variant.BRIEF, 183_000))
+    assert settings["env"] == {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "183000"}
+    hooks = settings["hooks"]
+    assert isinstance(hooks, dict) and list(hooks) == ["PreCompact"]
+    assert "-m cimrihook brief" in json.dumps(hooks["PreCompact"])

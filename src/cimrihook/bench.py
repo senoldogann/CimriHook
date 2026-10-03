@@ -12,6 +12,9 @@ Protokoller:
 - single: tüm hatalar baştan enjekte edilir; ajan tek bir istekte hepsini düzeltir.
 - sequential: hatalar aynı oturumda birer birer gelir; ajan her birini konuşmanın devamında
   düzeltir. Gerçek kullanımdaki uzun, birikimli oturumları taklit eder.
+- deep: sequential'dan önce ajan hata yokken kütüphanenin tüm kaynak dosyalarını okur (yalnızca
+  Claude Code). Bağlam baştan büyür ve okunan kodun çoğu sonraki adımlar için bayatlar; gerçek
+  kullanımdaki yüksek bağlamlı (200k üstü) oturumları taklit eder.
 
 Varyantlar (mekanizma ablasyonu):
 - baseline: ajanın varsayılan davranışı.
@@ -20,6 +23,7 @@ Varyantlar (mekanizma ablasyonu):
 - codec: yalnızca codec hook'ları (yalnızca Claude Code; Codex hook'ları araç çıktısını
   değiştiremez).
 - combined: pencere ve codec birlikte (yalnızca Claude Code).
+- brief: pencere ve sıkıştırma özeti talimatı (PreCompact) birlikte (yalnızca Claude Code).
 
 Ölçüm:
 - Birincil maliyet sağlayıcı düzeyindedir ve sıkıştırma ile yardımcı çağrıları içerir. Claude Code
@@ -51,7 +55,7 @@ from typing import Final
 
 from cimrihook.audit import Usage, average_write_weight, parse_line
 from cimrihook.errors import BenchError
-from cimrihook.settings import governor_env, hook_settings
+from cimrihook.settings import brief_settings, governor_env, hook_settings, merge_settings
 from cimrihook.simulate import (
     CLAUDE_MIN_COMPACT_WINDOW,
     OBSERVED,
@@ -130,6 +134,12 @@ FIRST_BUG_PROMPT: Final = (
     "environment is ready: run the tests with `.venv/bin/python -m pytest -q`. You are done when "
     "the whole test suite passes."
 )
+WARMUP_PROMPT: Final = (
+    "Before any bug appears, get to know this repository. Read every source file of the library "
+    "yourself, in full, with the Read tool, one file at a time and without subagents; skip the "
+    "tests, documentation and packaging files. Then reply with one short line per file saying "
+    "what it provides. Do not change any file."
+)
 NEXT_BUG_PROMPT: Final = (
     "A new bug has just been introduced in the library code and the test suite fails again. Find "
     "and fix it in the library code. Do not modify, add, or delete any test files. Run the tests "
@@ -151,10 +161,12 @@ class Variant(StrEnum):
     GOVERNOR = "governor"
     CODEC = "codec"
     COMBINED = "combined"
+    BRIEF = "brief"
 
 
-WINDOW_VARIANTS: Final = frozenset({Variant.GOVERNOR, Variant.COMBINED})
+WINDOW_VARIANTS: Final = frozenset({Variant.GOVERNOR, Variant.COMBINED, Variant.BRIEF})
 CODEC_VARIANTS: Final = frozenset({Variant.CODEC, Variant.COMBINED})
+BRIEF_VARIANTS: Final = frozenset({Variant.BRIEF})
 CODEX_VARIANTS: Final = frozenset({Variant.BASELINE, Variant.GOVERNOR})
 # Önceki şemanın tek tedavi kolu: Claude Code'da pencere ve codec, Codex'te yalnızca pencere.
 LEGACY_VARIANT: Final = "cimrihook"
@@ -173,6 +185,7 @@ class Protocol(StrEnum):
 
     SINGLE = "single"
     SEQUENTIAL = "sequential"
+    DEEP = "deep"
 
 
 @dataclass(frozen=True, slots=True)
@@ -456,8 +469,13 @@ def spec_problem(spec: RunSpec) -> str | None:
     """Ajanın bu kolu ya da pencereyi uygulayamamasının nedeni; uygulayabiliyorsa None."""
     if spec.agent is Agent.CODEX and spec.variant not in CODEX_VARIANTS:
         return (
-            f"codex cannot run variant {spec.variant.value!r}: Codex hooks cannot rewrite tool "
-            "output, so run codex with --variants baseline,governor"
+            f"codex cannot run variant {spec.variant.value!r}: only the compaction window is "
+            "implemented for Codex, so run codex with --variants baseline,governor"
+        )
+    if spec.agent is Agent.CODEX and spec.protocol is Protocol.DEEP:
+        return (
+            "codex cannot run the deep protocol: its warm-up turn is not mapped to a step in the "
+            "Codex usage records"
         )
     if (
         spec.agent is Agent.CLAUDE
@@ -670,11 +688,17 @@ def run_single(
 def run_sequential(
     spec: RunSpec, repo_dir: Path, workspace: Path, run_dir: Path, timeout: int
 ) -> SessionOutcome:
-    """Hatalar aynı oturumda birer birer gelir; bağlam gerçek kullanımdaki gibi birikir."""
+    """Hatalar aynı oturumda birer birer gelir; bağlam gerçek kullanımdaki gibi birikir.
+
+    deep protokolünde oturum, ilk hatadan önce kütüphanenin okunduğu ısınma çağrısıyla başlar.
+    Isınma bir adım sayılmaz; maliyeti Claude Code'un kümülatif raporu sayesinde ilk adımın
+    toplamına girer.
+    """
     prepare_workspace(spec.task, repo_dir, workspace)
     if not tests_pass(spec.task, workspace):
         raise BenchError(f"{spec.task.id}: test suite fails before any mutation at {spec.task.ref}")
     started = time.monotonic()
+    opening = warm_up(spec, workspace, run_dir, timeout) if spec.protocol is Protocol.DEEP else None
     calls: list[AgentRun] = []
     step_passed: list[bool] = []
     for step, mutation in enumerate(spec.task.mutations, start=1):
@@ -682,13 +706,13 @@ def run_sequential(
         if tests_pass(spec.task, workspace):
             raise BenchError(f"{spec.task.id}: step {step} mutation is inert after earlier fixes")
         seal(workspace)  # yeni hata git geçmişinde görünmesin
-        if not calls:
-            calls.append(start_agent(spec, FIRST_BUG_PROMPT, workspace, run_dir, timeout, step))
-        else:
-            session_id = calls[0].session_id
-            calls.append(
-                resume_agent(spec, session_id, NEXT_BUG_PROMPT, workspace, run_dir, timeout, step)
-            )
+        prompt = FIRST_BUG_PROMPT if step == 1 else NEXT_BUG_PROMPT
+        first = opening if opening is not None else (calls[0] if calls else None)
+        calls.append(
+            start_agent(spec, prompt, workspace, run_dir, timeout, step)
+            if first is None
+            else resume_agent(spec, first.session_id, prompt, workspace, run_dir, timeout, step)
+        )
         step_passed.append(tests_pass(spec.task, workspace))
     return SessionOutcome(
         session_id=calls[0].session_id,
@@ -699,6 +723,19 @@ def run_sequential(
         step_passed=tuple(step_passed),
         passed=tests_pass(spec.task, workspace),
     )
+
+
+def warm_up(spec: RunSpec, workspace: Path, run_dir: Path, timeout: int) -> AgentRun:
+    """deep protokolünün ısınma çağrısı: ajan hata yokken kütüphaneyi okur, hiçbir dosyayı
+    değiştirmez. Süre aşımında maliyeti kaydedilemediği için çalıştırma ölçülemez."""
+    seal(workspace)
+    call = start_agent(spec, WARMUP_PROMPT, workspace, run_dir, timeout, 0)
+    if call.timed_out:
+        raise BenchError(f"{spec.task.id}: the warm-up call timed out after {timeout}s")
+    changed = run_checked(("git", "status", "--porcelain"), workspace).stdout.strip()
+    if changed:
+        raise BenchError(f"{spec.task.id}: the warm-up call changed files:\n{changed[:800]}")
+    return call
 
 
 def failed_result(spec: RunSpec, identifier: str, message: str) -> RunResult:
@@ -1002,10 +1039,15 @@ def claude_failure(stdout: str, timed_out: bool) -> str | None:
 
 
 def claude_settings(spec: RunSpec) -> dict[str, object]:
-    """Varyantın Claude Code ayarları: codec kollarında hook'lar, pencere kollarında pencere."""
-    hooks = hook_settings(sys.executable) if spec.variant in CODEC_VARIANTS else {}
-    window = governor_env(spec.window) if spec.variant in WINDOW_VARIANTS else {}
-    return hooks | window
+    """Varyantın Claude Code ayarları: codec kollarında codec hook'ları, özet kollarında sıkıştırma
+    özeti hook'u, pencere kollarında pencere."""
+    return merge_settings(
+        [
+            *([hook_settings(sys.executable)] if spec.variant in CODEC_VARIANTS else []),
+            *([brief_settings(sys.executable)] if spec.variant in BRIEF_VARIANTS else []),
+            *([governor_env(spec.window)] if spec.variant in WINDOW_VARIANTS else []),
+        ]
+    )
 
 
 def agent_env(spec: RunSpec, run_dir: Path, base: Mapping[str, str]) -> dict[str, str]:

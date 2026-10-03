@@ -68,6 +68,8 @@ cimrihook bench-run --name claude-ablation --agents claude --protocols sequentia
   --variants baseline,governor,codec,combined --window 100000 --reps 5
 cimrihook bench-run --name codex-governor --agents codex --protocols sequential \
   --variants baseline,governor --window 60000 --reps 5
+cimrihook bench-run --name claude-deep --agents claude --protocols deep \
+  --variants baseline,governor,brief --window 183000 --reps 5
 cimrihook bench-report --name claude-ablation
 ```
 
@@ -82,6 +84,7 @@ Codex CLI (`codex exec`) in one arm per mechanism:
 | `governor` | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (at least 100000; compacts at window − 33k) | `model_auto_compact_token_limit` |
 | `codec` | codec hooks only | not available (hooks cannot rewrite tool output) |
 | `combined` | window and codec hooks | not available |
+| `brief` | window and the compaction brief (PreCompact) | not available |
 
 - **Isolation:** every run gets its own workspace and virtual environment. Agents get only an
   allowlisted environment (no inherited `CLAUDE_CODE_*`/`ANTHROPIC_*` variables). Claude Code
@@ -101,7 +104,9 @@ Codex CLI (`codex exec`) in one arm per mechanism:
   compared with a Newcombe interval. Non-inferiority at −5 points is only decided with at least
   five runs per arm. Cumulative costs at steps 5/10/20/40 come from the same runs.
 - **Long sessions:** the `sequential` protocol injects the bugs one at a time into the same session,
-  so the context accumulates the way it does in real work.
+  so the context accumulates the way it does in real work. The `deep` protocol (Claude Code only)
+  first has the agent read every library source file, so the session starts at about 200k tokens
+  of context that mostly goes stale: the regime where most real spend happens.
 - **Resumable:** results are written per run, so an interrupted batch picks up where it stopped.
   Runs that hit a usage limit (a failed turn, or a step without model requests) are recorded as
   unmeasured and re-run.
