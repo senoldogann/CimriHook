@@ -1,4 +1,5 @@
-"""Komut satırı: hook | report | audit | simulate | settings | bench-run | bench-report."""
+"""Komut satırı: hook | report | audit | simulate | settings | bench-run | bench-report |
+bench-remeasure | bench-calibrate."""
 
 import argparse
 import json
@@ -16,7 +17,9 @@ from cimrihook.bench import (
     load_results,
     load_tasks,
     plan_runs,
+    remeasure_results,
     render_bench_report,
+    render_calibration,
     run_plan,
     select_tasks,
 )
@@ -27,6 +30,7 @@ from cimrihook.ledger import Ledger
 from cimrihook.report import render_savings
 from cimrihook.settings import governor_env, hook_settings
 from cimrihook.simulate import (
+    CostOverrides,
     claude_hint,
     codex_hint,
     render_simulation,
@@ -36,9 +40,10 @@ from cimrihook.simulate import (
 
 DEFAULT_PROJECTS_DIR: Final = "~/.claude/projects"
 DEFAULT_AUDIT_DAYS: Final = 30
-DEFAULT_SUMMARY_TOKENS: Final = 12_000
-DEFAULT_REFETCH_TOKENS: Final = 20_000
-DEFAULT_REFETCH_REQUESTS: Final = 3
+# Sıkıştırmadan sonraki ilk isteğin bağlamı yeniden eklenen dosyaları zaten içerir; gerçek
+# oturumlarda bunun dışında yeniden okuma medyanı sıfırdır.
+DEFAULT_REFETCH_TOKENS: Final = 0
+DEFAULT_REFETCH_REQUESTS: Final = 0
 SIMULATORS: Final = {"claude": simulate_claude, "codex": simulate_codex}
 APPLY_HINTS: Final = {"claude": claude_hint, "codex": codex_hint}
 DEFAULT_LOGS: Final = {"claude": "~/.claude/projects", "codex": "~/.codex/sessions"}
@@ -73,18 +78,34 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--agent", choices=sorted(SIMULATORS), default="claude")
     simulate.add_argument("--logs-dir", help="default: ~/.claude/projects or ~/.codex/sessions")
     simulate.add_argument("--days", type=int, default=DEFAULT_AUDIT_DAYS)
-    simulate.add_argument("--summary-tokens", type=int, default=DEFAULT_SUMMARY_TOKENS)
-    simulate.add_argument("--refetch-tokens", type=int, default=DEFAULT_REFETCH_TOKENS)
+    simulate.add_argument(
+        "--summary-tokens",
+        type=int,
+        help="output tokens of a compaction summary (default: median of real compactions)",
+    )
+    simulate.add_argument(
+        "--refetch-tokens",
+        type=int,
+        default=DEFAULT_REFETCH_TOKENS,
+        help="content re-read after a compaction beyond the next request's context",
+    )
     simulate.add_argument("--refetch-requests", type=int, default=DEFAULT_REFETCH_REQUESTS)
     simulate.add_argument(
         "--read-weight",
         type=float,
-        help="cache-read price multiplier (default 0.1; Opus 5.5: 0.05, Fable 5.1: 0.025)",
+        help="cache-read multiplier for every model (default: per model; Opus 5.x 0.05, "
+        "Fable 5.1 0.025, other models 0.1)",
     )
     simulate.add_argument(
         "--post-compact-tokens",
         type=int,
-        help="context size after a compaction (default: median of real compactions)",
+        help="context of the first request after a compaction, system prompt included "
+        "(default: median of real compactions)",
+    )
+    simulate.add_argument(
+        "--post-compact-cached",
+        type=int,
+        help="part of that context still cached (default: median of real compactions)",
     )
     settings = commands.add_parser("settings", help="print the Claude Code settings JSON")
     settings.add_argument(
@@ -100,13 +121,20 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--tasks", help="comma-separated task ids (default: all)")
     bench.add_argument("--protocols", default="single", help="single and/or sequential")
     bench.add_argument("--agents", default="claude,codex")
-    bench.add_argument("--variants", default="baseline,cimrihook")
+    bench.add_argument(
+        "--variants",
+        default="baseline,governor",
+        help="baseline, governor, codec, combined (codec and combined: claude only)",
+    )
     bench.add_argument("--reps", type=int, default=1)
     bench.add_argument("--claude-model", default=DEFAULT_CLAUDE_MODEL)
     bench.add_argument("--codex-model", default=DEFAULT_CODEX_MODEL)
     bench.add_argument("--effort", default=DEFAULT_EFFORT)
     bench.add_argument(
-        "--window", type=int, default=DEFAULT_WINDOW, help="compaction window of the cimrihook arm"
+        "--window",
+        type=int,
+        default=DEFAULT_WINDOW,
+        help="compaction window of the governor and combined arms (claude: at least 100000)",
     )
     bench.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY)
     bench.add_argument(
@@ -117,6 +145,19 @@ def build_parser() -> argparse.ArgumentParser:
     bench_report = commands.add_parser("bench-report", help="summarize an A/B result set")
     bench_report.add_argument("--name", required=True)
     bench_report.add_argument("--results-dir", default=DEFAULT_RESULTS_DIR)
+    remeasure = commands.add_parser(
+        "bench-remeasure",
+        help="re-measure a result set from the agents' logs with the current schema (no runs)",
+    )
+    remeasure.add_argument("--name", required=True)
+    remeasure.add_argument("--results-dir", default=DEFAULT_RESULTS_DIR)
+    remeasure.add_argument("--work-dir", default=DEFAULT_WORK_DIR)
+    calibrate = commands.add_parser(
+        "bench-calibrate",
+        help="check the simulator's prediction against a measured A/B result set",
+    )
+    calibrate.add_argument("--name", required=True)
+    calibrate.add_argument("--results-dir", default=DEFAULT_RESULTS_DIR)
     return parser
 
 
@@ -128,6 +169,11 @@ def live_report(config: Config, session: str | None) -> str:
         return render_savings(
             f"CimriHook live savings (session {session})", ledger.savings_for_session(session)
         )
+
+
+def optional_int(value: object) -> int | None:
+    """argparse'ın verilmemiş (None) ya da tam sayı değeri."""
+    return None if value is None else int(str(value))
 
 
 def split_csv(raw: str) -> tuple[str, ...]:
@@ -215,11 +261,14 @@ def main() -> None:
                 Path(logs_dir).expanduser(),
                 int(args.days),
                 time.time(),
-                int(args.summary_tokens),
-                int(args.refetch_tokens),
-                int(args.refetch_requests),
-                None if args.post_compact_tokens is None else int(args.post_compact_tokens),
-                None if args.read_weight is None else float(args.read_weight),
+                CostOverrides(
+                    post_compact_tokens=optional_int(args.post_compact_tokens),
+                    post_compact_cached=optional_int(args.post_compact_cached),
+                    summary_tokens=optional_int(args.summary_tokens),
+                    refetch_tokens=int(args.refetch_tokens),
+                    refetch_requests=int(args.refetch_requests),
+                    read_weight=None if args.read_weight is None else float(args.read_weight),
+                ),
             )
             print(render_simulation(simulation, APPLY_HINTS[agent]))
         elif command == "bench-run":
@@ -227,6 +276,15 @@ def main() -> None:
         elif command == "bench-report":
             results_dir = Path(str(args.results_dir)) / str(args.name)
             print(render_bench_report(load_results(results_dir)))
+        elif command == "bench-remeasure":
+            name = str(args.name)
+            results = remeasure_results(
+                Path(str(args.results_dir)) / name, Path(str(args.work_dir)) / name
+            )
+            print(render_bench_report(results))
+        elif command == "bench-calibrate":
+            results_dir = Path(str(args.results_dir)) / str(args.name)
+            print(render_calibration(load_results(results_dir)))
         else:
             window: int | None = args.compact_window
             extra = {} if window is None else governor_env(window)

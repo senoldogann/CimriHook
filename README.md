@@ -24,34 +24,71 @@ never sends the same information twice.
 
 ```bash
 cimrihook simulate --days 30                   # cost of each compaction policy on your sessions
-cimrihook settings --compact-window 200000     # adds CLAUDE_CODE_AUTO_COMPACT_WINDOW
+cimrihook settings --compact-window 183000     # adds CLAUDE_CODE_AUTO_COMPACT_WINDOW
+cimrihook bench-calibrate --name <set>         # simulated vs measured savings of an A/B set
 ```
 
-`simulate` rebuilds the real request sequence from the usage logs and checks itself against the
-exact cost recorded there. It then replays the sequence under each policy and charges every
-compaction for reading the context, writing the summary (output price) and re-reading files
-afterwards. Claude Code applies the window to the conversation, and the system prompt comes on top
-of it. Simulated savings assume the agent behaves the same apart from those re-reads, so check task
-quality with an A/B run before adopting a small window.
+`simulate` rebuilds the real request sequence from the usage logs, prices each session with its
+own model's cache multipliers and checks the replay against the exact cost recorded there. It then
+replays the sequence under each policy. The cost of a compaction comes from the real compactions in
+the logs: the summary request reads the context once and writes the summary at the output price,
+and the next request carries the new context (system prompt, tools, summary and re-attached
+files), of which only the part that is no longer cached is written again. Simulated savings assume
+the agent behaves the same otherwise. `bench-calibrate` replays the baseline runs of an A/B set at
+the treatment's real trigger point and prints how far the prediction is from the measured ratio.
+Check task quality with an A/B run before adopting a small window.
+
+Claude Code compacts once the context reaches the window minus 33,000 tokens (a 20,000-token
+output reserve and a 13,000-token buffer) and raises windows below 100,000 to 100,000, so
+compaction cannot start before about 67,000 tokens. `simulate` prints the setting for its best
+policy.
 
 ## Evaluate with your real subscriptions
 
 ```bash
-cimrihook bench-run --name pilot --protocols single,sequential --reps 3
-cimrihook bench-report --name pilot
+cimrihook bench-run --name claude-ablation --agents claude --protocols sequential \
+  --variants baseline,governor,codec,combined --window 100000 --reps 5
+cimrihook bench-run --name codex-governor --agents codex --protocols sequential \
+  --variants baseline,governor --window 60000 --reps 5
+cimrihook bench-report --name claude-ablation
 ```
 
 Every task in `bench/tasks/*.json` is a real repository at a pinned tag with one-line bugs
-injected. A run succeeds when the repository's own test suite passes and no test file was touched.
-The harness runs each task with your logged-in Claude Code (`claude -p`) and Codex CLI
-(`codex exec`), once on the default configuration and once with CimriHook.
+injected. A run succeeds when the repository's own test suite passes after every step and no test
+file was touched. The harness runs each task with your logged-in Claude Code (`claude -p`) and
+Codex CLI (`codex exec`) in one arm per mechanism:
 
-- **Isolation:** every run gets its own workspace and virtual environment.
-- **Measurement:** token usage comes from the agent's own session log (the Claude transcript
-  including subagents, or the Codex rollout) and is priced with the provider's cache multipliers.
+| Variant | Claude Code | Codex CLI |
+|---|---|---|
+| `baseline` | default behaviour | default behaviour |
+| `governor` | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (at least 100000; compacts at window − 33k) | `model_auto_compact_token_limit` |
+| `codec` | codec hooks only | not available (hooks cannot rewrite tool output) |
+| `combined` | window and codec hooks | not available |
+
+- **Isolation:** every run gets its own workspace and virtual environment. Agents get only an
+  allowlisted environment (no inherited `CLAUDE_CODE_*`/`ANTHROPIC_*` variables). Claude Code
+  runs with project settings only and `--strict-mcp-config`; Codex runs with
+  `--ignore-user-config`.
+- **Primary cost:** what the provider bills, including compaction and auxiliary requests. For
+  Claude Code this is the cumulative `total_cost_usd` of the last step (USD). For Codex it is the
+  sum of the rollout's per-response `token_usage_record` entries, priced with the sheet that is
+  stored in each result (base input units). The report also prints the Codex ratio under a range
+  of price sheets.
+- **Transcript cost:** `cost_base` sums only the requests in the session log (the Claude
+  transcript including subagents, or the Codex `token_count` events). It leaves out the
+  compaction request, so the gap between the two costs is the compaction overhead.
+- **Statistics:** each scenario compares geometric mean costs with a 95% Welch t interval on log
+  cost; no interval is given when an arm has fewer than two runs. The per-agent summary weights
+  scenarios equally and uses only scenarios measured equally often in both arms. Step success is
+  compared with a Newcombe interval. Non-inferiority at −5 points is only decided with at least
+  five runs per arm. Cumulative costs at steps 5/10/20/40 come from the same runs.
 - **Long sessions:** the `sequential` protocol injects the bugs one at a time into the same session,
   so the context accumulates the way it does in real work.
 - **Resumable:** results are written per run, so an interrupted batch picks up where it stopped.
+  Runs that hit a usage limit (a failed turn, or a step without model requests) are recorded as
+  unmeasured and re-run.
+- **Re-measuring:** `cimrihook bench-remeasure --name <set>` recomputes a result set from the
+  agents' logs with the current schema without running the agents again.
 
 ## Encode tool results
 
@@ -98,8 +135,10 @@ cimrihook audit --days 30   # replay your past transcripts: what would CimriHook
 cimrihook report            # savings recorded by the live hook
 ```
 
-`audit` runs the same codec over the tool results stored in `~/.claude/projects`. It reports direct
-token savings and a context-residency weighted share of your input cost. The weighting reflects
+`audit` runs the same codec over the tool results stored in `~/.claude/projects`. Subagent
+transcripts do not store the structured tool result, so their Read and Bash results are parsed
+from the text the model received. It reports direct token savings and a context-residency
+weighted share of your input cost. The weighting reflects
 that each saved token would have been re-read from cache on every later request until compaction,
 priced with the 5-minute/1-hour cache-write mix found in your own usage data.
 

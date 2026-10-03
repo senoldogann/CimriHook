@@ -1,25 +1,40 @@
-"""Gerçek aboneliklerle A/B değerlendirme düzeneği: aynı görev ve ajan, CimriHook açık ve kapalı.
+"""Gerçek aboneliklerle A/B değerlendirme düzeneği: aynı görev ve ajan, CimriHook mekanizmaları
+açık ve kapalı.
 
 Her çalıştırma yalıtılmış bir çalışma alanında yapılır: görev deposu sabit bir sürümden kopyalanır,
 testler için ayrı bir sanal ortam kurulur ve başlangıç durumu git ile mühürlenir. Ajan (Claude
-Code ya da Codex CLI) kullanıcının oturum açmış aboneliğiyle etkileşimsiz modda çalışır. Başarı:
-test paketinin geçmesi ve hiçbir test dosyasına dokunulmamış olması. Token kullanımı ajanın kendi
-oturum kaydından (Claude transcript'i ve alt ajan kayıtları, Codex rollout'u) simülatörle aynı
-ayrıştırıcılarla okunur.
+Code ya da Codex CLI) kullanıcının oturum açmış aboneliğiyle etkileşimsiz modda, devralınmamış bir
+ortamla çalışır: yalnızca izin listesindeki ortam değişkenleri geçer, Claude Code'a kullanıcı
+ayarları ve MCP sunucuları, Codex'e kullanıcının config.toml'u yüklenmez. Başarı: her adımdan sonra
+test paketinin geçmesi ve hiçbir test dosyasına dokunulmamış olması.
 
 Protokoller:
 - single: tüm hatalar baştan enjekte edilir; ajan tek bir istekte hepsini düzeltir.
 - sequential: hatalar aynı oturumda birer birer gelir; ajan her birini konuşmanın devamında
   düzeltir. Gerçek kullanımdaki uzun, birikimli oturumları taklit eder.
 
-Varyantlar:
+Varyantlar (mekanizma ablasyonu):
 - baseline: ajanın varsayılan davranışı.
-- cimrihook: bağlam yöneticisi (sıkıştırma penceresi) ve Claude Code'da codec hook'ları.
+- governor: yalnızca sıkıştırma penceresi (Claude Code: CLAUDE_CODE_AUTO_COMPACT_WINDOW, en az
+  100000; Codex: model_auto_compact_token_limit).
+- codec: yalnızca codec hook'ları (yalnızca Claude Code; Codex hook'ları araç çıktısını
+  değiştiremez).
+- combined: pencere ve codec birlikte (yalnızca Claude Code).
+
+Ölçüm:
+- Birincil maliyet sağlayıcı düzeyindedir ve sıkıştırma ile yardımcı çağrıları içerir. Claude Code
+  için her adımın sonuç kaydındaki kümülatif total_cost_usd (USD), Codex için rollout'taki yanıt
+  başına token_usage_record kayıtları, açık bir fiyat tablosuyla taban girdi fiyatı cinsinden.
+- İkincil maliyet (cost_base) yalnızca oturum kayıtlarındaki istekleri (Claude transcript'i, Codex
+  token_count olayları) simülatörle aynı ayrıştırıcılarla toplar; sıkıştırma çağrısını içermez.
+- Raporda kollar senaryo bazında log maliyetlerin geometrik ortalamasıyla karşılaştırılır; ajan
+  düzeyindeki özet yalnızca iki kolu eşit sayıda ölçülmüş senaryoları eşit ağırlıkla birleştirir.
 """
 
+import itertools
 import json
+import math
 import os
-import random
 import shutil
 import signal
 import statistics
@@ -27,26 +42,40 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Final
 
+from cimrihook.audit import Usage, average_write_weight, parse_line
 from cimrihook.errors import BenchError
 from cimrihook.settings import governor_env, hook_settings
 from cimrihook.simulate import (
-    ANTHROPIC,
+    CLAUDE_MIN_COMPACT_WINDOW,
+    OBSERVED,
     OPENAI,
+    CostModel,
+    Policy,
     PriceSheet,
     SessionTrace,
     context_of,
     exact_cost,
     load_claude_trace,
     load_codex_trace,
+    simulate_trace,
+    total_usage,
+)
+from cimrihook.stats import (
+    RatioEstimate,
+    geometric_mean,
+    pooled_ratio,
+    rate_difference,
+    ratio_estimate,
 )
 
+RESULT_SCHEMA: Final = 2
 MAX_TURNS: Final = 400
 TEST_TIMEOUT_SECONDS: Final = 600
 CLAUDE_TOOLS: Final = "Read,Edit,MultiEdit,Write,Bash,Glob,Grep"
@@ -66,10 +95,35 @@ GIT_IDENTITY: Final = (
     "-c",
     "core.hooksPath=/dev/null",
 )
-BOOTSTRAP_ROUNDS: Final = 2000
-BOOTSTRAP_SEED: Final = 7
-# Opus 5.5 önbellek okumayı 0.05, Fable 5.1 0.025 çarpanıyla fiyatlar; diğer Claude modelleri 0.1.
-CLAUDE_READ_WEIGHTS: Final = (("opus", 0.05), ("fable", 0.025))
+# Ajan süreçlerine geçen ortam değişkenleri. Geri kalanı devralınmaz: benchmark bir Claude Code
+# oturumundan başlatıldığında o oturumun CLAUDE_CODE_*, ANTHROPIC_* gibi değişkenleri ajanın
+# modelini, effort seviyesini, API adresini ve davranışını değiştirir.
+ENV_ALLOWLIST: Final = (
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+)
+REQUIRED_ENV: Final = ("PATH", "HOME")
+USD: Final = "usd"
+BASE_INPUT_TOKENS: Final = "base_input_tokens"
+CLAUDE_PRICE_SHEET: Final = "Claude Code total_cost_usd (includes compaction and auxiliary calls)"
+CHECKPOINT_STEPS: Final = (5, 10, 20, 40)
+NONINFERIORITY_MARGIN: Final = 0.05  # adım başarısında kabul edilen en büyük düşüş
+# Adımlar aynı oturumda birbirine bağlıdır; adım düzeyindeki aralık bunu yok saydığından karar için
+# kol başına en az bu kadar bağımsız çalıştırma istenir.
+MIN_RUNS_FOR_VERDICT: Final = 5
+# Simülatörün kabul edilen tahmin hatası (oran puanı): tahmin ölçülen oranın bu kadar yakınında.
+CALIBRATION_TOLERANCE: Final = 0.05
+# Codex fiyat tablosu duyarlılığı: önbellekli girdi ve çıktı çarpanlarının makul aralığı.
+CODEX_SENSITIVITY: Final = tuple(
+    replace(OPENAI, read=read, output=output) for read in (0.1, 0.25) for output in (4.0, 6.0, 8.0)
+)
 FIRST_BUG_PROMPT: Final = (
     "The test suite of this repository fails because of a bug in the library code. Find the bug "
     "and fix it in the library code. Do not modify, add, or delete any test files. The test "
@@ -91,10 +145,27 @@ class Agent(StrEnum):
 
 
 class Variant(StrEnum):
-    """A/B kolu."""
+    """A/B kolu: açık olan CimriHook mekanizmaları."""
 
     BASELINE = "baseline"
-    CIMRIHOOK = "cimrihook"
+    GOVERNOR = "governor"
+    CODEC = "codec"
+    COMBINED = "combined"
+
+
+WINDOW_VARIANTS: Final = frozenset({Variant.GOVERNOR, Variant.COMBINED})
+CODEC_VARIANTS: Final = frozenset({Variant.CODEC, Variant.COMBINED})
+CODEX_VARIANTS: Final = frozenset({Variant.BASELINE, Variant.GOVERNOR})
+# Önceki şemanın tek tedavi kolu: Claude Code'da pencere ve codec, Codex'te yalnızca pencere.
+LEGACY_VARIANT: Final = "cimrihook"
+ISOLATION: Final[dict[Agent, str]] = {
+    Agent.CLAUDE: "allowlisted environment; --setting-sources project; --strict-mcp-config",
+    Agent.CODEX: "allowlisted environment; --ignore-user-config; approval_policy=never",
+}
+LEGACY_ISOLATION: Final[dict[Agent, str]] = {
+    Agent.CLAUDE: "inherited environment; --setting-sources project",
+    Agent.CODEX: "inherited environment; user config.toml loaded",
+}
 
 
 class Protocol(StrEnum):
@@ -151,13 +222,24 @@ class ProcessOutcome:
 
 
 @dataclass(frozen=True, slots=True)
+class ReportedUsage:
+    """Claude Code'un sonuç kaydındaki oturum toplamları (tüm modeller, sürdürmelerde kümülatif)."""
+
+    cost_usd: float
+    uncached: int
+    cache_write: int
+    cache_read: int
+    output: int
+
+
+@dataclass(frozen=True, slots=True)
 class AgentRun:
     """Tek bir ajan çağrısının sonucu."""
 
     session_id: str
     exit_code: int
     timed_out: bool
-    reported_usd: float | None  # yalnızca Claude Code API eşdeğeri maliyeti raporlar
+    reported: ReportedUsage | None  # yalnızca Claude Code raporlar; süre aşımında yoktur
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,19 +249,19 @@ class SessionOutcome:
     session_id: str
     exit_code: int  # son çağrının çıkış kodu
     timed_out: bool  # herhangi bir çağrı süreyi aştı mı
-    reported_usd: float | None
+    reported: tuple[ReportedUsage | None, ...]  # adım başına Claude Code raporu
     duration_seconds: float
-    steps: int
-    steps_passed: int
+    step_passed: tuple[bool, ...]  # her adımdan sonra test paketi geçti mi
     passed: bool  # sonda test paketi geçiyor mu
 
 
 @dataclass(frozen=True, slots=True)
 class Measurement:
-    """Oturum kayıtlarından ölçülen token kullanımı."""
+    """Oturum kayıtlarındaki isteklerden ölçülen token kullanımı (sıkıştırma çağrısı hariç)."""
 
     requests: int
     compactions: int
+    compaction_pre_tokens: tuple[int, ...]  # sıkıştırmaları tetikleyen bağlam boyutları
     max_context: int
     mean_context: float
     uncached: int
@@ -190,29 +272,98 @@ class Measurement:
 
 
 @dataclass(frozen=True, slots=True)
-class RunResult:
-    """Bir çalıştırmanın kalıcı sonucu (bench/results/<ad>/<run_id>.json)."""
+class ProviderMeasurement:
+    """Sağlayıcı düzeyinde ölçüm: sıkıştırma ve yardımcı çağrılar dahil birincil maliyet."""
+
+    cost_by_step: tuple[float, ...]  # adım sonlarındaki kümülatif maliyet; son eleman toplamdır
+    unit: str  # USD ya da BASE_INPUT_TOKENS
+    price_sheet: str
+    uncached: int
+    cache_write: int
+    cache_read: int
+    output: int
+
+
+@dataclass(frozen=True, slots=True)
+class CodexRecords:
+    """Codex rollout'undaki yanıt başına kullanım kayıtları, görev (adım) sırasıyla."""
+
+    steps: tuple[tuple[Usage, ...], ...]
+    cli_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class AgentLogs:
+    """Bir çalıştırmanın ajan kayıtlarından okunan ölçümler."""
+
+    measurement: Measurement
+    provider: ProviderMeasurement | None  # bir adımın sağlayıcı toplamı yoksa None
+    version: str
+
+
+@dataclass(frozen=True, slots=True)
+class RunIdentity:
+    """Bir çalıştırmanın ne olduğu: görev, ajan, kol ve koşullar."""
 
     run_id: str
     task_id: str
     protocol: str
-    agent: str
-    variant: str
+    agent: Agent
+    variant: str  # çalıştırıldığı adıyla kol
+    mechanism: Variant  # gerçekte açık olan mekanizma
     model: str
     effort: str
     window: int
+    isolation: str
+    repetition: int
+
+
+@dataclass(frozen=True, slots=True)
+class RunBehaviour:
+    """Ajanın çalıştırmadaki davranışı ve görev sonucu."""
+
+    session_id: str
+    success: bool
+    steps: int
+    steps_passed: int
+    step_passed: tuple[bool, ...]
+    tests_touched: bool
+    agent_exit: int
+    timed_out: bool
+    duration_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class RunResult:
+    """Bir çalıştırmanın kalıcı sonucu (bench/results/<ad>/<run_id>.json)."""
+
+    schema: int
+    run_id: str
+    task_id: str
+    protocol: str
+    agent: str
+    variant: str  # çalıştırıldığı adıyla kol (eski şemada "cimrihook")
+    mechanism: str  # gerçekte açık olan mekanizma: baseline, governor, codec ya da combined
+    model: str
+    effort: str
+    window: int  # istenen sıkıştırma penceresi
+    effective_window: int | None  # ajanın uyguladığı pencere; kol pencere ayarlamıyorsa None
+    isolation: str  # ajan sürecinin ortamı ve yüklenen yapılandırma
+    agent_version: str
     repetition: int
     session_id: str
     success: bool
     steps: int
     steps_passed: int
+    step_passed: tuple[bool, ...]  # adım başına sonuç; eski şemada bilinmiyorsa boş
     tests_touched: bool
     agent_exit: int
     timed_out: bool
     duration_seconds: float
-    reported_usd: float | None
+    provider: ProviderMeasurement | None  # birincil maliyet; bilinmiyorsa None
     requests: int
     compactions: int
+    compaction_pre_tokens: tuple[int, ...]
     max_context: int
     mean_context: float
     uncached: int
@@ -274,8 +425,11 @@ def plan_runs(
     effort: str,
     window: int,
 ) -> tuple[RunSpec, ...]:
-    """Çalıştırma matrisi; aynı görev ve ajanın kolları art arda sıralanır."""
-    return tuple(
+    """Çalıştırma matrisi; aynı görev ve ajanın kolları art arda sıralanır.
+
+    Ajanın uygulayamayacağı kollar ve pencereler hatadır; sessizce farklı bir koşul ölçülmez.
+    """
+    specs = tuple(
         RunSpec(
             task=task,
             protocol=protocol,
@@ -292,6 +446,42 @@ def plan_runs(
         for agent in agents
         for variant in variants
     )
+    problems = sorted({problem for spec in specs if (problem := spec_problem(spec)) is not None})
+    if problems:
+        raise BenchError(f"invalid run matrix: {'; '.join(problems)}")
+    return specs
+
+
+def spec_problem(spec: RunSpec) -> str | None:
+    """Ajanın bu kolu ya da pencereyi uygulayamamasının nedeni; uygulayabiliyorsa None."""
+    if spec.agent is Agent.CODEX and spec.variant not in CODEX_VARIANTS:
+        return (
+            f"codex cannot run variant {spec.variant.value!r}: Codex hooks cannot rewrite tool "
+            "output, so run codex with --variants baseline,governor"
+        )
+    if (
+        spec.agent is Agent.CLAUDE
+        and spec.variant in WINDOW_VARIANTS
+        and spec.window < CLAUDE_MIN_COMPACT_WINDOW
+    ):
+        return (
+            f"claude window {spec.window} is below {CLAUDE_MIN_COMPACT_WINDOW}: Claude Code raises "
+            "CLAUDE_CODE_AUTO_COMPACT_WINDOW to that minimum, so the run would not test this window"
+        )
+    return None
+
+
+def effective_window(agent: Agent, mechanism: Variant, window: int) -> int | None:
+    """Ajanın gerçekte uyguladığı sıkıştırma penceresi; kol pencere ayarlamıyorsa None.
+
+    Claude Code 2.1.288 CLAUDE_CODE_AUTO_COMPACT_WINDOW'u en az 100000'e yükseltir ve otomatik
+    sıkıştırmayı pencere − 20000 (çıktı payı) − 13000 token bağlamda tetikler.
+    """
+    if mechanism not in WINDOW_VARIANTS:
+        return None
+    if agent is Agent.CLAUDE:
+        return max(window, CLAUDE_MIN_COMPACT_WINDOW)
+    return window
 
 
 def run_id(spec: RunSpec) -> str:
@@ -345,15 +535,18 @@ def needs_run(path: Path) -> bool:
 
 def progress_fields(result: RunResult) -> dict[str, object]:
     """İlerleme satırının yapılandırılmış alanları."""
+    provider = result.provider
     return {
         "event": "run_finished",
         "run_id": result.run_id,
         "success": result.success,
         "steps_passed": f"{result.steps_passed}/{result.steps}",
+        "provider_cost": None if provider is None else provider.cost_by_step[-1],
+        "provider_unit": None if provider is None else provider.unit,
         "cost_base": round(result.cost_base),
-        "reported_usd": result.reported_usd,
         "requests": result.requests,
         "compactions": result.compactions,
+        "compaction_pre_tokens": list(result.compaction_pre_tokens),
         "max_context": result.max_context,
         "minutes": round(result.duration_seconds / 60, 1),
         "error": result.error,
@@ -373,32 +566,71 @@ def execute_run(spec: RunSpec, repo_dir: Path, work_dir: Path, timeout: int) -> 
         else:
             outcome = run_sequential(spec, repo_dir, workspace, run_dir, timeout)
         touched = touched_test_files(workspace, repo_dir)
-        measurement = measure_run(spec, outcome.session_id)
-        if measurement.requests == 0:
-            raise BenchError(f"{identifier}: the agent made no model requests")
+        logs = read_agent_logs(
+            spec.agent, outcome.session_id, outcome.reported, len(outcome.step_passed)
+        )
     except BenchError as error:
         return failed_result(spec, identifier, str(error))
+    return measured_result(
+        RunIdentity(
+            run_id=identifier,
+            task_id=spec.task.id,
+            protocol=spec.protocol.value,
+            agent=spec.agent,
+            variant=spec.variant.value,
+            mechanism=spec.variant,
+            model=spec.model,
+            effort=spec.effort,
+            window=spec.window,
+            isolation=ISOLATION[spec.agent],
+            repetition=spec.repetition,
+        ),
+        RunBehaviour(
+            session_id=outcome.session_id,
+            success=outcome.passed and all(outcome.step_passed) and not touched,
+            steps=len(outcome.step_passed),
+            steps_passed=sum(outcome.step_passed),
+            step_passed=outcome.step_passed,
+            tests_touched=bool(touched),
+            agent_exit=outcome.exit_code,
+            timed_out=outcome.timed_out,
+            duration_seconds=outcome.duration_seconds,
+        ),
+        logs,
+    )
+
+
+def measured_result(identity: RunIdentity, behaviour: RunBehaviour, logs: AgentLogs) -> RunResult:
+    """Çalıştırmanın kimliği, ajan davranışı ve kayıtlardan ölçümler tek sonuç kaydında."""
+    measurement = logs.measurement
     return RunResult(
-        run_id=identifier,
-        task_id=spec.task.id,
-        protocol=spec.protocol.value,
-        agent=spec.agent.value,
-        variant=spec.variant.value,
-        model=spec.model,
-        effort=spec.effort,
-        window=spec.window,
-        repetition=spec.repetition,
-        session_id=outcome.session_id,
-        success=outcome.passed and outcome.steps_passed == outcome.steps and not touched,
-        steps=outcome.steps,
-        steps_passed=outcome.steps_passed,
-        tests_touched=bool(touched),
-        agent_exit=outcome.exit_code,
-        timed_out=outcome.timed_out,
-        duration_seconds=outcome.duration_seconds,
-        reported_usd=outcome.reported_usd,
+        schema=RESULT_SCHEMA,
+        run_id=identity.run_id,
+        task_id=identity.task_id,
+        protocol=identity.protocol,
+        agent=identity.agent.value,
+        variant=identity.variant,
+        mechanism=identity.mechanism.value,
+        model=identity.model,
+        effort=identity.effort,
+        window=identity.window,
+        effective_window=effective_window(identity.agent, identity.mechanism, identity.window),
+        isolation=identity.isolation,
+        agent_version=logs.version,
+        repetition=identity.repetition,
+        session_id=behaviour.session_id,
+        success=behaviour.success,
+        steps=behaviour.steps,
+        steps_passed=behaviour.steps_passed,
+        step_passed=behaviour.step_passed,
+        tests_touched=behaviour.tests_touched,
+        agent_exit=behaviour.agent_exit,
+        timed_out=behaviour.timed_out,
+        duration_seconds=behaviour.duration_seconds,
+        provider=logs.provider,
         requests=measurement.requests,
         compactions=measurement.compactions,
+        compaction_pre_tokens=measurement.compaction_pre_tokens,
         max_context=measurement.max_context,
         mean_context=measurement.mean_context,
         uncached=measurement.uncached,
@@ -428,10 +660,9 @@ def run_single(
         session_id=call.session_id,
         exit_code=call.exit_code,
         timed_out=call.timed_out,
-        reported_usd=call.reported_usd,
+        reported=(call.reported,),
         duration_seconds=duration,
-        steps=1,
-        steps_passed=int(passed),
+        step_passed=(passed,),
         passed=passed,
     )
 
@@ -445,7 +676,7 @@ def run_sequential(
         raise BenchError(f"{spec.task.id}: test suite fails before any mutation at {spec.task.ref}")
     started = time.monotonic()
     calls: list[AgentRun] = []
-    steps_passed = 0
+    step_passed: list[bool] = []
     for step, mutation in enumerate(spec.task.mutations, start=1):
         apply_mutation(workspace, mutation)
         if tests_pass(spec.task, workspace):
@@ -458,43 +689,68 @@ def run_sequential(
             calls.append(
                 resume_agent(spec, session_id, NEXT_BUG_PROMPT, workspace, run_dir, timeout, step)
             )
-        steps_passed += int(tests_pass(spec.task, workspace))
+        step_passed.append(tests_pass(spec.task, workspace))
     return SessionOutcome(
         session_id=calls[0].session_id,
         exit_code=calls[-1].exit_code,
         timed_out=any(call.timed_out for call in calls),
-        # Claude Code her sürdürmede oturumun o ana kadarki birikimli maliyetini raporlar.
-        reported_usd=calls[-1].reported_usd,
+        reported=tuple(call.reported for call in calls),
         duration_seconds=time.monotonic() - started,
-        steps=len(calls),
-        steps_passed=steps_passed,
+        step_passed=tuple(step_passed),
         passed=tests_pass(spec.task, workspace),
     )
 
 
 def failed_result(spec: RunSpec, identifier: str, message: str) -> RunResult:
     """Ölçülemeyen çalıştırmanın kaydı; istatistiklerden çıkarılır, raporda görünür."""
+    return unmeasured_result(
+        RunIdentity(
+            run_id=identifier,
+            task_id=spec.task.id,
+            protocol=spec.protocol.value,
+            agent=spec.agent,
+            variant=spec.variant.value,
+            mechanism=spec.variant,
+            model=spec.model,
+            effort=spec.effort,
+            window=spec.window,
+            isolation=ISOLATION[spec.agent],
+            repetition=spec.repetition,
+        ),
+        message,
+    )
+
+
+def unmeasured_result(identity: RunIdentity, message: str) -> RunResult:
+    """Ölçüm alanları boş, nedeni error alanında olan sonuç kaydı."""
     return RunResult(
-        run_id=identifier,
-        task_id=spec.task.id,
-        protocol=spec.protocol.value,
-        agent=spec.agent.value,
-        variant=spec.variant.value,
-        model=spec.model,
-        effort=spec.effort,
-        window=spec.window,
-        repetition=spec.repetition,
+        schema=RESULT_SCHEMA,
+        run_id=identity.run_id,
+        task_id=identity.task_id,
+        protocol=identity.protocol,
+        agent=identity.agent.value,
+        variant=identity.variant,
+        mechanism=identity.mechanism.value,
+        model=identity.model,
+        effort=identity.effort,
+        window=identity.window,
+        effective_window=effective_window(identity.agent, identity.mechanism, identity.window),
+        isolation=identity.isolation,
+        agent_version="",
+        repetition=identity.repetition,
         session_id="",
         success=False,
         steps=0,
         steps_passed=0,
+        step_passed=(),
         tests_touched=False,
         agent_exit=-1,
         timed_out=False,
         duration_seconds=0.0,
-        reported_usd=None,
+        provider=None,
         requests=0,
         compactions=0,
+        compaction_pre_tokens=(),
         max_context=0,
         mean_context=0.0,
         uncached=0,
@@ -626,7 +882,8 @@ def start_agent(
             spec, prompt, session_args, session_id, workspace, run_dir, timeout, step
         )
     command = ("codex", "exec", *codex_options(spec, workspace), prompt)
-    process = codex_call(command, workspace, run_dir, timeout, step)
+    env = agent_env(spec, run_dir, os.environ)
+    process = codex_call(command, workspace, env, run_dir, timeout, step)
     return AgentRun(codex_thread_id(process.stdout), process.exit_code, process.timed_out, None)
 
 
@@ -646,15 +903,21 @@ def resume_agent(
             spec, prompt, session_args, session_id, workspace, run_dir, timeout, step
         )
     command = ("codex", "exec", *codex_options(spec, workspace), "resume", session_id, prompt)
-    process = codex_call(command, workspace, run_dir, timeout, step)
+    env = agent_env(spec, run_dir, os.environ)
+    process = codex_call(command, workspace, env, run_dir, timeout, step)
     return AgentRun(session_id, process.exit_code, process.timed_out, None)
 
 
 def codex_call(
-    command: Sequence[str], workspace: Path, run_dir: Path, timeout: int, step: int
+    command: Sequence[str],
+    workspace: Path,
+    env: dict[str, str],
+    run_dir: Path,
+    timeout: int,
+    step: int,
 ) -> ProcessOutcome:
     """Codex'i çalıştırır; sağlayıcı kaynaklı başarısız tur (ör. kullanım limiti) hatadır."""
-    process = run_process(command, workspace, dict(os.environ), timeout, run_dir, step)
+    process = run_process(command, workspace, env, timeout, run_dir, step)
     failure = codex_turn_failure(process.stdout)
     if failure is not None:
         raise BenchError(f"codex turn failed at step {step}: {failure}")
@@ -685,7 +948,8 @@ def claude_call(
     timeout: int,
     step: int,
 ) -> AgentRun:
-    """Claude Code'u kullanıcının oturumuyla, kullanıcı ayarları ve eklentileri olmadan başlatır."""
+    """Claude Code'u kullanıcının oturumuyla; kullanıcı ayarları, eklentileri ve MCP sunucuları
+    (claude.ai bağlayıcıları dahil) olmadan başlatır."""
     command = (
         "claude",
         "-p",
@@ -699,6 +963,7 @@ def claude_call(
         "json",
         "--setting-sources",
         "project",
+        "--strict-mcp-config",
         "--settings",
         json.dumps(claude_settings(spec)),
         "--permission-mode",
@@ -708,12 +973,13 @@ def claude_call(
         "--allowedTools",
         CLAUDE_TOOLS,
     )
-    process = run_process(command, workspace, claude_env(spec, run_dir), timeout, run_dir, step)
+    env = agent_env(spec, run_dir, os.environ)
+    process = run_process(command, workspace, env, timeout, run_dir, step)
     failure = claude_failure(process.stdout, process.timed_out)
     if failure is not None:
         raise BenchError(f"claude call failed at step {step}: {failure}")
     return AgentRun(
-        session_id, process.exit_code, process.timed_out, claude_reported_usd(process.stdout)
+        session_id, process.exit_code, process.timed_out, claude_reported_usage(process.stdout)
     )
 
 
@@ -736,50 +1002,78 @@ def claude_failure(stdout: str, timed_out: bool) -> str | None:
 
 
 def claude_settings(spec: RunSpec) -> dict[str, object]:
-    """Varyantın Claude Code ayarları: CimriHook kolunda hook'lar ve sıkıştırma penceresi."""
-    if spec.variant is Variant.BASELINE:
-        return {}
-    return hook_settings(sys.executable) | governor_env(spec.window)
+    """Varyantın Claude Code ayarları: codec kollarında hook'lar, pencere kollarında pencere."""
+    hooks = hook_settings(sys.executable) if spec.variant in CODEC_VARIANTS else {}
+    window = governor_env(spec.window) if spec.variant in WINDOW_VARIANTS else {}
+    return hooks | window
 
 
-def claude_env(spec: RunSpec, run_dir: Path) -> dict[str, str]:
-    """Varyantın ortamı; pencere doğrulanmış yol olan ortam değişkeniyle de verilir."""
-    if spec.variant is Variant.BASELINE:
-        return dict(os.environ)
-    return dict(os.environ) | {
-        "CLAUDE_CODE_AUTO_COMPACT_WINDOW": str(spec.window),
-        "CIMRIHOOK_HOME": str(run_dir / "ledger"),
-    }
+def agent_env(spec: RunSpec, run_dir: Path, base: Mapping[str, str]) -> dict[str, str]:
+    """Ajan sürecinin ortamı: izin listesindeki değişkenler ve kolun kendi ayarları.
+
+    Claude Code'da pencere, ayarlardaki env bloğuna ek olarak doğrudan ortam değişkeniyle de
+    verilir; codec kollarında defter çalıştırmanın kendi dizinindedir.
+    """
+    missing = [key for key in REQUIRED_ENV if key not in base]
+    if missing:
+        raise BenchError(f"the environment lacks {missing}, which {spec.agent.value} needs")
+    allowed = {key: base[key] for key in ENV_ALLOWLIST if key in base}
+    if spec.agent is Agent.CODEX:
+        return allowed
+    window = (
+        {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": str(spec.window)}
+        if spec.variant in WINDOW_VARIANTS
+        else {}
+    )
+    ledger = {"CIMRIHOOK_HOME": str(run_dir / "ledger")} if spec.variant in CODEC_VARIANTS else {}
+    return allowed | window | ledger
 
 
-def claude_reported_usd(stdout: str) -> float | None:
-    """Claude Code'un sonuç kaydındaki API eşdeğeri maliyet; sonuç yoksa (ör. süre aşımı) None."""
+def claude_reported_usage(stdout: str) -> ReportedUsage | None:
+    """Claude Code'un sonuç kaydındaki oturum toplamları; sonuç yoksa (ör. süre aşımı) None.
+
+    total_cost_usd ve modelUsage, oturum sürdürüldüğünde önceki çağrıların toplamını da içerir;
+    sıkıştırma ve yardımcı model çağrıları dahildir.
+    """
     try:
         decoded: object = json.loads(stdout)
     except json.JSONDecodeError:
         return None
     records = decoded if isinstance(decoded, list) else [decoded]
-    for record in reversed(records):
-        if isinstance(record, dict) and record.get("type") == "result":
-            cost = record.get("total_cost_usd")
-            return float(cost) if isinstance(cost, int | float) else None
-    return None
+    results = [record for record in records if isinstance(record, dict)]
+    last = next((record for record in reversed(results) if record.get("type") == "result"), None)
+    if last is None:
+        return None
+    where = "claude result"
+    result = json_object(last, where)
+    models = json_object(result.get("modelUsage"), f"{where}.modelUsage")
+    usages = [json_object(usage, f"{where}.modelUsage.{name}") for name, usage in models.items()]
+    return ReportedUsage(
+        cost_usd=float_field(result, "total_cost_usd", where),
+        uncached=sum(int_field(usage, "inputTokens", where) for usage in usages),
+        cache_write=sum(int_field(usage, "cacheCreationInputTokens", where) for usage in usages),
+        cache_read=sum(int_field(usage, "cacheReadInputTokens", where) for usage in usages),
+        output=sum(int_field(usage, "outputTokens", where) for usage in usages),
+    )
 
 
 def codex_options(spec: RunSpec, workspace: Path) -> tuple[str, ...]:
-    """Varyantın Codex seçenekleri; CimriHook kolunda otomatik sıkıştırma eşiği verilir."""
+    """Varyantın Codex seçenekleri; kullanıcı config.toml'u yüklenmez, pencere kolu eşik verir."""
     window = (
-        ()
-        if spec.variant is Variant.BASELINE
-        else ("-c", f"model_auto_compact_token_limit={spec.window}")
+        ("-c", f"model_auto_compact_token_limit={spec.window}")
+        if spec.variant in WINDOW_VARIANTS
+        else ()
     )
     return (
         "--json",
         "--skip-git-repo-check",
+        "--ignore-user-config",
         "-C",
         str(workspace),
         "--sandbox",
         "workspace-write",
+        "-c",
+        'approval_policy="never"',
         "-m",
         spec.model,
         "-c",
@@ -833,56 +1127,199 @@ def run_process(
     return ProcessOutcome(process.returncode, timed_out, stdout)
 
 
-def measure_run(spec: RunSpec, session_id: str) -> Measurement:
-    """Ajanın oturum kayıtlarından token kullanımını ölçer."""
-    if spec.agent is Agent.CLAUDE:
-        return measure(claude_traces(session_id), claude_prices(spec.model))
-    return measure(codex_traces(session_id), OPENAI)
+def read_agent_logs(
+    agent: Agent,
+    session_id: str,
+    reported: Sequence[ReportedUsage | None],
+    steps: int,
+) -> AgentLogs:
+    """Ajanın oturum kayıtlarından ölçümler; model isteği yoksa çalıştırma ölçülemez."""
+    if agent is Agent.CLAUDE:
+        transcript = claude_transcript(session_id)
+        logs = AgentLogs(
+            measure(claude_traces(transcript, session_id)),
+            claude_provider(reported),
+            claude_version(transcript),
+        )
+    else:
+        rollout = codex_rollout(session_id)
+        records = load_codex_records(rollout)
+        logs = AgentLogs(
+            measure((load_codex_trace(rollout),)),
+            codex_provider(records, steps),
+            records.cli_version,
+        )
+    if logs.measurement.requests == 0:
+        raise BenchError(f"{agent.value} session {session_id} made no model requests")
+    return logs
 
 
-def claude_traces(session_id: str) -> tuple[SessionTrace, ...]:
-    """Ana transcript ve alt ajan transcript'leri."""
+def claude_transcript(session_id: str) -> Path:
+    """Oturumun ana transcript'i."""
     main = sorted(CLAUDE_PROJECTS.glob(f"*/{session_id}.jsonl"))
     if len(main) != 1:
         raise BenchError(f"expected one Claude transcript for {session_id}, found {len(main)}")
+    return main[0]
+
+
+def claude_traces(transcript: Path, session_id: str) -> tuple[SessionTrace, ...]:
+    """Ana transcript ve alt ajan transcript'leri."""
     subagents = sorted(
         path
-        for path in CLAUDE_PROJECTS.glob(f"*/{session_id}/subagents/**/*.jsonl")
+        for path in transcript.parent.glob(f"{session_id}/subagents/**/*.jsonl")
         if path.name != WORKFLOW_JOURNAL
     )
-    return tuple(load_claude_trace(path) for path in (*main, *subagents))
+    return tuple(load_claude_trace(path) for path in (transcript, *subagents))
 
 
-def codex_traces(thread_id: str) -> tuple[SessionTrace, ...]:
+def claude_version(transcript: Path) -> str:
+    """Transcript'i yazan Claude Code sürümü."""
+    with transcript.open("rb") as handle:
+        for raw_line in handle:
+            entry = parse_line(raw_line)
+            version = None if entry is None else entry.get("version")
+            if isinstance(version, str):
+                return version
+    raise BenchError(f"{transcript}: no entry carries a Claude Code version")
+
+
+def claude_provider(reported: Sequence[ReportedUsage | None]) -> ProviderMeasurement | None:
+    """Claude Code'un adım başına kümülatif raporlarından birincil maliyet.
+
+    Bir adım rapor vermediyse (süre aşımıyla sonlandırılan süreç maliyetini kaydedemez) sonraki
+    toplamlar da o adımı içermez; bu durumda maliyet bilinmez ve None döner.
+    """
+    complete = [usage for usage in reported if usage is not None]
+    if not complete or len(complete) != len(reported):
+        return None
+    last = complete[-1]
+    return ProviderMeasurement(
+        cost_by_step=tuple(usage.cost_usd for usage in complete),
+        unit=USD,
+        price_sheet=CLAUDE_PRICE_SHEET,
+        uncached=last.uncached,
+        cache_write=last.cache_write,
+        cache_read=last.cache_read,
+        output=last.output,
+    )
+
+
+def codex_rollout(thread_id: str) -> Path:
     """Codex rollout kaydı."""
     paths = sorted(CODEX_SESSIONS.rglob(f"rollout-*{thread_id}.jsonl"))
     if len(paths) != 1:
         raise BenchError(f"expected one Codex rollout for {thread_id}, found {len(paths)}")
-    return (load_codex_trace(paths[0]),)
+    return paths[0]
 
 
-def claude_prices(model: str) -> PriceSheet:
-    """Modelin önbellek okuma çarpanıyla Anthropic fiyat oranları."""
-    for marker, read in CLAUDE_READ_WEIGHTS:
-        if marker in model.lower():
-            return replace(ANTHROPIC, read=read)
-    return ANTHROPIC
+def load_codex_records(path: Path) -> CodexRecords:
+    """Rollout'taki token_usage_record kayıtları, görevlere (task_started) göre gruplanmış.
+
+    Bu kayıtlar sıkıştırma isteğini de içerir; token_count olayları içermez. Aynı yanıt kimliği
+    birden çok kez yazıldıysa son kullanım geçerlidir ve ilk göründüğü görevde sayılır.
+    """
+    task_count = 0
+    records: dict[str, tuple[int, Usage]] = {}
+    version: str | None = None
+    with path.open("rb") as handle:
+        for raw_line in handle:
+            entry = parse_line(raw_line)
+            payload = None if entry is None else entry.get("payload")
+            if entry is None or not isinstance(payload, dict):
+                continue
+            kind = entry.get("type")
+            if kind == "session_meta" and isinstance(payload.get("cli_version"), str):
+                version = str(payload["cli_version"])
+            elif kind == "event_msg" and payload.get("type") == "task_started":
+                task_count += 1
+            elif kind == "token_usage_record":
+                if task_count == 0:
+                    raise BenchError(f"{path}: token_usage_record before any task_started")
+                response_id = text_field(payload, "response_id", f"{path} token_usage_record")
+                usage = record_usage(payload, f"{path} {response_id}")
+                task = records[response_id][0] if response_id in records else task_count
+                records[response_id] = (task, usage)
+    if version is None:
+        raise BenchError(f"{path}: no session_meta with cli_version")
+    if not records:
+        raise BenchError(f"{path}: no token_usage_record entries (Codex older than 0.160?)")
+    return CodexRecords(
+        steps=tuple(
+            tuple(usage for task, usage in records.values() if task == index)
+            for index in range(1, task_count + 1)
+        ),
+        cli_version=version,
+    )
 
 
-def measure(traces: Sequence[SessionTrace], prices: PriceSheet) -> Measurement:
-    """İstek dizilerinden toplam kullanım ve maliyet."""
+def record_usage(payload: dict[str, object], where: str) -> Usage:
+    """token_usage_record kullanımı; input_tokens önbellekten okunan ve yazılan girdiyi içerir."""
+    usage = json_object(payload.get("usage"), f"{where}.usage")
+    total_input = int_field(usage, "input_tokens", where)
+    cached = int_field(usage, "cached_input_tokens", where)
+    written = usage.get("cache_write_input_tokens")
+    write = written if isinstance(written, int) else 0  # eski sürümler yazım alanını raporlamaz
+    return Usage(
+        uncached=total_input - cached - write,
+        write_5m=write,
+        write_1h=0,
+        read=cached,
+        output=int_field(usage, "output_tokens", where),
+    )
+
+
+def codex_provider(records: CodexRecords, steps: int) -> ProviderMeasurement:
+    """Yanıt başına kayıtlardan birincil maliyet; model isteği olmayan adım kota hatasıdır."""
+    if len(records.steps) != steps:
+        raise BenchError(f"codex rollout has {len(records.steps)} turns, the run had {steps} steps")
+    empty = [index for index, usages in enumerate(records.steps, start=1) if not usages]
+    if empty:
+        raise BenchError(
+            f"codex made no model requests in steps {empty} (usage limit or failed turn)"
+        )
+    usages = [usage for step in records.steps for usage in step]
+    return ProviderMeasurement(
+        cost_by_step=tuple(
+            itertools.accumulate(
+                sum(exact_cost(usage, OPENAI) for usage in step) for step in records.steps
+            )
+        ),
+        unit=BASE_INPUT_TOKENS,
+        price_sheet=price_sheet_text(OPENAI),
+        uncached=sum(usage.uncached for usage in usages),
+        cache_write=sum(usage.write_5m + usage.write_1h for usage in usages),
+        cache_read=sum(usage.read for usage in usages),
+        output=sum(usage.output for usage in usages),
+    )
+
+
+def price_sheet_text(sheet: PriceSheet) -> str:
+    """Fiyat tablosunun sonuçlara yazılan tanımı (taban girdi fiyatı = 1)."""
+    return (
+        f"{sheet.name}: uncached {sheet.uncached}, cached {sheet.read}, write {sheet.write_5m}, "
+        f"output {sheet.output} x base input"
+    )
+
+
+def measure(traces: Sequence[SessionTrace]) -> Measurement:
+    """İstek dizilerinden toplam kullanım ve her oturumun kendi modelinin fiyatlarıyla maliyet."""
     requests = [usage for trace in traces for usage in trace.requests]
     contexts = [context_of(usage) for usage in requests]
     return Measurement(
         requests=len(requests),
-        compactions=sum(len(trace.post_compact_tokens) for trace in traces),
+        compactions=sum(len(trace.pre_compact_tokens) for trace in traces),
+        compaction_pre_tokens=tuple(
+            tokens for trace in traces for tokens in trace.pre_compact_tokens
+        ),
         max_context=max(contexts, default=0),
         mean_context=statistics.fmean(contexts) if contexts else 0.0,
         uncached=sum(usage.uncached for usage in requests),
         cache_write=sum(usage.write_5m + usage.write_1h for usage in requests),
         cache_read=sum(usage.read for usage in requests),
         output=sum(usage.output for usage in requests),
-        cost_base=sum(exact_cost(usage, prices) for usage in requests),
+        cost_base=sum(
+            exact_cost(usage, trace.prices) for trace in traces for usage in trace.requests
+        ),
     )
 
 
@@ -892,35 +1329,49 @@ def load_results(results_dir: Path) -> tuple[RunResult, ...]:
     if not paths:
         raise BenchError(f"no run results in {results_dir}")
     return tuple(
-        result_from_json(json_object(json.loads(path.read_text(encoding="utf-8")), str(path)))
+        result_from_json(
+            json_object(json.loads(path.read_text(encoding="utf-8")), str(path)), str(path)
+        )
         for path in paths
     )
 
 
-def result_from_json(data: dict[str, object]) -> RunResult:
-    """Sonuç dosyasını tipleri doğrulayarak okur."""
-    where = "result"
+def result_from_json(data: dict[str, object], where: str) -> RunResult:
+    """Sonuç dosyasını tipleri doğrulayarak okur; eski şemadaki dosya hatadır."""
+    schema = data.get("schema")
+    if schema != RESULT_SCHEMA:
+        raise BenchError(
+            f"{where}: result schema {schema!r}, expected {RESULT_SCHEMA}; re-measure the set "
+            "from the agents' logs with `cimrihook bench-remeasure --name <set>`"
+        )
     return RunResult(
+        schema=RESULT_SCHEMA,
         run_id=text_field(data, "run_id", where),
         task_id=text_field(data, "task_id", where),
         protocol=text_field(data, "protocol", where),
         agent=text_field(data, "agent", where),
         variant=text_field(data, "variant", where),
+        mechanism=text_field(data, "mechanism", where),
         model=text_field(data, "model", where),
         effort=text_field(data, "effort", where),
         window=int_field(data, "window", where),
+        effective_window=optional_int_field(data, "effective_window", where),
+        isolation=text_field(data, "isolation", where),
+        agent_version=text_field(data, "agent_version", where),
         repetition=int_field(data, "repetition", where),
         session_id=text_field(data, "session_id", where),
         success=bool_field(data, "success", where),
         steps=int_field(data, "steps", where),
         steps_passed=int_field(data, "steps_passed", where),
+        step_passed=bool_list(data, "step_passed", where),
         tests_touched=bool_field(data, "tests_touched", where),
         agent_exit=int_field(data, "agent_exit", where),
         timed_out=bool_field(data, "timed_out", where),
         duration_seconds=float_field(data, "duration_seconds", where),
-        reported_usd=optional_float_field(data, "reported_usd", where),
+        provider=provider_from_json(data, where),
         requests=int_field(data, "requests", where),
         compactions=int_field(data, "compactions", where),
+        compaction_pre_tokens=int_list(data, "compaction_pre_tokens", where),
         max_context=int_field(data, "max_context", where),
         mean_context=float_field(data, "mean_context", where),
         uncached=int_field(data, "uncached", where),
@@ -932,112 +1383,499 @@ def result_from_json(data: dict[str, object]) -> RunResult:
     )
 
 
+def provider_from_json(data: dict[str, object], where: str) -> ProviderMeasurement | None:
+    """Sonuç dosyasındaki sağlayıcı ölçümü; maliyet bilinmiyorsa None."""
+    if data.get("provider") is None:
+        return None
+    provider = json_object(data["provider"], f"{where}.provider")
+    return ProviderMeasurement(
+        cost_by_step=float_list(provider, "cost_by_step", where),
+        unit=text_field(provider, "unit", where),
+        price_sheet=text_field(provider, "price_sheet", where),
+        uncached=int_field(provider, "uncached", where),
+        cache_write=int_field(provider, "cache_write", where),
+        cache_read=int_field(provider, "cache_read", where),
+        output=int_field(provider, "output", where),
+    )
+
+
+def remeasure_results(results_dir: Path, runs_dir: Path) -> tuple[RunResult, ...]:
+    """Kayıtlı sonuçları ajanların kayıtlarından güncel şemayla yeniden ölçüp dosyalara yazar.
+
+    Ajanlar yeniden çalışmaz: çalıştırma anına ait alanlar (başarı, adımlar, süre, ortam) korunur,
+    ölçümler Claude transcript'lerinden, Claude'un adım başına sonuç kayıtlarından
+    (runs_dir/<run_id>/agent.<adım>.stdout) ve Codex rollout'larından yeniden hesaplanır. Eski
+    şemanın tek tedavi kolu ("cimrihook") gerçekte açık olan mekanizmayla adlandırılır.
+    """
+    paths = sorted(results_dir.glob("*.json"))
+    if not paths:
+        raise BenchError(f"no run results in {results_dir}")
+    results = tuple(
+        remeasured_result(
+            json_object(json.loads(path.read_text(encoding="utf-8")), str(path)), runs_dir
+        )
+        for path in paths
+    )
+    for path, result in zip(paths, results, strict=True):
+        path.write_text(json.dumps(asdict(result), indent=2), encoding="utf-8")
+    return results
+
+
+def remeasured_result(data: dict[str, object], runs_dir: Path) -> RunResult:
+    """Tek sonuç kaydının yeniden ölçülmüş hali."""
+    where = text_field(data, "run_id", "result")
+    legacy = data.get("schema") is None
+    agent = Agent(text_field(data, "agent", where))
+    variant = text_field(data, "variant", where)
+    identity = RunIdentity(
+        run_id=where,
+        task_id=text_field(data, "task_id", where),
+        protocol=text_field(data, "protocol", where),
+        agent=agent,
+        variant=variant,
+        mechanism=legacy_mechanism(agent, variant)
+        if legacy
+        else Variant(text_field(data, "mechanism", where)),
+        model=text_field(data, "model", where),
+        effort=text_field(data, "effort", where),
+        window=int_field(data, "window", where),
+        isolation=LEGACY_ISOLATION[agent] if legacy else text_field(data, "isolation", where),
+        repetition=int_field(data, "repetition", where),
+    )
+    error = optional_text_field(data, "error", where)
+    if error is not None:
+        return unmeasured_result(identity, error)
+    steps = int_field(data, "steps", where)
+    steps_passed = int_field(data, "steps_passed", where)
+    session_id = text_field(data, "session_id", where)
+    reported = claude_reported_files(runs_dir / where, steps) if agent is Agent.CLAUDE else ()
+    return measured_result(
+        identity,
+        RunBehaviour(
+            session_id=session_id,
+            success=bool_field(data, "success", where),
+            steps=steps,
+            steps_passed=steps_passed,
+            step_passed=legacy_step_passed(steps, steps_passed)
+            if legacy
+            else bool_list(data, "step_passed", where),
+            tests_touched=bool_field(data, "tests_touched", where),
+            agent_exit=int_field(data, "agent_exit", where),
+            timed_out=bool_field(data, "timed_out", where),
+            duration_seconds=float_field(data, "duration_seconds", where),
+        ),
+        read_agent_logs(agent, session_id, reported, steps),
+    )
+
+
+def legacy_mechanism(agent: Agent, variant: str) -> Variant:
+    """Eski şemadaki kolun gerçekte açık olan mekanizması."""
+    if variant == Variant.BASELINE.value:
+        return Variant.BASELINE
+    if variant != LEGACY_VARIANT:
+        raise BenchError(f"unknown legacy variant {variant!r}")
+    return Variant.COMBINED if agent is Agent.CLAUDE else Variant.GOVERNOR
+
+
+def legacy_step_passed(steps: int, steps_passed: int) -> tuple[bool, ...]:
+    """Eski şema yalnızca sayıyı tutar; tüm adımlar geçtiyse sıra bellidir, değilse bilinmez."""
+    return (True,) * steps if steps_passed == steps else ()
+
+
+def claude_reported_files(run_dir: Path, steps: int) -> tuple[ReportedUsage | None, ...]:
+    """Çalıştırma dizinindeki adım çıktılarından Claude Code'un kümülatif raporları."""
+    paths = [run_dir / f"agent.{step}.stdout" for step in range(1, steps + 1)]
+    missing = [str(path) for path in paths if not path.exists()]
+    if missing:
+        raise BenchError(f"Claude step outputs are missing, cost reports cannot be read: {missing}")
+    return tuple(claude_reported_usage(path.read_text(encoding="utf-8")) for path in paths)
+
+
 def scenario(result: RunResult) -> str:
     """Raporlarda görev ve protokolün birlikte adı."""
     return f"{result.task_id}/{result.protocol}"
 
 
 def render_bench_report(results: Sequence[RunResult]) -> str:
-    """Hücre özetleri, senaryo bazında A/B oranları ve ajan bazında toplam oran (bootstrap)."""
+    """Hücre özetleri, senaryo ve ajan düzeyinde A/B karşılaştırmaları, ölçülemeyen çalıştırmalar.
+
+    Birincil maliyet sağlayıcı düzeyindedir (Claude Code: USD, Codex: fiyat tablosuyla taban girdi
+    birimi) ve sıkıştırma isteklerini içerir; 'transcript' sütunu içermez. Ajan düzeyindeki özet
+    yalnızca iki kolu eşit sayıda ölçülmüş senaryoları eşit ağırlıkla birleştirir; bir kolda
+    ikiden az ölçüm varsa güven aralığı verilmez.
+    """
     measured = [result for result in results if result.error is None]
     errors = [result for result in results if result.error is not None]
+    costed = [result for result in measured if result.provider is not None]
     lines = [
-        f"CimriHook bench: {len(results)} runs, {len(errors)} unmeasured",
-        f"  {'agent':<7} {'scenario':<30} {'variant':<10} {'n':>2} {'pass':>6} {'steps':>7}"
-        f" {'cost(base)':>12} {'usd':>7} {'req':>5} {'max ctx':>9} {'compact':>8} {'min':>6}",
+        f"CimriHook bench: {len(results)} runs, {len(errors)} unmeasured, "
+        f"{len(measured) - len(costed)} without a provider cost",
+        "Primary cost: Claude = total_cost_usd reported by Claude Code (USD); Codex = per-response "
+        "usage records priced with the sheet below (base input units). Both include compaction "
+        "requests; 'transcript' excludes them.",
+        *sorted({f"  price sheet: {provider_of(result).price_sheet}" for result in costed}),
+        "Cells (geometric mean of costs, medians of the rest):",
+        f"  {'agent':<7} {'scenario':<32} {'mechanism':<9} {'n':>2} {'runs ok':>7} {'steps':>7}"
+        f" {'cost':>10} {'transcript':>10} {'req':>4} {'max ctx':>8} {'mean ctx':>8}"
+        f" {'compact':>7} {'trigger':>8} {'window':>8} {'min':>5}",
+        *(cell_line(cell) for cell in group_cells(measured)),
+        "A/B per scenario vs baseline (ratio of geometric means, 95% Welch t interval on log "
+        "cost):",
+        *scenario_comparisons(costed),
+        "A/B per agent and mechanism (balanced scenarios, equal weight, 95% t interval across "
+        "scenarios; step success: Newcombe interval of the difference):",
+        *agent_comparisons(costed),
+        "Cumulative provider cost at step checkpoints (ratio of geometric means vs baseline):",
+        *checkpoint_comparisons(costed),
+        "Codex price-sheet sensitivity (pooled ratio over cached x0.1/0.25 and output x4/6/8):",
+        *codex_sensitivity(costed),
+        *(f"  unmeasured {result.run_id}: {result.error}" for result in errors),
     ]
-    for agent, label, variant in sorted({(r.agent, scenario(r), r.variant) for r in measured}):
-        cell = [r for r in measured if (r.agent, scenario(r), r.variant) == (agent, label, variant)]
-        lines.append(cell_line(agent, label, variant, cell))
-    lines.append("A/B per scenario (cimrihook vs baseline, median cost ratio):")
-    lines.extend(scenario_comparisons(measured))
-    lines.append("A/B per agent (sum of costs, 95% bootstrap interval):")
-    lines.extend(agent_comparisons(measured))
-    lines.extend(f"  unmeasured {result.run_id}: {result.error}" for result in errors)
     return "\n".join(lines)
 
 
-def cell_line(agent: str, label: str, variant: str, cell: Sequence[RunResult]) -> str:
-    """Bir (ajan, senaryo, varyant) hücresinin satırı (medyanlar)."""
-    usd = [r.reported_usd for r in cell if r.reported_usd is not None]
-    usd_text = f"{statistics.median(usd):.2f}" if usd else "-"
-    passed = sum(1 for r in cell if r.success)
-    steps = f"{sum(r.steps_passed for r in cell)}/{sum(r.steps for r in cell)}"
-    return (
-        f"  {agent:<7} {label:<30} {variant:<10} {len(cell):>2} {f'{passed}/{len(cell)}':>6}"
-        f" {steps:>7} {statistics.median(r.cost_base for r in cell):>12,.0f} {usd_text:>7}"
-        f" {statistics.median(r.requests for r in cell):>5.0f}"
-        f" {statistics.median(r.max_context for r in cell):>9,.0f}"
-        f" {sum(r.compactions for r in cell):>8}"
-        f" {statistics.median(r.duration_seconds for r in cell) / 60:>6.1f}"
+def provider_of(result: RunResult) -> ProviderMeasurement:
+    """Sağlayıcı maliyeti olan çalıştırmanın ölçümü."""
+    if result.provider is None:
+        raise BenchError(f"{result.run_id} has no provider cost")
+    return result.provider
+
+
+def final_cost(result: RunResult) -> float:
+    """Çalıştırmanın birincil (sağlayıcı düzeyindeki) toplam maliyeti."""
+    return provider_of(result).cost_by_step[-1]
+
+
+def mechanism_rank(mechanism: str) -> int:
+    """Raporda kolların sırası: baseline, governor, codec, combined."""
+    return list(Variant).index(Variant(mechanism))
+
+
+def group_cells(results: Sequence[RunResult]) -> list[list[RunResult]]:
+    """(ajan, senaryo, mekanizma) hücreleri, raporun sırasıyla."""
+    keys = sorted(
+        {(result.agent, scenario(result), result.mechanism) for result in results},
+        key=lambda key: (key[0], key[1], mechanism_rank(key[2])),
     )
-
-
-def scenario_comparisons(measured: Sequence[RunResult]) -> list[str]:
-    """Senaryo bazında maliyet oranı ve başarı karşılaştırması."""
-    lines: list[str] = []
-    for agent, label in sorted({(r.agent, scenario(r)) for r in measured}):
-        base = arm(measured, agent, label, Variant.BASELINE)
-        treated = arm(measured, agent, label, Variant.CIMRIHOOK)
-        if not base or not treated:
-            continue
-        ratio = statistics.median(r.cost_base for r in treated) / statistics.median(
-            r.cost_base for r in base
-        )
-        lines.append(
-            f"  {agent:<7} {label:<30} cost x{ratio:.2f}  pass "
-            f"{sum(r.success for r in base)}/{len(base)} -> "
-            f"{sum(r.success for r in treated)}/{len(treated)}"
-        )
-    return lines
-
-
-def agent_comparisons(measured: Sequence[RunResult]) -> list[str]:
-    """Ajan bazında, her iki kolu da ölçülmüş senaryolar üzerinden toplam maliyet oranı."""
-    lines: list[str] = []
-    for agent in sorted({r.agent for r in measured}):
-        labels = sorted(
-            label
-            for label in {scenario(r) for r in measured if r.agent == agent}
-            if arm(measured, agent, label, Variant.BASELINE)
-            and arm(measured, agent, label, Variant.CIMRIHOOK)
-        )
-        if not labels:
-            continue
-        base_arms = [arm(measured, agent, label, Variant.BASELINE) for label in labels]
-        treated_arms = [arm(measured, agent, label, Variant.CIMRIHOOK) for label in labels]
-        base = [[r.cost_base for r in runs] for runs in base_arms]
-        treated = [[r.cost_base for r in runs] for runs in treated_arms]
-        ratio = sum(map(sum, treated)) / sum(map(sum, base))
-        low, high = bootstrap_ratio(base, treated, BOOTSTRAP_ROUNDS, BOOTSTRAP_SEED)
-        base_pass = sum(r.success for runs in base_arms for r in runs)
-        treated_pass = sum(r.success for runs in treated_arms for r in runs)
-        lines.append(
-            f"  {agent:<7} cost x{ratio:.2f} (95% interval {low:.2f}-{high:.2f}) over "
-            f"{len(labels)} scenarios; pass {base_pass}/{sum(map(len, base_arms))} -> "
-            f"{treated_pass}/{sum(map(len, treated_arms))}"
-        )
-    return lines
-
-
-def arm(measured: Sequence[RunResult], agent: str, label: str, variant: Variant) -> list[RunResult]:
-    """Bir senaryonun bir koluna ait ölçülmüş çalıştırmalar."""
     return [
-        r for r in measured if r.agent == agent and scenario(r) == label and r.variant == variant
+        [result for result in results if (result.agent, scenario(result), result.mechanism) == key]
+        for key in keys
     ]
 
 
-def bootstrap_ratio(
-    base: Sequence[Sequence[float]], treated: Sequence[Sequence[float]], rounds: int, seed: int
-) -> tuple[float, float]:
-    """Hücre içi yeniden örneklemeyle toplam maliyet oranının %95 yüzdelik aralığı."""
-    rng = random.Random(seed)
-    ratios = sorted(
-        sum(sum(rng.choice(cell) for _ in cell) for cell in treated)
-        / sum(sum(rng.choice(cell) for _ in cell) for cell in base)
-        for _ in range(rounds)
+def cell_line(cell: Sequence[RunResult]) -> str:
+    """Bir (ajan, senaryo, mekanizma) hücresinin satırı."""
+    first = cell[0]
+    costed = [result for result in cell if result.provider is not None]
+    cost = (
+        format_cost(geometric_mean([final_cost(result) for result in costed]), costed[0])
+        if costed
+        else "-"
     )
-    return ratios[int(0.025 * rounds)], ratios[int(0.975 * rounds) - 1]
+    triggers = [tokens for result in cell for tokens in result.compaction_pre_tokens]
+    windows = sorted({result.effective_window for result in cell if result.effective_window})
+    return (
+        f"  {first.agent:<7} {scenario(first):<32} {first.mechanism:<9} {len(cell):>2}"
+        f" {f'{sum(r.success for r in cell)}/{len(cell)}':>7}"
+        f" {f'{sum(r.steps_passed for r in cell)}/{sum(r.steps for r in cell)}':>7}"
+        f" {cost:>10} {geometric_mean([r.cost_base for r in cell]):>10,.0f}"
+        f" {statistics.median(r.requests for r in cell):>4.0f}"
+        f" {statistics.median(r.max_context for r in cell):>8,.0f}"
+        f" {statistics.median(r.mean_context for r in cell):>8,.0f}"
+        f" {sum(r.compactions for r in cell):>7}"
+        f" {f'{statistics.median(triggers):,.0f}' if triggers else '-':>8}"
+        f" {','.join(str(window) for window in windows) or '-':>8}"
+        f" {statistics.median(r.duration_seconds for r in cell) / 60:>5.1f}"
+    )
+
+
+def format_cost(value: float, result: RunResult) -> str:
+    """Maliyet, çalıştırmanın birimiyle (USD ya da taban girdi birimi)."""
+    if provider_of(result).unit == USD:
+        return f"${value:,.3f}"
+    return f"{value:,.0f}"
+
+
+def arm(results: Sequence[RunResult], agent: str, label: str, mechanism: str) -> list[RunResult]:
+    """Bir senaryonun bir koluna ait çalıştırmalar."""
+    return [
+        result
+        for result in results
+        if result.agent == agent and scenario(result) == label and result.mechanism == mechanism
+    ]
+
+
+def treatments() -> tuple[str, ...]:
+    """Baseline dışındaki kollar, raporun sırasıyla."""
+    return tuple(variant.value for variant in Variant if variant is not Variant.BASELINE)
+
+
+def ratio_text(estimate: RatioEstimate) -> str:
+    """Oran ve aralığı; aralık yoksa nedeni."""
+    if estimate.low is None or estimate.high is None:
+        return f"x{estimate.ratio:.3f} [n<2 in an arm]"
+    return f"x{estimate.ratio:.3f} [{estimate.low:.3f}-{estimate.high:.3f}]"
+
+
+def steps_text(base: Sequence[RunResult], treated: Sequence[RunResult]) -> str:
+    """Adım başarısı ve fark aralığı (tedavi − baseline, yüzde puan)."""
+    base_passed, base_steps = sum(r.steps_passed for r in base), sum(r.steps for r in base)
+    treated_passed, treated_steps = (
+        sum(r.steps_passed for r in treated),
+        sum(r.steps for r in treated),
+    )
+    difference = rate_difference(treated_passed, treated_steps, base_passed, base_steps)
+    return (
+        f"steps {treated_passed}/{treated_steps} vs {base_passed}/{base_steps} "
+        f"(diff {100 * difference.difference:+.1f} pp [{100 * difference.low:+.1f}, "
+        f"{100 * difference.high:+.1f}])"
+    )
+
+
+def scenario_comparisons(costed: Sequence[RunResult]) -> list[str]:
+    """Senaryo bazında her kolun baseline'a göre maliyet oranı ve adım başarısı."""
+    lines: list[str] = []
+    for agent, label in sorted({(result.agent, scenario(result)) for result in costed}):
+        base = arm(costed, agent, label, Variant.BASELINE.value)
+        for mechanism in treatments():
+            treated = arm(costed, agent, label, mechanism)
+            if not base or not treated:
+                continue
+            estimate = ratio_estimate(
+                [final_cost(r) for r in base], [final_cost(r) for r in treated]
+            )
+            transcript = ratio_estimate([r.cost_base for r in base], [r.cost_base for r in treated])
+            lines.append(
+                f"  {agent:<7} {label:<32} {mechanism:<9} n {len(base)}/{len(treated)} cost "
+                f"{ratio_text(estimate)} transcript x{transcript.ratio:.3f} "
+                f"{steps_text(base, treated)}"
+            )
+    return lines
+
+
+type ArmPair = tuple[list[RunResult], list[RunResult]]
+
+
+def scenario_pairs(
+    costed: Sequence[RunResult], agent: str, mechanism: str
+) -> tuple[list[ArmPair], list[str]]:
+    """İki kolu ölçülmüş senaryolar: eşit n'li çiftler ve n'i farklı olduğu için dışarıdakiler."""
+    labels = sorted({scenario(r) for r in costed if r.agent == agent and r.mechanism == mechanism})
+    pairs = [
+        (
+            label,
+            arm(costed, agent, label, Variant.BASELINE.value),
+            arm(costed, agent, label, mechanism),
+        )
+        for label in labels
+    ]
+    balanced = [(base, treated) for _, base, treated in pairs if base and len(base) == len(treated)]
+    excluded = [label for label, base, treated in pairs if base and len(base) != len(treated)]
+    return balanced, excluded
+
+
+def noninferiority(base_runs: int, treated_runs: int, difference_low: float) -> str:
+    """Adım başarısı için non-inferiority kararı (en fazla NONINFERIORITY_MARGIN düşüş).
+
+    Gösterilememesi kalitenin düştüğü anlamına gelmez; aralık marjı dışlayacak kadar dar değildir.
+    """
+    if min(base_runs, treated_runs) < MIN_RUNS_FOR_VERDICT:
+        return f"undecided (fewer than {MIN_RUNS_FOR_VERDICT} runs per arm)"
+    if difference_low > -NONINFERIORITY_MARGIN:
+        return "shown"
+    return f"not shown (lower bound {100 * difference_low:+.1f} pp)"
+
+
+def agent_comparisons(costed: Sequence[RunResult]) -> list[str]:
+    """Ajan ve mekanizma düzeyinde, dengeli senaryoların eşit ağırlıklı maliyet oranı."""
+    lines: list[str] = []
+    for agent in sorted({result.agent for result in costed}):
+        for mechanism in treatments():
+            balanced, excluded = scenario_pairs(costed, agent, mechanism)
+            if not balanced and not excluded:
+                continue
+            skipped = f"excluded unbalanced: {', '.join(excluded)}" if excluded else "none excluded"
+            if not balanced:
+                lines.append(f"  {agent:<7} {mechanism:<9} no balanced scenario ({skipped})")
+                continue
+            estimate = pooled_ratio(
+                [
+                    math.log(
+                        ratio_estimate(
+                            [final_cost(r) for r in base], [final_cost(r) for r in treated]
+                        ).ratio
+                    )
+                    for base, treated in balanced
+                ]
+            )
+            base_runs = [r for base, _ in balanced for r in base]
+            treated_runs = [r for _, treated in balanced for r in treated]
+            difference = rate_difference(
+                sum(r.steps_passed for r in treated_runs),
+                sum(r.steps for r in treated_runs),
+                sum(r.steps_passed for r in base_runs),
+                sum(r.steps for r in base_runs),
+            )
+            lines.append(
+                f"  {agent:<7} {mechanism:<9} cost {ratio_text(estimate)} over {len(balanced)} "
+                f"scenarios ({skipped}); {steps_text(base_runs, treated_runs)}; "
+                f"non-inferiority at -{100 * NONINFERIORITY_MARGIN:.0f} pp: "
+                f"{noninferiority(len(base_runs), len(treated_runs), difference.low)}"
+            )
+    return lines
+
+
+def checkpoint_comparisons(costed: Sequence[RunResult]) -> list[str]:
+    """Aynı çalıştırmaların adım kontrol noktalarındaki kümülatif maliyet oranları."""
+    lines: list[str] = []
+    for agent, label in sorted({(result.agent, scenario(result)) for result in costed}):
+        base = arm(costed, agent, label, Variant.BASELINE.value)
+        for mechanism in treatments():
+            treated = arm(costed, agent, label, mechanism)
+            runs = [*base, *treated]
+            points = [
+                step
+                for step in CHECKPOINT_STEPS
+                if base and treated and all(len(provider_of(r).cost_by_step) >= step for r in runs)
+            ]
+            if not points:
+                continue
+            parts = [
+                f"step {step} x"
+                + format(
+                    ratio_estimate(
+                        [provider_of(r).cost_by_step[step - 1] for r in base],
+                        [provider_of(r).cost_by_step[step - 1] for r in treated],
+                    ).ratio,
+                    ".3f",
+                )
+                for step in points
+            ]
+            lines.append(f"  {agent:<7} {label:<32} {mechanism:<9} {'  '.join(parts)}")
+    return lines
+
+
+def sheet_cost(result: RunResult, sheet: PriceSheet) -> float:
+    """Sağlayıcı token toplamlarının verilen fiyat tablosuyla maliyeti."""
+    provider = provider_of(result)
+    return (
+        provider.uncached * sheet.uncached
+        + provider.cache_write * sheet.write_5m
+        + provider.cache_read * sheet.read
+        + provider.output * sheet.output
+    )
+
+
+def codex_sensitivity(costed: Sequence[RunResult]) -> list[str]:
+    """Codex oranının fiyat tablosu varsayımlarına duyarlılığı (dengeli senaryolar)."""
+    lines: list[str] = []
+    for mechanism in treatments():
+        balanced, _ = scenario_pairs(costed, Agent.CODEX.value, mechanism)
+        if not balanced:
+            continue
+        ratios = [
+            pooled_ratio(
+                [
+                    math.log(
+                        ratio_estimate(
+                            [sheet_cost(r, sheet) for r in base],
+                            [sheet_cost(r, sheet) for r in treated],
+                        ).ratio
+                    )
+                    for base, treated in balanced
+                ]
+            ).ratio
+            for sheet in CODEX_SENSITIVITY
+        ]
+        lines.append(
+            f"  codex   {mechanism:<9} x{min(ratios):.3f} to x{max(ratios):.3f} over "
+            f"{len(CODEX_SENSITIVITY)} price sheets"
+        )
+    return lines
+
+
+def render_calibration(results: Sequence[RunResult]) -> str:
+    """Simülatörün politika tahminini A/B sonucuyla sınar.
+
+    Baseline çalıştırmalarının kayıtları, tedavi kolunda gerçekten gözlenen tetik noktasıyla
+    yeniden oynatılır; sıkıştırmanın bedeli (sonraki bağlam, önbellekte kalan kısmı, özet)
+    tedavi kolunun kayıtlarından ölçülür. Böylece yalnızca simülatörün kendi varsayımları
+    (ajan davranışı değişmez, maliyet muhasebesi) sınanır. Tahmin ve ölçüm geometrik ortalama
+    oranlarıdır; ölçüm sağlayıcı düzeyindeki birincil maliyettir.
+    """
+    costed = [result for result in results if result.error is None and result.provider is not None]
+    lines = [
+        "CimriHook calibration: simulated vs measured cost ratio (treatment / baseline)",
+        f"  {'agent':<7} {'scenario':<32} {'mechanism':<9} {'trigger':>8} {'post':>7}"
+        f" {'cached':>7} {'summary':>7} {'predicted':>9} {'measured':>9} {'error':>9}",
+    ]
+    for agent, label in sorted({(result.agent, scenario(result)) for result in costed}):
+        base = arm(costed, agent, label, Variant.BASELINE.value)
+        for mechanism in sorted(variant.value for variant in WINDOW_VARIANTS):
+            treated = arm(costed, agent, label, mechanism)
+            if base and treated:
+                lines.append(calibration_line(agent, label, mechanism, base, treated))
+    lines.append(
+        f"  acceptance: |error| <= {100 * CALIBRATION_TOLERANCE:.0f} points of the measured ratio"
+    )
+    return "\n".join(lines)
+
+
+def calibration_line(
+    agent: str,
+    label: str,
+    mechanism: str,
+    base: Sequence[RunResult],
+    treated: Sequence[RunResult],
+) -> str:
+    """Bir senaryonun tahmin ve ölçüm satırı."""
+    prefix = f"  {agent:<7} {label:<32} {mechanism:<9}"
+    treated_traces = [trace for result in treated for trace in run_traces(result)]
+    pre = [tokens for trace in treated_traces for tokens in trace.pre_compact_tokens]
+    post = [tokens for trace in treated_traces for tokens in trace.post_compact_tokens]
+    cached = [tokens for trace in treated_traces for tokens in trace.post_compact_cached]
+    summary = [tokens for trace in treated_traces for tokens in trace.summary_tokens]
+    if not (pre and post and cached and summary):
+        return f"{prefix} no compaction observed in the treatment runs; nothing to calibrate"
+    base_traces = [run_traces(result) for result in base]
+    model = CostModel(
+        write_weight=average_write_weight(
+            total_usage([usage for traces in base_traces for t in traces for usage in t.requests])
+        ),
+        post_compact_tokens=int(statistics.median(post)),
+        post_compact_cached=int(statistics.median(cached)),
+        summary_tokens=int(statistics.median(summary)),
+        refetch_tokens=0,
+        refetch_requests=0,
+    )
+    trigger = int(statistics.median(pre))
+    policy = Policy("treatment trigger", trigger, None)
+    predicted = geometric_mean(
+        [
+            simulated_cost(traces, policy, model) / simulated_cost(traces, OBSERVED, model)
+            for traces in base_traces
+        ]
+    )
+    measured = ratio_estimate([final_cost(r) for r in base], [final_cost(r) for r in treated]).ratio
+    error = predicted - measured
+    verdict = "ok" if abs(error) <= CALIBRATION_TOLERANCE else "OFF"
+    return (
+        f"{prefix} {trigger:>8,} {model.post_compact_tokens:>7,} {model.post_compact_cached:>7,}"
+        f" {model.summary_tokens:>7,} {f'x{predicted:.3f}':>9} {f'x{measured:.3f}':>9}"
+        f" {f'{100 * error:+.1f} pp':>9} {verdict}"
+    )
+
+
+def run_traces(result: RunResult) -> tuple[SessionTrace, ...]:
+    """Çalıştırmanın ajan kayıtlarındaki bağlam pencereleri."""
+    if result.agent == Agent.CLAUDE.value:
+        return claude_traces(claude_transcript(result.session_id), result.session_id)
+    return (load_codex_trace(codex_rollout(result.session_id)),)
+
+
+def simulated_cost(traces: Sequence[SessionTrace], policy: Policy, model: CostModel) -> float:
+    """Kayıtların bir politikayla yeniden oynatılmış maliyeti (her oturum kendi fiyatlarıyla)."""
+    return sum(simulate_trace(trace, policy, model, trace.prices)[0] for trace in traces)
 
 
 def json_object(value: object, where: str) -> dict[str, object]:
@@ -1078,11 +1916,39 @@ def float_field(data: dict[str, object], key: str, where: str) -> float:
     return float(value)
 
 
-def optional_float_field(data: dict[str, object], key: str, where: str) -> float | None:
-    """Boş olabilen sayı alanı."""
+def optional_int_field(data: dict[str, object], key: str, where: str) -> int | None:
+    """Boş olabilen tam sayı alanı."""
     if data.get(key) is None:
         return None
-    return float_field(data, key, where)
+    return int_field(data, key, where)
+
+
+def int_list(data: dict[str, object], key: str, where: str) -> tuple[int, ...]:
+    """Tam sayı listesi alanı."""
+    value = data.get(key)
+    if not isinstance(value, list) or not all(
+        isinstance(item, int) and not isinstance(item, bool) for item in value
+    ):
+        raise BenchError(f"{where}: field {key!r} must be a list of integers")
+    return tuple(int(item) for item in value)
+
+
+def float_list(data: dict[str, object], key: str, where: str) -> tuple[float, ...]:
+    """Sayı listesi alanı."""
+    value = data.get(key)
+    if not isinstance(value, list) or not all(
+        isinstance(item, int | float) and not isinstance(item, bool) for item in value
+    ):
+        raise BenchError(f"{where}: field {key!r} must be a list of numbers")
+    return tuple(float(item) for item in value)
+
+
+def bool_list(data: dict[str, object], key: str, where: str) -> tuple[bool, ...]:
+    """Mantıksal değer listesi alanı."""
+    value = data.get(key)
+    if not isinstance(value, list) or not all(isinstance(item, bool) for item in value):
+        raise BenchError(f"{where}: field {key!r} must be a list of booleans")
+    return tuple(bool(item) for item in value)
 
 
 def bool_field(data: dict[str, object], key: str, where: str) -> bool:

@@ -14,10 +14,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from cimrihook.claude import MUTATING_TOOLS, JsonObject, is_unchanged_read, observe
+from cimrihook.claude import MUTATING_TOOLS, JsonObject, is_unchanged_read, observe, observe_text
 from cimrihook.codec import CodecConfig, decide
 from cimrihook.errors import HookPayloadError
-from cimrihook.model import Decision, Encoding, SavingsRow, View
+from cimrihook.model import Decision, Encoding, Observation, SavingsRow, View
 from cimrihook.report import render_table, total_line
 
 SECONDS_PER_DAY: Final = 86_400
@@ -50,6 +50,17 @@ class ToolUse:
 
 
 @dataclass(frozen=True, slots=True)
+class RecordedResult:
+    """Transcript'teki tek araç sonucu: yapılandırılmış hali (varsa) ve modele giden metin."""
+
+    tool_use_id: str
+    response: object | None  # toolUseResult; alt ajan transcript'lerinde yazılmaz
+    text: str | None  # tool_result içeriği yalnızca metinse
+    is_error: bool
+    cwd: str
+
+
+@dataclass(frozen=True, slots=True)
 class Replayed:
     """Yeniden oynatılan tek karar ve bağlamda kalma süresi."""
 
@@ -66,6 +77,7 @@ class TranscriptReplay:
     usages: dict[str, Usage]  # message.id -> son satırdaki kullanım
     native_unchanged: int  # Claude Code'un kendi 'file_unchanged' yanıtları
     skipped: int  # ayrıştırılamayan satırlar ve şemaya uymayan sonuçlar
+    from_text: int  # yapılandırılmış sonucu olmadığı için metinden ayrıştırılan sonuçlar
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +92,7 @@ class AuditResult:
     savings: tuple[SavingsRow, ...]
     native_unchanged: int
     skipped: int
+    from_text: int
     weighted_saved: float  # taban girdi fiyatı cinsinden tasarruf
     weighted_input: float  # taban girdi fiyatı cinsinden toplam girdi maliyeti
 
@@ -111,6 +124,7 @@ def audit_transcripts(
         savings=summarize(decisions),
         native_unchanged=sum(replay.native_unchanged for replay in replays),
         skipped=sum(replay.skipped for replay in replays),
+        from_text=sum(replay.from_text for replay in replays),
         weighted_saved=sum(weighted_saving(item, write_weight) for item in decisions),
         weighted_input=usage.uncached
         + usage.write_5m * WRITE_5M_WEIGHT
@@ -145,6 +159,7 @@ def replay_transcript(path: Path, config: CodecConfig) -> TranscriptReplay:
     decisions: list[Replayed] = []
     native_unchanged = 0
     skipped = 0
+    from_text = 0
     step = 0
     with path.open("rb") as handle:
         for raw_line in handle:
@@ -166,47 +181,47 @@ def replay_transcript(path: Path, config: CodecConfig) -> TranscriptReplay:
                     if usage is not None:
                         usages[message_id] = usage  # aynı kimliğin son satırı geçerlidir
                 continue
-            result = user_tool_result(entry)
-            if result is None:
-                continue
-            tool_use_id, tool_response, cwd = result
-            use = tool_uses.get(tool_use_id)
-            if use is None:
-                continue
-            step += 1
-            if is_unchanged_read(use.name, tool_response):
-                native_unchanged += 1
-                continue
-            try:
-                obs = observe(use.name, use.input, tool_response, cwd)
-            except HookPayloadError:
-                skipped += 1  # eski sürümlerin farklı şemaları sayılır, sessizce yutulmaz
-                continue
-            if use.name in MUTATING_TOOLS:
-                mutations.append((step, tool_use_id if obs is None else obs.request_key))
-            if obs is None:
-                continue
-            previous = latest.get(obs.request_key)
-            mutated = previous is not None and any(
-                index > previous.step and key != obs.request_key for index, key in mutations
-            )
-            stream_views = views.setdefault(obs.stream, [])
-            decision = decide(obs, stream_views, previous, mutated, config)
-            view = View(
-                step=step,
-                stream=obs.stream,
-                request_key=obs.request_key,
-                encoding=decision.encoding,
-                start_line=obs.start_line,
-                lines=() if decision.encoding is Encoding.OUTLINE else obs.lines,
-                total_lines=obs.total_lines,
-                whole=obs.whole,
-            )
-            stream_views.append(view)
-            latest[obs.request_key] = view
-            pending.append((use.name, decision, len(request_ids)))
+            for recorded in recorded_results(entry):
+                use = tool_uses.get(recorded.tool_use_id)
+                if use is None:
+                    continue
+                step += 1
+                if recorded.response is not None and is_unchanged_read(use.name, recorded.response):
+                    native_unchanged += 1
+                    continue
+                try:
+                    obs = recorded_observation(use, recorded)
+                except HookPayloadError:
+                    skipped += 1  # eski sürümlerin farklı şemaları sayılır, sessizce yutulmaz
+                    continue
+                if use.name in MUTATING_TOOLS:
+                    mutations.append(
+                        (step, recorded.tool_use_id if obs is None else obs.request_key)
+                    )
+                if obs is None:
+                    continue
+                from_text += int(recorded.response is None)
+                previous = latest.get(obs.request_key)
+                mutated = previous is not None and any(
+                    index > previous.step and key != obs.request_key for index, key in mutations
+                )
+                stream_views = views.setdefault(obs.stream, [])
+                decision = decide(obs, stream_views, previous, mutated, config)
+                view = View(
+                    step=step,
+                    stream=obs.stream,
+                    request_key=obs.request_key,
+                    encoding=decision.encoding,
+                    start_line=obs.start_line,
+                    lines=() if decision.encoding is Encoding.OUTLINE else obs.lines,
+                    total_lines=obs.total_lines,
+                    whole=obs.whole,
+                )
+                stream_views.append(view)
+                latest[obs.request_key] = view
+                pending.append((use.name, decision, len(request_ids)))
     decisions.extend(close_generation(pending, len(request_ids)))
-    return TranscriptReplay(tuple(decisions), usages, native_unchanged, skipped)
+    return TranscriptReplay(tuple(decisions), usages, native_unchanged, skipped, from_text)
 
 
 def close_generation(
@@ -274,23 +289,68 @@ def message_usage(message: dict[object, object]) -> Usage | None:
     )
 
 
-def user_tool_result(entry: JsonObject) -> tuple[str, object, str] | None:
-    """Tek bir tool_result taşıyan kullanıcı satırından (tool_use_id, sonuç, cwd) çıkarır."""
+def recorded_results(entry: JsonObject) -> tuple[RecordedResult, ...]:
+    """Kullanıcı satırındaki araç sonuçları.
+
+    Ana transcript'te satır tek bir sonuç ve onun yapılandırılmış hali (toolUseResult) taşır. Alt
+    ajan transcript'leri yapılandırılmış hali yazmaz; o sonuçlar modele giden metinle döner.
+    """
     message = entry.get("message")
-    tool_response = entry.get("toolUseResult")
     cwd = entry.get("cwd")
-    if entry.get("type") != "user" or tool_response is None or not isinstance(cwd, str):
-        return None
+    if entry.get("type") != "user" or not isinstance(cwd, str):
+        return ()
     if not isinstance(message, dict) or not isinstance(message.get("content"), list):
-        return None
-    ids = [
-        block.get("tool_use_id")
+        return ()
+    blocks = [
+        block
         for block in message["content"]
-        if isinstance(block, dict) and block.get("type") == "tool_result"
+        if isinstance(block, dict)
+        and block.get("type") == "tool_result"
+        and isinstance(block.get("tool_use_id"), str)
     ]
-    if len(ids) != 1 or not isinstance(ids[0], str):
+    response = entry.get("toolUseResult")
+    if response is not None:
+        if len(blocks) != 1:
+            return ()
+        return (
+            RecordedResult(
+                str(blocks[0]["tool_use_id"]),
+                response,
+                None,
+                blocks[0].get("is_error") is True,
+                cwd,
+            ),
+        )
+    return tuple(
+        RecordedResult(
+            str(block["tool_use_id"]),
+            None,
+            result_text(block.get("content")),
+            block.get("is_error") is True,
+            cwd,
+        )
+        for block in blocks
+    )
+
+
+def result_text(content: object) -> str | None:
+    """tool_result içeriği yalnızca metinse o metin; görsel vb. içerikte None."""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list) or not content:
         return None
-    return ids[0], tool_response, cwd
+    if not all(isinstance(block, dict) and block.get("type") == "text" for block in content):
+        return None
+    return "\n".join(str(block.get("text", "")) for block in content)
+
+
+def recorded_observation(use: ToolUse, recorded: RecordedResult) -> Observation | None:
+    """Araç sonucunun codec gözlemi; başarısız çağrılar ve yeniden kodlanamayan sonuçlar None."""
+    if recorded.response is not None:
+        return observe(use.name, use.input, recorded.response, recorded.cwd)
+    if recorded.is_error or recorded.text is None:
+        return None
+    return observe_text(use.name, use.input, recorded.text, recorded.cwd)
 
 
 def average_write_weight(usage: Usage) -> float:
@@ -334,7 +394,8 @@ def render_audit(result: AuditResult) -> str:
             f"cache write {usage.write_5m + usage.write_1h:,} (1h TTL {usage.write_1h:,}), "
             f"cache read {usage.read:,}",
             f"Claude Code native 'file_unchanged' hits: {result.native_unchanged:,} | "
-            f"skipped lines/results: {result.skipped:,}",
+            f"skipped lines/results: {result.skipped:,} | parsed from model-visible text "
+            f"(subagent transcripts store no structured result): {result.from_text:,}",
             "What CimriHook would have sent instead (OUTLINE is an upper bound):",
             *render_table(result.savings),
             total_line(result.savings),

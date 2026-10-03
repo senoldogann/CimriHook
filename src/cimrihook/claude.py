@@ -8,6 +8,7 @@ sonuç yerine düz metin hata döndürür ve sıkıştırma transcript'e `compac
 """
 
 import hashlib
+import itertools
 import json
 import os
 from collections.abc import Mapping, Sequence
@@ -28,6 +29,8 @@ MUTATING_TOOLS: Final = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit",
 # ek alanlar koyar; bu sonuçlar yeniden kodlanmaz.
 BASH_SIDE_EFFECT_KEYS: Final = frozenset({"bashEditDiff", "gitOperation", "backgroundTaskId"})
 BASH_PERSISTED_KEYS: Final = frozenset({"persistedOutputPath", "persistedOutputSize"})
+# Büyük çıktı dosyaya yazıldığında modele giden metin bu etiketle başlar.
+PERSISTED_OUTPUT_MARKER: Final = "<persisted-output>"
 BOUNDARY_MARKERS: Final = (b'"subtype":"compact_boundary"', b'"subtype":"microcompact_boundary"')
 MARKER_SLACK: Final = max(len(marker) for marker in BOUNDARY_MARKERS)
 RESET_EVENTS: Final = frozenset({"SessionStart", "PreCompact"})
@@ -234,6 +237,71 @@ def observe_bash(tool_input: JsonObject, tool_response: object, cwd: str) -> Obs
     lines = output_lines(
         require_str(response, "stdout", where), require_str(response, "stderr", where)
     )
+    stream = f"bash:{cwd}\0{command}"
+    return Observation(
+        tool=Tool.BASH,
+        stream=stream,
+        request_key=digest(stream),
+        label=f"`{shorten(command)}`",
+        start_line=1,
+        lines=lines,
+        total_lines=len(lines),
+        whole=True,
+        full_request=False,
+    )
+
+
+def observe_text(tool_name: str, tool_input: JsonObject, text: str, cwd: str) -> Observation | None:
+    """Yapılandırılmış sonucu kaydedilmemiş araç sonucunu, modele giden metinden gözleme çevirir.
+
+    Alt ajan transcript'leri toolUseResult alanını yazmaz; yalnızca modelin gördüğü metin vardır.
+    Read metni 'satır_no<TAB>içerik' satırlarıdır; Bash metninde stdout ve stderr ayrılmaz.
+    Başarısız çağrılar burada değerlendirilmez (canlı hook da onları yeniden kodlayamaz).
+    """
+    if tool_name == Tool.READ.value:
+        return observe_read_text(tool_input, text, cwd)
+    if tool_name == Tool.BASH.value:
+        return observe_bash_text(tool_input, text, cwd)
+    return None
+
+
+def observe_read_text(tool_input: JsonObject, text: str, cwd: str) -> Observation | None:
+    """Read metninden gözlem; numaralı satır yoksa (hata, boş dosya, görsel) None.
+
+    Toplam satır sayısı metinde yoktur: offset/limit verilmeden okunan ve varsayılan sınırdan
+    az satır dönen dosya bütün kabul edilir, diğerlerinde son satır numarası alt sınırdır.
+    """
+    numbered = numbered_lines(text)
+    if numbered is None:
+        return None
+    start_line, lines = numbered
+    request = read_request(tool_input, cwd)
+    whole = request.full and start_line == 1 and len(lines) < READ_DEFAULT_LIMIT
+    return read_observation(
+        request, start_line, lines, len(lines) if whole else start_line + len(lines) - 1, not whole
+    )
+
+
+def numbered_lines(text: str) -> tuple[int, tuple[str, ...]] | None:
+    """Baştaki ardışık 'satır_no<TAB>içerik' satırları; sonraki numarasız metin atılır."""
+    rows = [row.partition("\t") for row in text.split("\n")]
+    numbered = list(itertools.takewhile(lambda row: row[1] == "\t" and row[0].isdigit(), rows))
+    if not numbered:
+        return None
+    first = int(numbered[0][0])
+    if any(int(number) != first + index for index, (number, _, _) in enumerate(numbered)):
+        return None
+    return first, tuple(content for _, _, content in numbered)
+
+
+def observe_bash_text(tool_input: JsonObject, text: str, cwd: str) -> Observation | None:
+    """Bash metninden gözlem; arka plan çalıştırmaları ve dosyaya yazılmış büyük çıktılar hariç."""
+    if text.startswith(PERSISTED_OUTPUT_MARKER):
+        return None
+    if optional_bool(tool_input, "run_in_background", "Bash.tool_input") is True:
+        return None
+    command = require_str(tool_input, "command", "Bash.tool_input")
+    lines = tuple(text.split("\n")) if text else ()
     stream = f"bash:{cwd}\0{command}"
     return Observation(
         tool=Tool.BASH,

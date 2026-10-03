@@ -3,14 +3,18 @@
 Her API isteği o ana kadarki bağlamın tamamını yeniden okur; maliyetin büyük kısmı bu yüzden
 bağlamın boyutundan gelir. Simülatör ajan kayıtlarındaki gerçek istek dizisini (API kullanım
 verisi) alır ve sıkıştırma politikalarını aynı dizi üzerinde yeniden oynatır. Claude Code
-transcript'leri ve Codex CLI rollout kayıtları desteklenir; maliyet her sağlayıcının fiyat
-oranlarıyla taban girdi fiyatı cinsinden hesaplanır. Sıkıştırmanın bedeli modele dahildir:
-özetleme isteği bağlamı bir kez okur, özet çıktı fiyatıyla üretilir, ajan ardından bir miktar
-içeriği birkaç ek istekle yeniden okur. Ajanın davranışının bunun dışında değişmediği
-varsayılır; kalite etkisi A/B deneyiyle ölçülmelidir.
+transcript'leri ve Codex CLI rollout kayıtları desteklenir; maliyet her oturumun modelinin fiyat
+oranlarıyla taban girdi fiyatı cinsinden hesaplanır.
+
+Sıkıştırmanın bedeli kayıtlardaki gerçek sıkıştırmalardan ölçülür: özetleme isteği bağlamı bir kez
+okur ve özeti çıktı fiyatıyla üretir; ardından gelen ilk istek sistem istemi, araçlar, özet ve
+yeniden eklenen dosyalarla yeni bağlamı taşır ve bunun yalnızca önbellekte kalmayan kısmı yeniden
+yazılır. Ajanın davranışının bunun dışında değişmediği varsayılır; bu varsayım ve kalite etkisi
+A/B deneyiyle sınanır (`cimrihook bench-calibrate`).
 """
 
 import statistics
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -25,10 +29,15 @@ from cimrihook.audit import (
     transcript_files,
 )
 from cimrihook.claude import JsonObject
+from cimrihook.codec import estimate_tokens
 from cimrihook.errors import ConfigError
 
 COLD_WRITE_SHARE: Final = 0.5  # girdinin yarısından fazlası yeniden yazıldıysa önbellek soğuktur
 CLAUDE_MIN_COMPACT_WINDOW: Final = 100_000  # CLAUDE_CODE_AUTO_COMPACT_WINDOW belgelenmiş alt sınırı
+# Claude Code 2.1.288 otomatik sıkıştırmayı pencere − min(çıktı sınırı, 20000) − 13000 tokenlık
+# bağlamda tetikler; bugünkü modellerin çıktı sınırı 20000'in üstündedir.
+CLAUDE_COMPACT_OFFSET: Final = 33_000
+SYNTHETIC_MODEL: Final = "<synthetic>"  # Claude Code'un API'ye gitmeyen yerel mesajları
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +54,8 @@ class PriceSheet:
 
 # Anthropic: önbellek okuma 0.1, yazma 1.25 (5 dk) / 2.0 (1 saat), çıktı 5 kat.
 ANTHROPIC: Final = PriceSheet("Anthropic", 0.1, 1.25, 2.0, 1.0, 5.0)
+# Opus 5.x önbellek okumayı 0.05, Fable 5.1 0.025 çarpanıyla fiyatlar; diğer Claude modelleri 0.1.
+CLAUDE_READ_WEIGHTS: Final = (("claude-opus-5", 0.05), ("claude-fable", 0.025))
 # OpenAI GPT-5.x/6.x: önbellekli girdi %90 indirimli; 5.6 ve sonrası önbellek yazımını 1.25 katla
 # faturalar (eski modeller yazım raporlamaz); çıktı yaklaşık 6 kat (GPT-5.5: 6, GPT-5.6-sol: 5).
 OPENAI: Final = PriceSheet("OpenAI", 0.1, 1.25, 1.25, 1.0, 6.0)
@@ -52,10 +63,15 @@ OPENAI: Final = PriceSheet("OpenAI", 0.1, 1.25, 1.25, 1.0, 6.0)
 
 @dataclass(frozen=True, slots=True)
 class SessionTrace:
-    """Tek bağlam penceresinin istek dizisi ve gerçek sıkıştırmalarının sonucu."""
+    """Tek bağlam penceresinin istek dizisi, modeli ve gerçek sıkıştırmaları."""
 
     requests: tuple[Usage, ...]
-    post_compact_tokens: tuple[int, ...]  # gerçek sıkıştırmalardan sonraki bağlam boyutları
+    model: str  # isteklerin çoğunu yanıtlayan model; bilinmiyorsa boş
+    prices: PriceSheet  # modelin fiyat oranları
+    pre_compact_tokens: tuple[int, ...]  # sıkıştırmayı tetikleyen bağlam boyutları
+    post_compact_tokens: tuple[int, ...]  # sıkıştırmadan sonraki ilk isteğin bağlamı
+    post_compact_cached: tuple[int, ...]  # o isteğin önbellekten okunan kısmı
+    summary_tokens: tuple[int, ...]  # özetin çıktı tokenı (Claude: özet metninden tahmin)
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,14 +85,26 @@ class Policy:
 
 @dataclass(frozen=True, slots=True)
 class CostModel:
-    """Simülasyon varsayımları."""
+    """Sıkıştırmanın bedeli için simülasyon varsayımları (fiyatlar oturumun modelinden gelir)."""
 
-    prices: PriceSheet
     write_weight: float  # simülasyonda yeni yazılan girdinin ortalama çarpanı
-    post_compact_tokens: int  # sıkıştırma sonrası bağlam boyutu
+    post_compact_tokens: int  # sıkıştırmadan sonraki ilk isteğin bağlamı
+    post_compact_cached: int  # o bağlamın önbellekte kalan kısmı (sistem istemi ve araçlar)
     summary_tokens: int  # özetin çıktı tokenı
-    refetch_tokens: int  # sıkıştırma sonrası ajanın yeniden okuduğu içerik
+    refetch_tokens: int  # sıkıştırma sonrası ajanın ayrıca yeniden okuduğu içerik
     refetch_requests: int  # bu yeniden okuma için ek istek sayısı
+
+
+@dataclass(frozen=True, slots=True)
+class CostOverrides:
+    """Kullanıcının verdiği varsayımlar; None olanlar kayıtlardaki sıkıştırmalardan ölçülür."""
+
+    post_compact_tokens: int | None
+    post_compact_cached: int | None
+    summary_tokens: int | None
+    refetch_tokens: int
+    refetch_requests: int
+    read_weight: float | None  # tüm modellerin önbellek okuma çarpanını değiştirir
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +115,15 @@ class Outcome:
     cost: float
     compactions: int
     mean_context: float
+
+
+@dataclass(frozen=True, slots=True)
+class ModelShare:
+    """Simülasyondaki bir modelin okuma çarpanı ve oturum sayısı."""
+
+    model: str
+    read: float
+    sessions: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,13 +138,15 @@ class SimulationResult:
     observed_compactions: int
     static_prefix: int  # oturumların ilk isteğindeki bağlamın medyanı (sistem istemi + araçlar)
     model: CostModel
+    models: tuple[ModelShare, ...]
     outcomes: tuple[Outcome, ...]
 
 
-type ApplyHint = Callable[[int, int], str]
+type ApplyHint = Callable[[int], str]
 
+OBSERVED: Final = Policy("observed behaviour", None, None)
 POLICIES: Final = (
-    Policy("observed behaviour", None, None),
+    OBSERVED,
     Policy("compact above 400k", 400_000, None),
     Policy("compact above 300k", 300_000, None),
     Policy("compact above 200k", 200_000, None),
@@ -119,44 +158,19 @@ POLICIES: Final = (
 
 
 def simulate_claude(
-    logs_dir: Path,
-    days: int,
-    now: float,
-    summary_tokens: int,
-    refetch_tokens: int,
-    refetch_requests: int,
-    post_compact_override: int | None,
-    read_weight: float | None,
+    logs_dir: Path, days: int, now: float, overrides: CostOverrides
 ) -> SimulationResult:
-    """Claude Code transcript'leri üzerinde politikaları çalıştırır.
-
-    read_weight verilirse önbellek okuma çarpanını değiştirir (Opus 5.5: 0.05, Fable 5.1: 0.025).
-    """
+    """Claude Code transcript'leri (alt ajanlar dahil) üzerinde politikaları çalıştırır."""
     files = transcript_files(logs_dir, now - days * SECONDS_PER_DAY)
     traces = [load_claude_trace(path) for path in files]
     requests = [usage for trace in traces for usage in trace.requests]
     return simulate_traces(
-        "Claude Code",
-        traces,
-        days,
-        ANTHROPIC if read_weight is None else replace(ANTHROPIC, read=read_weight),
-        average_write_weight(total_usage(requests)),
-        summary_tokens,
-        refetch_tokens,
-        refetch_requests,
-        post_compact_override,
+        "Claude Code", traces, days, average_write_weight(total_usage(requests)), overrides
     )
 
 
 def simulate_codex(
-    logs_dir: Path,
-    days: int,
-    now: float,
-    summary_tokens: int,
-    refetch_tokens: int,
-    refetch_requests: int,
-    post_compact_override: int | None,
-    read_weight: float | None,
+    logs_dir: Path, days: int, now: float, overrides: CostOverrides
 ) -> SimulationResult:
     """Codex CLI rollout kayıtları üzerinde politikaları çalıştırır."""
     min_mtime = now - days * SECONDS_PER_DAY
@@ -164,15 +178,7 @@ def simulate_codex(
         path for path in logs_dir.rglob("rollout-*.jsonl") if path.stat().st_mtime >= min_mtime
     )
     return simulate_traces(
-        "Codex CLI",
-        [load_codex_trace(path) for path in files],
-        days,
-        OPENAI if read_weight is None else replace(OPENAI, read=read_weight),
-        OPENAI.uncached,
-        summary_tokens,
-        refetch_tokens,
-        refetch_requests,
-        post_compact_override,
+        "Codex CLI", [load_codex_trace(path) for path in files], days, OPENAI.uncached, overrides
     )
 
 
@@ -180,73 +186,161 @@ def simulate_traces(
     agent: str,
     traces: Sequence[SessionTrace],
     days: int,
-    prices: PriceSheet,
     write_weight: float,
-    summary_tokens: int,
-    refetch_tokens: int,
-    refetch_requests: int,
-    post_compact_override: int | None,
+    overrides: CostOverrides,
 ) -> SimulationResult:
     """Sağlayıcıdan bağımsız çekirdek: tüm politikaları aynı istek dizileri üzerinde oynatır."""
     used = [trace for trace in traces if trace.requests]
-    requests = [usage for trace in used for usage in trace.requests]
-    observed = [tokens for trace in used for tokens in trace.post_compact_tokens]
     model = CostModel(
-        prices=prices,
         write_weight=write_weight,
-        post_compact_tokens=post_compact_size(observed, post_compact_override),
-        summary_tokens=summary_tokens,
-        refetch_tokens=refetch_tokens,
-        refetch_requests=refetch_requests,
+        post_compact_tokens=observed_median(
+            [tokens for trace in used for tokens in trace.post_compact_tokens],
+            overrides.post_compact_tokens,
+            "--post-compact-tokens",
+        ),
+        post_compact_cached=observed_median(
+            [tokens for trace in used for tokens in trace.post_compact_cached],
+            overrides.post_compact_cached,
+            "--post-compact-cached",
+        ),
+        summary_tokens=observed_median(
+            [tokens for trace in used for tokens in trace.summary_tokens],
+            overrides.summary_tokens,
+            "--summary-tokens",
+        ),
+        refetch_tokens=overrides.refetch_tokens,
+        refetch_requests=overrides.refetch_requests,
+    )
+    shares = Counter(
+        (trace.model, trace_prices(trace, overrides.read_weight).read) for trace in used
     )
     return SimulationResult(
         agent=agent,
         sessions=len(used),
-        requests=len(requests),
+        requests=sum(len(trace.requests) for trace in used),
         days=days,
-        exact_cost=sum(exact_cost(usage, prices) for usage in requests),
-        observed_compactions=len(observed),
+        exact_cost=sum(
+            exact_cost(usage, trace_prices(trace, overrides.read_weight))
+            for trace in used
+            for usage in trace.requests
+        ),
+        observed_compactions=sum(len(trace.pre_compact_tokens) for trace in used),
         static_prefix=int(statistics.median(context_of(trace.requests[0]) for trace in used)),
         model=model,
-        outcomes=tuple(run_policy(used, policy, model) for policy in POLICIES),
+        models=tuple(ModelShare(name, read, count) for (name, read), count in shares.most_common()),
+        outcomes=tuple(
+            run_policy(used, policy, model, overrides.read_weight) for policy in POLICIES
+        ),
     )
 
 
+def observed_median(observed: Sequence[int], override: int | None, flag: str) -> int:
+    """Verilmişse kullanıcının değeri, yoksa kayıtlardaki gerçek sıkıştırmaların medyanı."""
+    if override is not None:
+        return override
+    if not observed:
+        raise ConfigError(f"no real compactions found in the logs; pass {flag} explicitly")
+    return int(statistics.median(observed))
+
+
+def claude_prices(model: str) -> PriceSheet:
+    """Claude modelinin önbellek okuma çarpanıyla Anthropic fiyat oranları."""
+    for marker, read in CLAUDE_READ_WEIGHTS:
+        if marker in model.lower():
+            return replace(ANTHROPIC, read=read)
+    return ANTHROPIC
+
+
+def trace_prices(trace: SessionTrace, read_weight: float | None) -> PriceSheet:
+    """Oturumun fiyat oranları; okuma çarpanı verilmişse onunla."""
+    return trace.prices if read_weight is None else replace(trace.prices, read=read_weight)
+
+
 def load_claude_trace(path: Path) -> SessionTrace:
-    """Claude Code transcript'i: mesaj kimliği başına son kullanım ve compact_boundary boyutları."""
+    """Claude Code transcript'i: mesaj kimliği başına son kullanım, model ve gerçek sıkıştırmalar.
+
+    Sıkıştırmadan sonraki bağlam compact_boundary'deki postTokens değil, ardından gelen ilk
+    gerçek isteğin bağlamıdır: postTokens sistem istemini, araçları ve yeniden eklenen dosyaları
+    içermez. Özetin çıktı tokenı özet metninden tahmin edilir (özetleme isteği transcript'e
+    yazılmaz; düşünme tokenlarıyla gerçek çıktı daha büyüktür).
+    """
     order: list[str] = []
     usages: dict[str, Usage] = {}
-    post: list[int] = []
+    models: Counter[str] = Counter()
+    pre: list[int] = []
+    summaries: list[int] = []
+    after: list[str] = []  # her sıkıştırmadan sonraki ilk gerçek isteğin kimliği
+    awaiting = False
     with path.open("rb") as handle:
         for raw_line in handle:
             entry = parse_line(raw_line)
             if entry is None:
                 continue
             if entry.get("type") == "system" and entry.get("subtype") == "compact_boundary":
-                tokens = post_compact_tokens(entry)
-                if tokens is not None:
-                    post.append(tokens)
+                trigger = compact_metadata_tokens(entry, "preTokens")
+                if trigger is not None:
+                    pre.append(trigger)
+                awaiting = True
                 continue
             message = entry.get("message")
-            if entry.get("type") != "assistant" or not isinstance(message, dict):
+            if not isinstance(message, dict):
+                continue
+            if entry.get("isCompactSummary") is True:
+                summaries.append(estimate_tokens(content_text(message.get("content"))))
                 continue
             message_id = message.get("id")
             usage = message_usage(message)
-            if not isinstance(message_id, str) or usage is None:
+            if entry.get("type") != "assistant" or not isinstance(message_id, str) or usage is None:
                 continue
+            model = message.get("model")
+            real = isinstance(model, str) and model != SYNTHETIC_MODEL
             if message_id not in usages:
                 order.append(message_id)
+                if real:
+                    models[str(model)] += 1
+                if awaiting and real and context_of(usage) > 0:
+                    after.append(message_id)
+                    awaiting = False
             usages[message_id] = usage  # aynı kimliğin son satırı geçerlidir
-    return SessionTrace(tuple(usages[message_id] for message_id in order), tuple(post))
+    name = models.most_common(1)[0][0] if models else ""
+    first_after = [usages[message_id] for message_id in after]
+    return SessionTrace(
+        requests=tuple(usages[message_id] for message_id in order),
+        model=name,
+        prices=claude_prices(name),
+        pre_compact_tokens=tuple(pre),
+        post_compact_tokens=tuple(context_of(usage) for usage in first_after),
+        post_compact_cached=tuple(usage.read for usage in first_after),
+        summary_tokens=tuple(summaries),
+    )
+
+
+def content_text(content: object) -> str:
+    """Mesaj içeriğinin metni (metin bloklarının birleşimi)."""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    return "\n".join(
+        str(block.get("text", ""))
+        for block in content
+        if isinstance(block, dict) and block.get("type") == "text"
+    )
 
 
 def load_codex_trace(path: Path) -> SessionTrace:
     """Codex rollout kaydından istek dizisi (token_count) ve sıkıştırmalar (compacted).
 
-    Sıkıştırma sonrası boyut, compacted kaydından sonraki ilk isteğin bağlamıdır.
+    Sıkıştırmayı tetikleyen boyut compacted kaydından önceki son isteğin, sıkıştırma sonrası boyut
+    ise ondan sonraki ilk isteğin bağlamıdır. token_count olayları sıkıştırma isteğinin kendisini
+    içermez; özetin çıktı tokenı o isteğin token_usage_record kaydından okunur.
     """
     requests: list[Usage] = []
-    post: list[int] = []
+    post: list[Usage] = []
+    pre: list[int] = []
+    models: Counter[str] = Counter()
+    outputs: dict[str, int] = {}  # yanıt kimliği -> çıktı tokenı (token_usage_record)
+    compaction_ids: list[str] = []
     last_total: int | None = None
     after_compaction = False
     with path.open("rb") as handle:
@@ -254,7 +348,24 @@ def load_codex_trace(path: Path) -> SessionTrace:
             entry = parse_line(raw_line)
             if entry is None:
                 continue
-            if entry.get("type") == "compacted":
+            payload = entry.get("payload")
+            kind = entry.get("type")
+            if kind == "turn_context" and isinstance(payload, dict):
+                if isinstance(payload.get("model"), str):
+                    models[str(payload["model"])] += 1
+                continue
+            if kind == "token_usage_record" and isinstance(payload, dict):
+                output = record_output(payload)
+                if output is not None:
+                    outputs[output[0]] = output[1]
+                continue
+            if kind == "compacted":
+                if isinstance(payload, dict) and isinstance(
+                    payload.get("compaction_response_id"), str
+                ):
+                    compaction_ids.append(str(payload["compaction_response_id"]))
+                if requests:
+                    pre.append(context_of(requests[-1]))
                 after_compaction = True
                 continue
             request = codex_request(entry)
@@ -262,10 +373,28 @@ def load_codex_trace(path: Path) -> SessionTrace:
                 continue  # aynı kümülatif toplam: yeni istek yok
             usage, last_total = request
             if after_compaction:
-                post.append(context_of(usage))
+                post.append(usage)
                 after_compaction = False
             requests.append(usage)
-    return SessionTrace(tuple(requests), tuple(post))
+    return SessionTrace(
+        requests=tuple(requests),
+        model=models.most_common(1)[0][0] if models else "",
+        prices=OPENAI,
+        pre_compact_tokens=tuple(pre),
+        post_compact_tokens=tuple(context_of(usage) for usage in post),
+        post_compact_cached=tuple(usage.read for usage in post),
+        summary_tokens=tuple(outputs[key] for key in compaction_ids if key in outputs),
+    )
+
+
+def record_output(payload: JsonObject) -> tuple[str, int] | None:
+    """token_usage_record kaydının (yanıt kimliği, çıktı tokenı) çifti; alanlar yoksa None."""
+    response_id = payload.get("response_id")
+    usage = payload.get("usage")
+    if not isinstance(response_id, str) or not isinstance(usage, dict):
+        return None
+    output = usage.get("output_tokens")
+    return (response_id, output) if isinstance(output, int) else None
 
 
 def codex_request(entry: JsonObject) -> tuple[Usage, int] | None:
@@ -300,24 +429,13 @@ def codex_request(entry: JsonObject) -> tuple[Usage, int] | None:
     return usage, cumulative
 
 
-def post_compact_tokens(entry: JsonObject) -> int | None:
-    """compact_boundary satırındaki sıkıştırma sonrası bağlam boyutu."""
+def compact_metadata_tokens(entry: JsonObject, key: str) -> int | None:
+    """compact_boundary satırındaki bağlam boyutu (preTokens: tetikleyen, postTokens: sonraki)."""
     metadata = entry.get("compactMetadata")
     if not isinstance(metadata, dict):
         return None
-    tokens = metadata.get("postTokens")
+    tokens = metadata.get(key)
     return tokens if isinstance(tokens, int) and tokens > 0 else None
-
-
-def post_compact_size(observed: Sequence[int], override: int | None) -> int:
-    """Sıkıştırma sonrası bağlam: verilmişse o, yoksa gözlenen sıkıştırmaların medyanı."""
-    if override is not None:
-        return override
-    if not observed:
-        raise ConfigError(
-            "no real compactions found in the logs; pass --post-compact-tokens explicitly"
-        )
-    return int(statistics.median(observed))
 
 
 def total_usage(requests: Sequence[Usage]) -> Usage:
@@ -366,9 +484,14 @@ def should_compact(policy: Policy, context: int, cold: bool, model: CostModel) -
     return cold and policy.cold_window is not None and context > policy.cold_window
 
 
-def simulate_trace(trace: SessionTrace, policy: Policy, model: CostModel) -> tuple[float, int, int]:
-    """Bir oturumu politikayla yeniden oynatır: (maliyet, sıkıştırma sayısı, bağlam toplamı)."""
-    prices = model.prices
+def simulate_trace(
+    trace: SessionTrace, policy: Policy, model: CostModel, prices: PriceSheet
+) -> tuple[float, int, int]:
+    """Bir oturumu politikayla yeniden oynatır: (maliyet, sıkıştırma sayısı, bağlam toplamı).
+
+    Yeni yazılan girdi: önbellek soğuksa bağlamın tamamı, simüle sıkıştırmadan sonra önbellekte
+    kalan önek dışındaki kısım, diğer isteklerde gerçek istekte yazılan kadarı.
+    """
     cost = 0.0
     compactions = 0
     context_sum = 0
@@ -385,15 +508,16 @@ def simulate_trace(trace: SessionTrace, policy: Policy, model: CostModel) -> tup
         else:
             simulated += growth
         cold = is_cold(usage)
-        fresh = cold
+        written = min(written_of(usage), simulated)
         if should_compact(policy, simulated, cold, model):
             read_weight = prices.uncached if cold else prices.read
             cost += simulated * read_weight + model.summary_tokens * prices.output
             simulated = model.post_compact_tokens + model.refetch_tokens
             cost += model.refetch_requests * simulated * prices.read
             compactions += 1
-            fresh = True
-        written = simulated if fresh else min(written_of(usage), simulated)
+            written = simulated - min(model.post_compact_cached, simulated)
+        if cold:
+            written = simulated
         cost += (
             written * model.write_weight
             + (simulated - written) * prices.read
@@ -403,9 +527,13 @@ def simulate_trace(trace: SessionTrace, policy: Policy, model: CostModel) -> tup
     return cost, compactions, context_sum
 
 
-def run_policy(traces: Sequence[SessionTrace], policy: Policy, model: CostModel) -> Outcome:
-    """Politikayı tüm oturumlarda çalıştırıp toplar."""
-    results = [simulate_trace(trace, policy, model) for trace in traces]
+def run_policy(
+    traces: Sequence[SessionTrace], policy: Policy, model: CostModel, read_weight: float | None
+) -> Outcome:
+    """Politikayı tüm oturumlarda, her oturumun kendi fiyatlarıyla çalıştırıp toplar."""
+    results = [
+        simulate_trace(trace, policy, model, trace_prices(trace, read_weight)) for trace in traces
+    ]
     requests = sum(len(trace.requests) for trace in traces)
     return Outcome(
         policy=policy,
@@ -415,13 +543,16 @@ def run_policy(traces: Sequence[SessionTrace], policy: Policy, model: CostModel)
     )
 
 
-def claude_hint(window: int, static_prefix: int) -> str:
-    """Claude Code pencereyi sistem istemi hariç uygular; belgelenmiş alt sınır korunur."""
-    setting = max(window - static_prefix, CLAUDE_MIN_COMPACT_WINDOW)
+def claude_hint(window: int) -> str:
+    """Claude Code ayarı: sıkıştırma pencere − 33000 bağlamda tetiklenir; ayarın alt sınırı 100000.
+
+    Bu yüzden 67000 tokendan daha erken sıkıştırma belgelenmiş ayarla mümkün değildir.
+    """
+    setting = max(window + CLAUDE_COMPACT_OFFSET, CLAUDE_MIN_COMPACT_WINDOW)
     return f"`cimrihook settings --compact-window {setting}`"
 
 
-def codex_hint(window: int, static_prefix: int) -> str:
+def codex_hint(window: int) -> str:
     """Codex sıkıştırma eşiğini toplam bağlam üzerinden uygular."""
     return f"`model_auto_compact_token_limit = {window}` in ~/.codex/config.toml"
 
@@ -431,16 +562,24 @@ def render_simulation(result: SimulationResult, hint: ApplyHint) -> str:
     model = result.model
     baseline = result.outcomes[0].cost
     calibration = 100 * (baseline - result.exact_cost) / result.exact_cost
+    prices = ", ".join(
+        f"{share.model or 'unknown'} read {share.read} ({share.sessions} sessions)"
+        for share in result.models
+    )
     lines = [
-        f"CimriHook simulate ({result.agent}, {model.prices.name} prices): {result.sessions} "
-        f"sessions, {result.requests:,} requests, last {result.days} days",
-        f"Cost model (base input price = 1): read {model.prices.read}, write "
-        f"{model.write_weight:.2f}, output {model.prices.output:.0f}; after compaction "
-        f"{model.post_compact_tokens:,} context tokens (median of {result.observed_compactions} "
-        f"real compactions) + {model.refetch_tokens:,} re-read in {model.refetch_requests} extra "
-        f"requests; summary {model.summary_tokens:,} output tokens",
+        f"CimriHook simulate ({result.agent}): {result.sessions} sessions, "
+        f"{result.requests:,} requests, last {result.days} days; static prefix (median first "
+        f"request) {result.static_prefix:,} tokens",
+        f"Prices (base input = 1, per session model): {prices}; new input written at "
+        f"{model.write_weight:.2f} (observed cache-write mix)",
+        f"Compaction (medians of {result.observed_compactions} real compactions unless given): "
+        f"summary {model.summary_tokens:,} output tokens, next request carries "
+        f"{model.post_compact_tokens:,} context tokens of which {model.post_compact_cached:,} "
+        f"stay cached, + {model.refetch_tokens:,} re-read in {model.refetch_requests} extra "
+        "requests",
         f"Exact cost from usage logs: {result.exact_cost / 1e9:.3f}B; model replay of observed "
-        f"behaviour: {baseline / 1e9:.3f}B (calibration {calibration:+.1f}%)",
+        f"behaviour: {baseline / 1e9:.3f}B (replay check {calibration:+.1f}%; this checks the "
+        "cost accounting, not the policy predictions: see `cimrihook bench-calibrate`)",
         f"  {'policy':<30}{'cost (B)':>10}{'vs observed':>13}{'compactions':>13}"
         f"{'mean context':>14}",
     ]
@@ -465,5 +604,5 @@ def recommendation(result: SimulationResult, hint: ApplyHint) -> list[str]:
     best, window = min(windows, key=lambda pair: pair[0].cost)
     return [
         f"Lowest simulated cost with a window: {best.policy.name}. Apply it with "
-        f"{hint(window, result.static_prefix)} and confirm task quality with an A/B run first.",
+        f"{hint(window)} and confirm task quality with an A/B run first.",
     ]

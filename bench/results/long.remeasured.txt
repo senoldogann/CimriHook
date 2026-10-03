@@ -1,0 +1,29 @@
+CimriHook bench: 16 runs, 0 unmeasured, 0 without a provider cost
+Primary cost: Claude = total_cost_usd reported by Claude Code (USD); Codex = per-response usage records priced with the sheet below (base input units). Both include compaction requests; 'transcript' excludes them.
+  price sheet: Claude Code total_cost_usd (includes compaction and auxiliary calls)
+  price sheet: OpenAI: uncached 1.0, cached 0.1, write 1.25, output 6.0 x base input
+Cells (geometric mean of costs, medians of the rest):
+  agent   scenario                         mechanism  n runs ok   steps       cost transcript  req  max ctx mean ctx compact  trigger   window   min
+  claude  boltons-twenty-steps/sequential  baseline   2     2/2   40/40     $1.774    442,217   82   87,252   51,179       0        -        -   6.2
+  claude  boltons-twenty-steps/sequential  combined   2     2/2   40/40     $1.772    426,835   86   66,316   39,714       2   67,070   100000   6.8
+  claude  mi-twenty-steps/sequential       baseline   2     2/2   40/40     $1.856    462,592   88   85,624   52,782       0        -        -  18.7
+  claude  mi-twenty-steps/sequential       combined   2     2/2   40/40     $1.677    402,912   86   66,045   37,875       2   66,978   100000  20.3
+  codex   boltons-twenty-steps/sequential  baseline   2     2/2   40/40  1,122,477  1,122,477  122  120,276   71,222       0        -        -  20.0
+  codex   boltons-twenty-steps/sequential  governor   2     2/2   40/40    843,123    795,938  123   59,572   41,438       6   59,262    60000  22.3
+  codex   mi-twenty-steps/sequential       baseline   2     2/2   40/40    772,910    772,910   94   96,413   63,016       0        -        -  25.9
+  codex   mi-twenty-steps/sequential       governor   2     2/2   40/40    657,523    629,741  102   59,942   39,364       4   59,754    60000  24.6
+A/B per scenario vs baseline (ratio of geometric means, 95% Welch t interval on log cost):
+  claude  boltons-twenty-steps/sequential  combined  n 2/2 cost x0.998 [0.676-1.474] transcript x0.965 steps 40/40 vs 40/40 (diff +0.0 pp [-8.8, +8.8])
+  claude  mi-twenty-steps/sequential       combined  n 2/2 cost x0.904 [0.661-1.234] transcript x0.871 steps 40/40 vs 40/40 (diff +0.0 pp [-8.8, +8.8])
+  codex   boltons-twenty-steps/sequential  governor  n 2/2 cost x0.751 [0.390-1.447] transcript x0.709 steps 40/40 vs 40/40 (diff +0.0 pp [-8.8, +8.8])
+  codex   mi-twenty-steps/sequential       governor  n 2/2 cost x0.851 [0.088-8.232] transcript x0.815 steps 40/40 vs 40/40 (diff +0.0 pp [-8.8, +8.8])
+A/B per agent and mechanism (balanced scenarios, equal weight, 95% t interval across scenarios; step success: Newcombe interval of the difference):
+  claude  combined  cost x0.950 [0.504-1.790] over 2 scenarios (none excluded); steps 80/80 vs 80/80 (diff +0.0 pp [-4.6, +4.6]); non-inferiority at -5 pp: undecided (fewer than 5 runs per arm)
+  codex   governor  cost x0.799 [0.362-1.763] over 2 scenarios (none excluded); steps 80/80 vs 80/80 (diff +0.0 pp [-4.6, +4.6]); non-inferiority at -5 pp: undecided (fewer than 5 runs per arm)
+Cumulative provider cost at step checkpoints (ratio of geometric means vs baseline):
+  claude  boltons-twenty-steps/sequential  combined  step 5 x1.085  step 10 x1.041  step 20 x0.998
+  claude  mi-twenty-steps/sequential       combined  step 5 x0.901  step 10 x0.970  step 20 x0.904
+  codex   boltons-twenty-steps/sequential  governor  step 5 x1.212  step 10 x1.028  step 20 x0.751
+  codex   mi-twenty-steps/sequential       governor  step 5 x1.116  step 10 x1.110  step 20 x0.851
+Codex price-sheet sensitivity (pooled ratio over cached x0.1/0.25 and output x4/6/8):
+  codex   governor  x0.704 to x0.813 over 6 price sheets
