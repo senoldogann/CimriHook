@@ -42,6 +42,8 @@ from cimrihook.settings import (
 from cimrihook.simulate import (
     CLAUDE_COMPACT_OFFSET,
     CLAUDE_MIN_COMPACT_WINDOW,
+    MEASURED_REFETCH_REQUESTS,
+    MEASURED_REFETCH_TOKENS,
     CostOverrides,
     claude_hint,
     codex_hint,
@@ -57,8 +59,8 @@ DEFAULT_DOCTOR_DAYS: Final = 7
 DEFAULT_SETTINGS_PATH: Final = "~/.claude/settings.json"
 # Sıkıştırmadan sonraki ilk isteğin bağlamı yeniden eklenen dosyaları zaten içerir; gerçek
 # oturumlarda bunun dışında yeniden okuma medyanı sıfırdır.
-DEFAULT_REFETCH_TOKENS: Final = 0
-DEFAULT_REFETCH_REQUESTS: Final = 0
+DEFAULT_REFETCH_TOKENS: Final = MEASURED_REFETCH_TOKENS
+DEFAULT_REFETCH_REQUESTS: Final = MEASURED_REFETCH_REQUESTS
 SIMULATORS: Final = {"claude": simulate_claude, "codex": simulate_codex}
 APPLY_HINTS: Final = {"claude": claude_hint, "codex": codex_hint}
 DEFAULT_LOGS: Final = {"claude": "~/.claude/projects", "codex": "~/.codex/sessions"}
@@ -343,10 +345,13 @@ def main() -> None:
             session: str | None = args.session
             print(live_report(config, session))
         elif command == "doctor":
-            anatomy, simulation = diagnose_claude(
-                Path(str(args.projects_dir)).expanduser(), int(args.days), time.time()
+            print(
+                render_doctor(
+                    diagnose_claude(
+                        Path(str(args.projects_dir)).expanduser(), int(args.days), time.time()
+                    )
+                )
             )
-            print(render_doctor(anatomy, simulation))
         elif command == "audit":
             projects_dir: str = args.projects_dir
             days: int = args.days

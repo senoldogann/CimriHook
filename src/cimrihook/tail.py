@@ -12,9 +12,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from cimrihook.audit import Usage, message_usage, parse_line
+from cimrihook.audit import Usage, entry_time, message_usage, parse_line
 from cimrihook.claude import JsonObject
-from cimrihook.doctor import entry_time
 from cimrihook.errors import TranscriptError
 from cimrihook.simulate import SYNTHETIC_MODEL, context_of
 

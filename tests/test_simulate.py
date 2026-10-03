@@ -1,7 +1,15 @@
 """Simülatörün maliyet muhasebesi saf bir dönüşümdür; elle hesaplanmış küçük bir oturumla test."""
 
 from cimrihook.audit import Usage
-from cimrihook.simulate import OBSERVED, CostModel, Policy, PriceSheet, SessionTrace, simulate_trace
+from cimrihook.simulate import (
+    OBSERVED,
+    CostModel,
+    Policy,
+    PriceSheet,
+    SessionTrace,
+    is_cold,
+    simulate_trace,
+)
 
 PRICES = PriceSheet("test", read=0.1, write_5m=1.25, write_1h=2.0, uncached=1.0, output=5.0)
 MODEL = CostModel(
@@ -33,3 +41,11 @@ def test_compaction_rewrites_only_the_part_that_is_not_still_cached() -> None:
     # İstek 2'den önce 110'u aşan bağlam sıkıştırılır: özetleme 120 x 0.1 okur ve 10 x 5 üretir;
     # yeni bağlamın (60) önbellekte kalan 40'ı okunur, kalan 20'si yazılır: 200 + 62 + 40 + 4.
     assert simulate_trace(TRACE, Policy("p", 110, None), MODEL, PRICES) == (306.0, 1, 160)
+
+
+def test_a_warm_request_that_adds_much_new_content_is_not_cold() -> None:
+    # Önceki bağlam 42.9k'nın tamamı okundu, üstüne 67k yeni içerik yazıldı: önbellek sıcak.
+    grown = Usage(uncached=0, write_5m=0, write_1h=67_125, read=42_908, output=100)
+    assert not is_cold(grown, 42_910)
+    expired = Usage(uncached=0, write_5m=0, write_1h=110_000, read=20_000, output=100)
+    assert is_cold(expired, 120_000)

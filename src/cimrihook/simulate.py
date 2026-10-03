@@ -15,7 +15,7 @@ A/B deneyiyle sınanır (`cimrihook bench-calibrate`).
 
 import statistics
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Sequence, Set
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
@@ -26,13 +26,19 @@ from cimrihook.audit import (
     average_write_weight,
     message_usage,
     parse_line,
-    transcript_files,
+    recent_transcripts,
 )
 from cimrihook.claude import JsonObject
 from cimrihook.codec import estimate_tokens
-from cimrihook.errors import ConfigError
+from cimrihook.errors import ConfigError, TranscriptError
 
-COLD_WRITE_SHARE: Final = 0.5  # girdinin yarısından fazlası yeniden yazıldıysa önbellek soğuktur
+# Önbellek soğuk: istek bir önceki bağlamın yarısından azını önbellekten okuduysa. Büyük yeni içerik
+# eklenen sıcak istek soğuk sayılmaz (okunan kısım önceki bağlamın tamamıdır).
+COLD_READ_SHARE: Final = 0.5
+# Sıkıştırmadan sonra ajanın yeniden okuduğu içerik: A/B çalıştırmalarında simülatörün ölçülen
+# maliyetin altında kaldığı payı açıklayan yeniden okuma, sıkıştırma başına medyan (0-13k arası).
+MEASURED_REFETCH_TOKENS: Final = 7_000
+MEASURED_REFETCH_REQUESTS: Final = 1
 CLAUDE_MIN_COMPACT_WINDOW: Final = 100_000  # CLAUDE_CODE_AUTO_COMPACT_WINDOW belgelenmiş alt sınırı
 # Claude Code 2.1.288 otomatik sıkıştırmayı pencere − min(çıktı sınırı, 20000) − 13000 tokenlık
 # bağlamda tetikler; bugünkü modellerin çıktı sınırı 20000'in üstündedir.
@@ -161,8 +167,7 @@ def simulate_claude(
     logs_dir: Path, days: int, now: float, overrides: CostOverrides
 ) -> SimulationResult:
     """Claude Code transcript'leri (alt ajanlar dahil) üzerinde politikaları çalıştırır."""
-    files = transcript_files(logs_dir, now - days * SECONDS_PER_DAY)
-    traces = [load_claude_trace(path) for path in files]
+    traces = load_claude_traces(recent_transcripts(logs_dir, days, now))
     requests = [usage for trace in traces for usage in trace.requests]
     return simulate_traces(
         "Claude Code", traces, days, average_write_weight(total_usage(requests)), overrides
@@ -177,6 +182,8 @@ def simulate_codex(
     files = sorted(
         path for path in logs_dir.rglob("rollout-*.jsonl") if path.stat().st_mtime >= min_mtime
     )
+    if not files:
+        raise ConfigError(f"no Codex rollouts under {logs_dir} modified in the last {days} days")
     return simulate_traces(
         "Codex CLI", [load_codex_trace(path) for path in files], days, OPENAI.uncached, overrides
     )
@@ -256,8 +263,26 @@ def trace_prices(trace: SessionTrace, read_weight: float | None) -> PriceSheet:
     return trace.prices if read_weight is None else replace(trace.prices, read=read_weight)
 
 
+def load_claude_traces(paths: Sequence[Path]) -> list[SessionTrace]:
+    """Transcript'ler verilen sırayla; çatallanmış ya da sürdürülmüş oturumun önceki dosyadan
+    kopyaladığı mesajlar (aynı mesaj kimliği) yalnızca ilk görüldüğü dosyada sayılır."""
+    seen: set[str] = set()
+    traces: list[SessionTrace] = []
+    for path in paths:
+        trace, ids = read_claude_trace(path, frozenset(seen))
+        traces.append(trace)
+        seen.update(ids)
+    return traces
+
+
 def load_claude_trace(path: Path) -> SessionTrace:
-    """Claude Code transcript'i: mesaj kimliği başına son kullanım, model ve gerçek sıkıştırmalar.
+    """Tek Claude Code transcript'i, başka dosyalarla tekilleştirilmeden."""
+    return read_claude_trace(path, frozenset())[0]
+
+
+def read_claude_trace(path: Path, skip: Set[str]) -> tuple[SessionTrace, frozenset[str]]:
+    """Claude Code transcript'i: mesaj kimliği başına son kullanım, model ve gerçek sıkıştırmalar;
+    `skip` içindeki mesaj kimlikleri atlanır. Dosyadaki mesaj kimlikleriyle birlikte döner.
 
     Sıkıştırmadan sonraki bağlam compact_boundary'deki postTokens değil, ardından gelen ilk
     gerçek isteğin bağlamıdır: postTokens sistem istemini, araçları ve yeniden eklenen dosyaları
@@ -270,6 +295,7 @@ def load_claude_trace(path: Path) -> SessionTrace:
     pre: list[int] = []
     summaries: list[int] = []
     after: list[str] = []  # her sıkıştırmadan sonraki ilk gerçek isteğin kimliği
+    ids: set[str] = set()  # dosyadaki tüm gerçek isteklerin kimlikleri (atlananlar dahil)
     awaiting = False
     with path.open("rb") as handle:
         for raw_line in handle:
@@ -277,9 +303,7 @@ def load_claude_trace(path: Path) -> SessionTrace:
             if entry is None:
                 continue
             if entry.get("type") == "system" and entry.get("subtype") == "compact_boundary":
-                trigger = compact_metadata_tokens(entry, "preTokens")
-                if trigger is not None:
-                    pre.append(trigger)
+                pre.append(compact_metadata_tokens(entry, "preTokens", str(path)))
                 awaiting = True
                 continue
             message = entry.get("message")
@@ -299,6 +323,9 @@ def load_claude_trace(path: Path) -> SessionTrace:
                 or usage is None
             ):
                 continue
+            ids.add(message_id)
+            if message_id in skip:
+                continue
             if message_id not in usages:
                 order.append(message_id)
                 models[model] += 1
@@ -308,7 +335,7 @@ def load_claude_trace(path: Path) -> SessionTrace:
             usages[message_id] = usage  # aynı kimliğin son satırı geçerlidir
     name = models.most_common(1)[0][0] if models else ""
     first_after = [usages[message_id] for message_id in after]
-    return SessionTrace(
+    trace = SessionTrace(
         requests=tuple(usages[message_id] for message_id in order),
         model=name,
         prices=claude_prices(name),
@@ -317,6 +344,7 @@ def load_claude_trace(path: Path) -> SessionTrace:
         post_compact_cached=tuple(usage.read for usage in first_after),
         summary_tokens=tuple(summaries),
     )
+    return trace, frozenset(ids)
 
 
 def content_text(content: object) -> str:
@@ -433,13 +461,18 @@ def codex_request(entry: JsonObject) -> tuple[Usage, int] | None:
     return usage, cumulative
 
 
-def compact_metadata_tokens(entry: JsonObject, key: str) -> int | None:
-    """compact_boundary satırındaki bağlam boyutu (preTokens: tetikleyen, postTokens: sonraki)."""
+def compact_metadata_tokens(entry: JsonObject, key: str, where: str) -> int:
+    """compact_boundary satırındaki bağlam boyutu (preTokens: tetikleyen, postTokens: sonraki).
+
+    Değer yoksa sıkıştırma sessizce sayılmamış olurdu; bu bilinmeyen bir kayıt biçimidir: hata.
+    """
     metadata = entry.get("compactMetadata")
-    if not isinstance(metadata, dict):
-        return None
-    tokens = metadata.get(key)
-    return tokens if isinstance(tokens, int) and tokens > 0 else None
+    tokens = metadata.get(key) if isinstance(metadata, dict) else None
+    if not isinstance(tokens, int) or tokens <= 0:
+        raise TranscriptError(
+            f"{where}: compact_boundary without a positive compactMetadata.{key} ({metadata!r})"
+        )
+    return tokens
 
 
 def total_usage(requests: Sequence[Usage]) -> Usage:
@@ -463,9 +496,12 @@ def written_of(usage: Usage) -> int:
     return usage.uncached + usage.write_5m + usage.write_1h
 
 
-def is_cold(usage: Usage) -> bool:
-    """Önbellek soğumuş mu (bağlamın çoğu yeniden yazıldı mı)?"""
-    return written_of(usage) > COLD_WRITE_SHARE * context_of(usage)
+def is_cold(usage: Usage, previous_context: int) -> bool:
+    """Önbellek soğumuş mu: istek bir önceki bağlamın yarısından azını önbellekten mi okudu?
+
+    Oturumun ilk isteğinin önceki bağlamı yoktur; o istek zaten her şeyi yazar.
+    """
+    return previous_context > 0 and usage.read < COLD_READ_SHARE * previous_context
 
 
 def exact_cost(usage: Usage, prices: PriceSheet) -> float:
@@ -504,6 +540,7 @@ def simulate_trace(
     for index, usage in enumerate(trace.requests):
         actual = context_of(usage)
         growth = actual - previous_actual
+        cold = is_cold(usage, previous_actual)
         previous_actual = actual
         if index == 0:
             simulated = actual
@@ -511,7 +548,6 @@ def simulate_trace(
             simulated = min(simulated, actual)  # gerçek oturum da burada küçüldü
         else:
             simulated += growth
-        cold = is_cold(usage)
         written = min(written_of(usage), simulated)
         if should_compact(policy, simulated, cold, model):
             read_weight = prices.uncached if cold else prices.read
@@ -553,7 +589,7 @@ def claude_hint(window: int) -> str:
     Bu yüzden 67000 tokendan daha erken sıkıştırma belgelenmiş ayarla mümkün değildir.
     """
     setting = max(window + CLAUDE_COMPACT_OFFSET, CLAUDE_MIN_COMPACT_WINDOW)
-    return f"`cimrihook settings --compact-window {setting}`"
+    return f"`cimrihook init --compact-window {setting}`"
 
 
 def codex_hint(window: int) -> str:
@@ -570,17 +606,22 @@ def render_simulation(result: SimulationResult, hint: ApplyHint) -> str:
         f"{share.model or 'unknown'} read {share.read} ({share.sessions} sessions)"
         for share in result.models
     )
+    written = (
+        "observed cache-write mix"
+        if result.agent == "Claude Code"
+        else "uncached input; Codex does not price cache writes"
+    )
     lines = [
-        f"CimriHook simulate ({result.agent}): {result.sessions} sessions, "
-        f"{result.requests:,} requests, last {result.days} days; static prefix (median first "
-        f"request) {result.static_prefix:,} tokens",
-        f"Prices (base input = 1, per session model): {prices}; new input written at "
-        f"{model.write_weight:.2f} (observed cache-write mix)",
+        f"CimriHook simulate ({result.agent}): {result.sessions} sessions active in the last "
+        f"{result.days} days (replayed whole), {result.requests:,} requests; static prefix "
+        f"(median first request) {result.static_prefix:,} tokens",
+        f"Prices (base input = 1, per session model; costs are summed in base input units "
+        f"across models): {prices}; new input written at {model.write_weight:.2f} ({written})",
         f"Compaction (medians of {result.observed_compactions} real compactions unless given): "
-        f"summary {model.summary_tokens:,} output tokens, next request carries "
-        f"{model.post_compact_tokens:,} context tokens of which {model.post_compact_cached:,} "
-        f"stay cached, + {model.refetch_tokens:,} re-read in {model.refetch_requests} extra "
-        "requests",
+        f"summary {model.summary_tokens:,} output tokens (estimated from the summary text; the "
+        f"real output is larger), next request carries {model.post_compact_tokens:,} context "
+        f"tokens of which {model.post_compact_cached:,} stay cached, + "
+        f"{model.refetch_tokens:,} re-read in {model.refetch_requests} extra requests",
         f"Exact cost from usage logs: {result.exact_cost / 1e9:.3f}B; model replay of observed "
         f"behaviour: {baseline / 1e9:.3f}B (replay check {calibration:+.1f}%; this checks the "
         "cost accounting, not the policy predictions: see `cimrihook bench-calibrate`)",
@@ -606,6 +647,8 @@ def recommendation(result: SimulationResult, hint: ApplyHint) -> list[str]:
     if not windows:
         return []
     best, window = min(windows, key=lambda pair: pair[0].cost)
+    if best.cost >= result.outcomes[0].cost:
+        return ["No compaction window lowers the simulated cost of these logs; keep the default."]
     return [
         f"Lowest simulated cost with a window: {best.policy.name}. Apply it with "
         f"{hint(window)} and confirm task quality with an A/B run first.",

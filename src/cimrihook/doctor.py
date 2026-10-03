@@ -10,8 +10,7 @@ doğrulanmamış bir tahmin olarak etiketlenir.
 
 import statistics
 from collections.abc import Sequence
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 
@@ -19,12 +18,15 @@ from cimrihook.audit import (
     SECONDS_PER_DAY,
     Usage,
     average_write_weight,
+    entry_time,
     message_usage,
     parse_line,
-    transcript_files,
+    recent_transcripts,
 )
-from cimrihook.claude import JsonObject
+from cimrihook.errors import TranscriptError
 from cimrihook.simulate import (
+    MEASURED_REFETCH_REQUESTS,
+    MEASURED_REFETCH_TOKENS,
     SYNTHETIC_MODEL,
     CostOverrides,
     SimulationResult,
@@ -32,17 +34,16 @@ from cimrihook.simulate import (
     claude_prices,
     compact_metadata_tokens,
     context_of,
-    load_claude_trace,
+    load_claude_traces,
     simulate_traces,
     total_usage,
     written_of,
 )
+from cimrihook.tail import FIVE_MINUTES, ONE_HOUR, read_session_tail
 
 BANDS: Final = ((100_000, "up to 100k"), (200_000, "100k-200k"), (400_000, "200k-400k"))
 TOP_BAND: Final = "over 400k"
 REWRITE_TOKENS: Final = 100_000  # tek istekte bundan fazla girdi yazan istek büyük yeniden yazımdır
-FIVE_MINUTES: Final = 300.0
-ONE_HOUR: Final = 3_600.0
 # API liste fiyatları: taban girdi, USD / milyon token (2026-10, platform.claude.com fiyatları).
 # Önbellek ve çıktı çarpanları simulate.claude_prices'tan gelir; listede olmayan modeller
 # fiyatlandırılmaz ve raporda ayrıca sayılır.
@@ -75,6 +76,7 @@ REWRITE_CAUSES: Final = (
 class Request:
     """Tek gerçek API isteği ve oturum içindeki yeri."""
 
+    message_id: str
     timestamp: float | None  # epoch saniye; satırda zaman yoksa None
     model: str
     usage: Usage
@@ -86,11 +88,19 @@ class Request:
 
 
 @dataclass(frozen=True, slots=True)
+class Compaction:
+    """Transcript'teki bir sıkıştırma sınırı."""
+
+    timestamp: float | None
+    trigger: int  # sıkıştırmayı tetikleyen bağlam
+
+
+@dataclass(frozen=True, slots=True)
 class TranscriptScan:
-    """Bir transcript'teki istekler ve sıkıştırmaları tetikleyen bağlam boyutları."""
+    """Bir transcript'teki istekler ve sıkıştırmalar."""
 
     requests: tuple[Request, ...]
-    compaction_triggers: tuple[int, ...]
+    compactions: tuple[Compaction, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,7 +144,7 @@ def scan_transcript(path: Path, subagent: bool) -> TranscriptScan:
     models: dict[str, str] = {}
     usages: dict[str, Usage] = {}
     after: set[str] = set()
-    triggers: list[int] = []
+    compactions: list[Compaction] = []
     awaiting = False
     with path.open("rb") as handle:
         for raw_line in handle:
@@ -142,9 +152,8 @@ def scan_transcript(path: Path, subagent: bool) -> TranscriptScan:
             if entry is None:
                 continue
             if entry.get("type") == "system" and entry.get("subtype") == "compact_boundary":
-                trigger = compact_metadata_tokens(entry, "preTokens")
-                if trigger is not None:
-                    triggers.append(trigger)
+                trigger = compact_metadata_tokens(entry, "preTokens", str(path))
+                compactions.append(Compaction(entry_time(entry), trigger))
                 awaiting = True
                 continue
             message = entry.get("message")
@@ -171,6 +180,7 @@ def scan_transcript(path: Path, subagent: bool) -> TranscriptScan:
     return TranscriptScan(
         requests=tuple(
             Request(
+                message_id=message_id,
                 timestamp=times[message_id],
                 model=models[message_id],
                 usage=usages[message_id],
@@ -182,16 +192,8 @@ def scan_transcript(path: Path, subagent: bool) -> TranscriptScan:
             )
             for index, message_id in enumerate(order)
         ),
-        compaction_triggers=tuple(triggers),
+        compactions=tuple(compactions),
     )
-
-
-def entry_time(entry: JsonObject) -> float | None:
-    """Transcript satırının zamanı (epoch saniye); yoksa None."""
-    stamp = entry.get("timestamp")
-    if not isinstance(stamp, str):
-        return None
-    return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
 
 
 def gap(previous: float | None, current: float | None) -> float | None:
@@ -256,9 +258,9 @@ def build_anatomy(scans: Sequence[TranscriptScan], days: int) -> Anatomy:
     total = sum(sum(costs) for _, costs in priced)
     labels = (*(label for _, label in BANDS), TOP_BAND)
     causes = [(rewrite_cause(request), costs) for request, costs in priced]
-    firsts = [scan.requests[0] for scan in scans if scan.requests]
+    firsts = [request for request in requests if request.first]
     after = [context_of(request.usage) for request in requests if request.after_compaction]
-    triggers = [tokens for scan in scans for tokens in scan.compaction_triggers]
+    triggers = [compaction.trigger for scan in scans for compaction in scan.compactions]
     usages = [request.usage for request, _ in priced]
     return Anatomy(
         transcripts=len(scans),
@@ -322,30 +324,98 @@ def median_or_none(values: Sequence[int]) -> int | None:
     return int(statistics.median(values)) if values else None
 
 
-def diagnose_claude(
-    projects_dir: Path, days: int, now: float
-) -> tuple[Anatomy, SimulationResult | None]:
-    """Son `days` gündeki transcript'lerin anatomisi ve pencere politikalarının simülasyonu.
+@dataclass(frozen=True, slots=True)
+class Diagnosis:
+    """doctor raporunun verisi."""
 
-    Kayıtlarda hiç gerçek sıkıştırma yoksa sıkıştırmanın bedeli ölçülemez; simülasyon yapılmaz
-    ve rapor bunu söyler.
+    anatomy: Anatomy
+    simulation: SimulationResult | None  # kayıtlarda gerçek sıkıştırma yoksa ölçülemez
+    guard_check: str
+
+
+def diagnose_claude(projects_dir: Path, days: int, now: float) -> Diagnosis:
+    """Son `days` gündeki istekler üzerinde maliyet anatomisi, pencere politikalarının
+    simülasyonu ve soğuk istem korumasının öz denetimi.
+
+    Anatomi yalnızca penceredeki istekleri sayar; çatallanmış ya da sürdürülmüş oturumların
+    kopyaladığı istekler ve sıkıştırmalar bir kez sayılır. Simülasyon pencerede etkin oturumları
+    bütün olarak yeniden oynatır. Kayıtlarda hiç gerçek sıkıştırma yoksa sıkıştırmanın bedeli
+    ölçülemez; simülasyon yapılmaz ve rapor bunu söyler.
     """
-    files = transcript_files(projects_dir, now - days * SECONDS_PER_DAY)
-    anatomy = build_anatomy(
-        [scan_transcript(path, "subagents" in path.parts) for path in files], days
+    files = recent_transcripts(projects_dir, days, now)
+    scans = recent_requests(
+        unique_scans([scan_transcript(path, "subagents" in path.parts) for path in files]),
+        now - days * SECONDS_PER_DAY,
     )
+    anatomy = build_anatomy(scans, days)
+    guard = guard_check(files)
     if anatomy.compactions == 0:
-        return anatomy, None
-    traces = [load_claude_trace(path) for path in files]
+        return Diagnosis(anatomy, None, guard)
+    traces = load_claude_traces(files)
     requests = [usage for trace in traces for usage in trace.requests]
     simulation = simulate_traces(
         "Claude Code",
         traces,
         days,
         average_write_weight(total_usage(requests)),
-        CostOverrides(None, None, None, 0, 0, None),
+        CostOverrides(None, None, None, MEASURED_REFETCH_TOKENS, MEASURED_REFETCH_REQUESTS, None),
     )
-    return anatomy, simulation
+    return Diagnosis(anatomy, simulation, guard)
+
+
+def unique_scans(scans: Sequence[TranscriptScan]) -> list[TranscriptScan]:
+    """Çatallanmış ya da sürdürülmüş oturumların önceki dosyadan kopyaladığı istekler (aynı mesaj
+    kimliği) ve sıkıştırmalar (aynı zaman ve boyut) yalnızca ilk görüldükleri dosyada kalır."""
+    seen_requests: set[str] = set()
+    seen_compactions: set[Compaction] = set()
+    unique: list[TranscriptScan] = []
+    for scan in scans:
+        requests = tuple(r for r in scan.requests if r.message_id not in seen_requests)
+        compactions = tuple(c for c in scan.compactions if c not in seen_compactions)
+        seen_requests.update(r.message_id for r in scan.requests)
+        seen_compactions.update(scan.compactions)
+        unique.append(replace(scan, requests=requests, compactions=compactions))
+    return unique
+
+
+def recent_requests(scans: Sequence[TranscriptScan], cutoff: float) -> list[TranscriptScan]:
+    """Pencere dışındaki istekler ve sıkıştırmalar atılır: pencerede değişmiş bir transcript eski
+    istekler de taşır. Zamanı olmayan kayıt dosyası pencerede değiştiği için pencerede sayılır."""
+    return [
+        replace(
+            scan,
+            requests=tuple(
+                r for r in scan.requests if r.timestamp is None or r.timestamp >= cutoff
+            ),
+            compactions=tuple(
+                c for c in scan.compactions if c.timestamp is None or c.timestamp >= cutoff
+            ),
+        )
+        for scan in scans
+    ]
+
+
+def guard_check(files: Sequence[Path]) -> str:
+    """Soğuk istem korumasının en yeni ana oturumun önbellek durumunu okuyabildiği: Claude Code
+    kayıt biçimini değiştirirse koruma ya hata verir ya da sessizce devre dışı kalır."""
+    mains = [path for path in files if "subagents" not in path.parts]
+    if not mains:
+        return "Guard check: no main session transcript in these days"
+    newest = mains[-1]
+    try:
+        tail = read_session_tail(str(newest))
+    except TranscriptError as error:
+        return f"Guard check: FAILS on the newest session: {error}"
+    if tail is None:
+        return (
+            f"Guard check: the newest session ({newest.stem}) has no cache write in its last 4 MiB "
+            "or was just compacted, so the guard stays quiet there"
+        )
+    cache = "1-hour" if tail.ttl_seconds >= ONE_HOUR else "5-minute"
+    return (
+        f"Guard check: reads the newest session's cache state ({cache} cache, "
+        f"{tokens_text(tail.context_tokens)} tokens of context)"
+    )
 
 
 def percent(part: float, whole: float) -> str:
@@ -362,8 +432,10 @@ def tokens_text(tokens: int | None) -> str:
     return f"{tokens / 1e6:.2f}M" if tokens < 1_000_000_000 else f"{tokens / 1e9:.2f}B"
 
 
-def render_doctor(anatomy: Anatomy, simulation: SimulationResult | None) -> str:
+def render_doctor(diagnosis: Diagnosis) -> str:
     """Raporun metni."""
+    anatomy = diagnosis.anatomy
+    simulation = diagnosis.simulation
     total = anatomy.total_usd
     unpriced = (
         f"; {anatomy.unpriced_requests:,} requests of {', '.join(anatomy.unpriced_models)} "
@@ -406,6 +478,7 @@ def render_doctor(anatomy: Anatomy, simulation: SimulationResult | None) -> str:
         f"{tokens_text(anatomy.compaction_trigger)} tokens, next request "
         f"{tokens_text(anatomy.after_compaction_context)} tokens",
         *recommendations(anatomy, simulation),
+        diagnosis.guard_check,
     ]
     return "\n".join(lines)
 
@@ -425,13 +498,16 @@ def recommendations(anatomy: Anatomy, simulation: SimulationResult | None) -> li
         windows = [outcome for outcome in simulation.outcomes if outcome.policy.window]
         best = min(windows, key=lambda outcome: outcome.cost)
         window = best.policy.window
-        if window is not None:
+        if window is not None and best.cost < baseline:
             lines.append(
                 f"  compact earlier: '{best.policy.name}' would cost "
-                f"{100 * (best.cost - baseline) / baseline:+.1f}% (simulation, not validated by "
-                "an A/B run yet; `cimrihook bench-calibrate` measures its error). Apply with "
-                f"{claude_hint(window)}"
+                f"{100 * (best.cost - baseline) / baseline:+.1f}% (simulation with "
+                f"{MEASURED_REFETCH_TOKENS // 1000}k tokens re-read after each compaction; the "
+                "A/B runs so far found the simulator a few points optimistic, see `cimrihook "
+                f"bench-calibrate`). Apply with {claude_hint(window)}"
             )
+        else:
+            lines.append("  compaction window: no window lowers the simulated cost of these logs")
     if idle.count:
         lines.append(
             f"  ask before cold sends: ${idle.usd:,.0f} went to re-caching contexts after more "

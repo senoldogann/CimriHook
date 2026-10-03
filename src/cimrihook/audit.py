@@ -11,12 +11,13 @@ okuyacağı bilinemediği için üst sınırdır. Tasarruf iki biçimde raporlan
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Final
 
 from cimrihook.claude import MUTATING_TOOLS, JsonObject, is_unchanged_read, observe, observe_text
 from cimrihook.codec import CodecConfig, decide
-from cimrihook.errors import HookPayloadError
+from cimrihook.errors import ConfigError, HookPayloadError
 from cimrihook.model import Decision, Encoding, Observation, SavingsRow, View
 from cimrihook.report import render_table, total_line
 
@@ -64,6 +65,7 @@ class RecordedResult:
 class Replayed:
     """Yeniden oynatılan tek karar ve bağlamda kalma süresi."""
 
+    tool_use_id: str
     tool: str
     decision: Decision
     later_requests: int  # sonuç bağlama girdikten sonra kuşak bitene kadar yapılan istek sayısı
@@ -100,8 +102,12 @@ class AuditResult:
 def audit_transcripts(
     projects_dir: Path, days: int, config: CodecConfig, now: float
 ) -> AuditResult:
-    """Son `days` gün içinde değişen transcript'leri yeniden oynatır ve özetler."""
-    files = transcript_files(projects_dir, now - days * SECONDS_PER_DAY)
+    """Son `days` gün içinde değişen transcript'leri yeniden oynatır ve özetler.
+
+    Çatallanmış ya da sürdürülmüş oturumlar önceki dosyanın geçmişini kopyalar; aynı araç sonucu
+    (tool_use_id) yalnızca ilk görüldüğü dosyada sayılır, aynı mesaj kimliği bir kez.
+    """
+    files = recent_transcripts(projects_dir, days, now)
     replays = [replay_transcript(path, config) for path in files]
     usages: dict[str, Usage] = {}
     for replay in replays:
@@ -113,7 +119,7 @@ def audit_transcripts(
         read=sum(item.read for item in usages.values()),
         output=sum(item.output for item in usages.values()),
     )
-    decisions = [item for replay in replays for item in replay.decisions]
+    decisions = first_by_tool_use([item for replay in replays for item in replay.decisions])
     write_weight = average_write_weight(usage)
     return AuditResult(
         transcripts=len(files),
@@ -131,6 +137,36 @@ def audit_transcripts(
         + usage.write_1h * WRITE_1H_WEIGHT
         + usage.read * READ_WEIGHT,
     )
+
+
+def first_by_tool_use(decisions: Sequence[Replayed]) -> list[Replayed]:
+    """Her araç sonucunun ilk görüldüğü karar; kopyalanmış geçmişteki tekrarlar atılır."""
+    seen: set[str] = set()
+    unique: list[Replayed] = []
+    for item in decisions:
+        if item.tool_use_id not in seen:
+            seen.add(item.tool_use_id)
+            unique.append(item)
+    return unique
+
+
+def recent_transcripts(projects_dir: Path, days: int, now: float) -> tuple[Path, ...]:
+    """Son `days` günde değişmiş transcript'ler, eskiden yeniye. Hiç yoksa hata: boş bir rapor
+    "harcama yok" diye okunurdu."""
+    files = transcript_files(projects_dir, now - days * SECONDS_PER_DAY)
+    if not files:
+        raise ConfigError(
+            f"no Claude Code transcripts under {projects_dir} modified in the last {days} days"
+        )
+    return tuple(sorted(files, key=lambda path: path.stat().st_mtime))
+
+
+def entry_time(entry: JsonObject) -> float | None:
+    """Transcript satırının zamanı (epoch saniye); satırda zaman yoksa None."""
+    stamp = entry.get("timestamp")
+    if not isinstance(stamp, str):
+        return None
+    return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
 
 
 def transcript_files(projects_dir: Path, min_mtime: float) -> tuple[Path, ...]:
@@ -155,7 +191,8 @@ def replay_transcript(path: Path, config: CodecConfig) -> TranscriptReplay:
     views: dict[str, list[View]] = {}
     latest: dict[str, View] = {}
     mutations: list[tuple[int, str]] = []
-    pending: list[tuple[str, Decision, int]] = []  # (araç, karar, karar anındaki istek sayısı)
+    # (araç sonucu kimliği, araç, karar, karar anındaki istek sayısı)
+    pending: list[tuple[str, str, Decision, int]] = []
     decisions: list[Replayed] = []
     native_unchanged = 0
     skipped = 0
@@ -219,18 +256,18 @@ def replay_transcript(path: Path, config: CodecConfig) -> TranscriptReplay:
                 )
                 stream_views.append(view)
                 latest[obs.request_key] = view
-                pending.append((use.name, decision, len(request_ids)))
+                pending.append((recorded.tool_use_id, use.name, decision, len(request_ids)))
     decisions.extend(close_generation(pending, len(request_ids)))
     return TranscriptReplay(tuple(decisions), usages, native_unchanged, skipped, from_text)
 
 
 def close_generation(
-    pending: Sequence[tuple[str, Decision, int]], requests_at_end: int
+    pending: Sequence[tuple[str, str, Decision, int]], requests_at_end: int
 ) -> list[Replayed]:
     """Kuşak bittiğinde her kararın bağlamda kaç istek boyunca kaldığını hesaplar."""
     return [
-        Replayed(tool, decision, requests_at_end - requests_at_decision)
-        for tool, decision, requests_at_decision in pending
+        Replayed(tool_use_id, tool, decision, requests_at_end - requests_at_decision)
+        for tool_use_id, tool, decision, requests_at_decision in pending
     ]
 
 

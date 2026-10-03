@@ -6,7 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from cimrihook.doctor import IDLE_HOUR, build_anatomy, scan_transcript
+from cimrihook.doctor import (
+    IDLE_HOUR,
+    build_anatomy,
+    diagnose_claude,
+    recent_requests,
+    scan_transcript,
+    unique_scans,
+)
+from cimrihook.errors import ConfigError
 
 T0 = 1_791_000_000.0
 
@@ -60,3 +68,33 @@ def test_anatomy_prices_bands_and_explains_a_cold_rewrite(tmp_path: Path) -> Non
     assert idle.usd == pytest.approx(1.2)
     assert (anatomy.compactions, anatomy.compaction_trigger) == (1, 900_000)
     assert (anatomy.after_compaction_context, anatomy.prefix_main) == (25_000, 30_000)
+
+
+def test_a_forked_transcript_and_old_requests_are_not_counted_again(tmp_path: Path) -> None:
+    original = tmp_path / "a.jsonl"
+    original.write_text(
+        "\n".join(
+            [
+                assistant("old", "claude-opus-5-5", -30 * 86_400, 0, 30_000),
+                assistant("m1", "claude-opus-5-5", 0, 30_000, 2_000),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    fork = tmp_path / "b.jsonl"  # çatal: geçmişi kopyalar, sonra kendi isteğiyle sürer
+    fork.write_text(
+        original.read_text(encoding="utf-8")
+        + assistant("m2", "claude-opus-5-5", 60, 32_000, 1_000)
+        + "\n",
+        encoding="utf-8",
+    )
+    scans = [scan_transcript(original, False), scan_transcript(fork, False)]
+    recent = recent_requests(unique_scans(scans), T0 - 7 * 86_400)
+    assert [r.message_id for scan in recent for r in scan.requests] == ["m1", "m2"]
+    assert build_anatomy(recent, 7).requests == 2
+
+
+def test_an_empty_log_directory_is_an_error_not_a_zero_report(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="no Claude Code transcripts"):
+        diagnose_claude(tmp_path, 7, T0)
