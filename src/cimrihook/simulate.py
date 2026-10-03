@@ -289,16 +289,20 @@ def load_claude_trace(path: Path) -> SessionTrace:
                 summaries.append(estimate_tokens(content_text(message.get("content"))))
                 continue
             message_id = message.get("id")
-            usage = message_usage(message)
-            if entry.get("type") != "assistant" or not isinstance(message_id, str) or usage is None:
-                continue
             model = message.get("model")
-            real = isinstance(model, str) and model != SYNTHETIC_MODEL
+            usage = message_usage(message)
+            if (
+                entry.get("type") != "assistant"
+                or not isinstance(message_id, str)
+                or not isinstance(model, str)
+                or model == SYNTHETIC_MODEL  # API'ye gitmeyen yerel mesaj; bağlamı 0 gösterir
+                or usage is None
+            ):
+                continue
             if message_id not in usages:
                 order.append(message_id)
-                if real:
-                    models[str(model)] += 1
-                if awaiting and real and context_of(usage) > 0:
+                models[model] += 1
+                if awaiting and context_of(usage) > 0:
                     after.append(message_id)
                     awaiting = False
             usages[message_id] = usage  # aynı kimliğin son satırı geçerlidir

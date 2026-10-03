@@ -1,4 +1,4 @@
-"""Komut satırı: hook | report | audit | simulate | settings | bench-run | bench-report |
+"""Komut satırı: hook | report | doctor | audit | simulate | settings | bench-run | bench-report |
 bench-remeasure | bench-calibrate."""
 
 import argparse
@@ -24,6 +24,7 @@ from cimrihook.bench import (
     select_tasks,
 )
 from cimrihook.config import Config, load_config
+from cimrihook.doctor import diagnose_claude, render_doctor
 from cimrihook.errors import BenchError, CimriHookError
 from cimrihook.hook import ledger_path, run_hook
 from cimrihook.ledger import Ledger
@@ -40,6 +41,7 @@ from cimrihook.simulate import (
 
 DEFAULT_PROJECTS_DIR: Final = "~/.claude/projects"
 DEFAULT_AUDIT_DAYS: Final = 30
+DEFAULT_DOCTOR_DAYS: Final = 7
 # Sıkıştırmadan sonraki ilk isteğin bağlamı yeniden eklenen dosyaları zaten içerir; gerçek
 # oturumlarda bunun dışında yeniden okuma medyanı sıfırdır.
 DEFAULT_REFETCH_TOKENS: Final = 0
@@ -67,6 +69,11 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("hook", help="process one Claude Code hook payload from stdin")
     report = commands.add_parser("report", help="show token savings recorded by the live hook")
     report.add_argument("--session", help="limit the report to one Claude Code session id")
+    doctor = commands.add_parser(
+        "doctor", help="where your Claude Code spend goes and what would change it"
+    )
+    doctor.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    doctor.add_argument("--days", type=int, default=DEFAULT_DOCTOR_DAYS)
     audit = commands.add_parser(
         "audit", help="replay past Claude Code transcripts and estimate what CimriHook would save"
     )
@@ -247,6 +254,11 @@ def main() -> None:
         elif command == "report":
             session: str | None = args.session
             print(live_report(config, session))
+        elif command == "doctor":
+            anatomy, simulation = diagnose_claude(
+                Path(str(args.projects_dir)).expanduser(), int(args.days), time.time()
+            )
+            print(render_doctor(anatomy, simulation))
         elif command == "audit":
             projects_dir: str = args.projects_dir
             days: int = args.days

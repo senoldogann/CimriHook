@@ -13,7 +13,7 @@ largest lever is **how long content stays in the context**. CimriHook works on a
 
 | Layer | What it does | How |
 |---|---|---|
-| Measure | replays your own transcripts: where the tokens go and what each policy would cost | `cimrihook audit`, `cimrihook simulate` |
+| Measure | replays your own transcripts: where the money goes and what each policy would cost | `cimrihook doctor`, `cimrihook audit`, `cimrihook simulate` |
 | Govern | picks the auto-compaction window from your data and applies it with Claude Code's own setting | `cimrihook settings --compact-window N` |
 | Encode | re-encodes new tool results against what the agent already holds (lossless) | `PostToolUse` hooks |
 
@@ -131,9 +131,17 @@ Merge the printed `hooks` block into `~/.claude/settings.json` (all projects) or
 ## Measure
 
 ```bash
+cimrihook doctor --days 7   # where your spend goes and what would change it
 cimrihook audit --days 30   # replay your past transcripts: what would CimriHook have saved?
 cimrihook report            # savings recorded by the live hook
 ```
+
+`doctor` prices every real request in your Claude Code transcripts at API list prices and splits
+the spend by the context size of the request, by token type, by cache rewrites over 100k tokens
+and their likely cause (idle past the cache lifetime, compaction, model switch), by main session
+and subagents, and by the static prefix every request carries. It ends with what would change the
+largest items; the compaction-window estimate comes from `simulate` and is labelled as a
+simulation until an A/B run confirms it.
 
 `audit` runs the same codec over the tool results stored in `~/.claude/projects`. Subagent
 transcripts do not store the structured tool result, so their Read and Bash results are parsed
