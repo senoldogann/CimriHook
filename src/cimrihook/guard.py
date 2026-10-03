@@ -25,11 +25,10 @@ from typing import Final
 
 from cimrihook.claude import as_object, require_str
 from cimrihook.config import Config
-from cimrihook.doctor import usd_per_token
 from cimrihook.errors import HookPayloadError
 from cimrihook.hook import ledger_path
 from cimrihook.ledger import claim_guard
-from cimrihook.simulate import claude_prices
+from cimrihook.simulate import claude_prices, usd_per_token
 from cimrihook.statusline import compact_tokens
 from cimrihook.tail import ONE_HOUR, SessionTail, read_session_tail
 

@@ -145,6 +145,8 @@ class SimulationResult:
     sessions: int
     requests: int
     days: int
+    unit: str  # USD ya da taban girdi birimi
+    unweighted_sessions: int  # birimi çevrilemediği için dışarıda kalan oturumlar
     exact_cost: float  # kullanım kayıtlarından birebir hesaplanan maliyet
     observed_compactions: int
     static_prefix: int  # oturumların ilk isteğindeki bağlamın medyanı (sistem istemi + araçlar)
@@ -154,6 +156,7 @@ class SimulationResult:
 
 
 type ApplyHint = Callable[[int], str]
+type TraceWeight = Callable[[SessionTrace], float | None]  # oturum maliyetinin birim çevirisi
 
 OBSERVED: Final = Policy("observed behaviour", None, None)
 POLICIES: Final = (
@@ -175,7 +178,12 @@ def simulate_claude(
     traces = load_claude_traces(recent_transcripts(logs_dir, days, now))
     requests = [usage for trace in traces for usage in trace.requests]
     return simulate_traces(
-        "Claude Code", traces, days, average_write_weight(total_usage(requests)), overrides
+        "Claude Code",
+        traces,
+        days,
+        average_write_weight(total_usage(requests)),
+        overrides,
+        dollar_weight,
     )
 
 
@@ -193,7 +201,12 @@ def simulate_codex(
     if not files:
         raise ConfigError(f"no Codex rollouts under {logs_dir} modified in the last {days} days")
     return simulate_traces(
-        "Codex CLI", [load_codex_trace(path) for path in files], days, OPENAI.uncached, overrides
+        "Codex CLI",
+        [load_codex_trace(path) for path in files],
+        days,
+        OPENAI.uncached,
+        overrides,
+        base_unit_weight,
     )
 
 
@@ -203,9 +216,17 @@ def simulate_traces(
     days: int,
     write_weight: float,
     overrides: CostOverrides,
+    weight: TraceWeight,
 ) -> SimulationResult:
-    """Sağlayıcıdan bağımsız çekirdek: tüm politikaları aynı istek dizileri üzerinde oynatır."""
-    used = [trace for trace in traces if trace.requests]
+    """Sağlayıcıdan bağımsız çekirdek: tüm politikaları aynı istek dizileri üzerinde oynatır.
+
+    Her oturumun maliyeti kendi modelinin fiyat oranlarıyla taban girdi biriminde hesaplanır ve
+    `weight` ile ortak birime (Claude: USD) çevrilir; böylece pahalı modelin bir tokenı ucuz
+    modelinkinden ağır basar. Birimi çevrilemeyen oturumlar simülasyon dışında kalır ve sayılır.
+    """
+    active = [trace for trace in traces if trace.requests]
+    weighted = [(trace, w) for trace in active if (w := weight(trace)) is not None]
+    used = [trace for trace, _ in weighted]
     model = CostModel(
         write_weight=write_weight,
         post_compact_tokens=observed_median(
@@ -234,9 +255,11 @@ def simulate_traces(
         sessions=len(used),
         requests=sum(len(trace.requests) for trace in used),
         days=days,
+        unit="USD" if weight is dollar_weight else "base input units",
+        unweighted_sessions=len(active) - len(used),
         exact_cost=sum(
-            exact_cost(usage, trace_prices(trace, overrides.read_weight))
-            for trace in used
+            w * exact_cost(usage, trace_prices(trace, overrides.read_weight))
+            for trace, w in weighted
             for usage in trace.requests
         ),
         observed_compactions=sum(len(trace.pre_compact_tokens) for trace in used),
@@ -244,7 +267,7 @@ def simulate_traces(
         model=model,
         models=tuple(ModelShare(name, read, count) for (name, read), count in shares.most_common()),
         outcomes=tuple(
-            run_policy(used, policy, model, overrides.read_weight) for policy in POLICIES
+            run_policy(weighted, policy, model, overrides.read_weight) for policy in POLICIES
         ),
     )
 
@@ -256,6 +279,37 @@ def observed_median(observed: Sequence[int], override: int | None, flag: str) ->
     if not observed:
         raise ConfigError(f"no real compactions found in the logs; pass {flag} explicitly")
     return int(statistics.median(observed))
+
+
+# API liste fiyatları: taban girdi, USD / milyon token (2026-10, platform.claude.com fiyatları).
+# Önbellek ve çıktı çarpanları claude_prices'tan gelir; listede olmayan modeller
+# fiyatlandırılmaz ve raporda ayrıca sayılır.
+USD_PER_MTOK: Final = (
+    ("claude-opus-5", 4.0),
+    ("claude-opus-4", 5.0),
+    ("claude-sonnet-5", 2.0),
+    ("claude-sonnet-4", 3.0),
+    ("claude-haiku-4-5", 1.0),
+)
+
+
+def usd_per_token(model: str) -> float | None:
+    """Modelin taban girdi liste fiyatı (USD/token); listede olmayan model için None."""
+    for marker, usd in USD_PER_MTOK:
+        if marker in model.lower():
+            return usd / 1e6
+    return None
+
+
+def dollar_weight(trace: SessionTrace) -> float | None:
+    """Oturumun taban girdi birimi başına USD değeri; listede olmayan model için None (oturum
+    dolarla tartılamaz, simülasyon dışında kalır ve raporda sayılır)."""
+    return usd_per_token(trace.model)
+
+
+def base_unit_weight(trace: SessionTrace) -> float | None:
+    """Fiyat listesi olmayan sağlayıcı (Codex): taban girdi biriminde, her oturum aynı ağırlıkta."""
+    return 1.0
 
 
 def claude_prices(model: str) -> PriceSheet:
@@ -593,18 +647,22 @@ def simulate_trace(
 
 
 def run_policy(
-    traces: Sequence[SessionTrace], policy: Policy, model: CostModel, read_weight: float | None
+    weighted: Sequence[tuple[SessionTrace, float]],
+    policy: Policy,
+    model: CostModel,
+    read_weight: float | None,
 ) -> Outcome:
-    """Politikayı tüm oturumlarda, her oturumun kendi fiyatlarıyla çalıştırıp toplar."""
+    """Politikayı her oturumda kendi fiyatlarıyla çalıştırır ve ortak birimde toplar."""
     results = [
-        simulate_trace(trace, policy, model, trace_prices(trace, read_weight)) for trace in traces
+        (w, simulate_trace(trace, policy, model, trace_prices(trace, read_weight)))
+        for trace, w in weighted
     ]
-    requests = sum(len(trace.requests) for trace in traces)
+    requests = sum(len(trace.requests) for trace, _ in weighted)
     return Outcome(
         policy=policy,
-        cost=sum(cost for cost, _, _ in results),
-        compactions=sum(count for _, count, _ in results),
-        mean_context=sum(total for _, _, total in results) / requests if requests else 0.0,
+        cost=sum(w * cost for w, (cost, _, _) in results),
+        compactions=sum(count for _, (_, count, _) in results),
+        mean_context=sum(total for _, (_, _, total) in results) / requests if requests else 0.0,
     )
 
 
@@ -640,26 +698,43 @@ def render_simulation(result: SimulationResult, hint: ApplyHint) -> str:
         f"CimriHook simulate ({result.agent}): {result.sessions} sessions active in the last "
         f"{result.days} days (replayed whole), {result.requests:,} requests; static prefix "
         f"(median first request) {result.static_prefix:,} tokens",
-        f"Prices (base input = 1, per session model; costs are summed in base input units "
-        f"across models): {prices}; new input written at {model.write_weight:.2f} ({written})",
+        f"Prices (base input = 1, per session model; sessions are summed in {result.unit}"
+        + (
+            f", {result.unweighted_sessions} sessions of models without a list price left out"
+            if result.unweighted_sessions
+            else ""
+        )
+        + f"): {prices}; new input written at {model.write_weight:.2f} ({written})",
         f"Compaction (medians of {result.observed_compactions} real compactions unless given): "
         f"summary {model.summary_tokens:,} output tokens (estimated from the summary text; the "
         f"real output is larger), next request carries {model.post_compact_tokens:,} context "
         f"tokens of which {model.post_compact_cached:,} stay cached, + "
         f"{model.refetch_tokens:,} re-read in {model.refetch_requests} extra requests",
-        f"Exact cost from usage logs: {result.exact_cost / 1e9:.3f}B; model replay of observed "
-        f"behaviour: {baseline / 1e9:.3f}B (replay check {calibration:+.1f}%; this checks the "
+        f"Exact cost from usage logs: {amount(result.exact_cost, result.unit)}; model replay of "
+        f"observed "
+        f"behaviour: {amount(baseline, result.unit)} (replay check {calibration:+.1f}%; this "
+        "checks the "
         "cost accounting, not the policy predictions: see `cimrihook bench-calibrate`)",
-        f"  {'policy':<30}{'cost (B)':>10}{'vs observed':>13}{'compactions':>13}"
+        f"  {'policy':<30}{cost_header(result.unit):>10}{'vs observed':>13}{'compactions':>13}"
         f"{'mean context':>14}",
     ]
     lines.extend(
-        f"  {outcome.policy.name:<30}{outcome.cost / 1e9:>10.3f}"
+        f"  {outcome.policy.name:<30}{amount(outcome.cost, result.unit):>10}"
         f"{100 * (outcome.cost - baseline) / baseline:>12.1f}%{outcome.compactions:>13,}"
         f"{outcome.mean_context:>14,.0f}"
         for outcome in result.outcomes
     )
     return "\n".join([*lines, *recommendation(result, hint)])
+
+
+def amount(cost: float, unit: str) -> str:
+    """Maliyetin birimiyle kısa metni: dolar ya da milyar taban girdi birimi."""
+    return f"${cost:,.0f}" if unit == "USD" else f"{cost / 1e9:.3f}B"
+
+
+def cost_header(unit: str) -> str:
+    """Politika tablosunun maliyet sütun başlığı."""
+    return "cost ($)" if unit == "USD" else "cost (B)"
 
 
 def recommended_window(result: SimulationResult) -> tuple[Outcome, Outcome] | None:

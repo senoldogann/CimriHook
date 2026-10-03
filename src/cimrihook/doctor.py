@@ -35,11 +35,13 @@ from cimrihook.simulate import (
     claude_prices,
     compact_metadata_tokens,
     context_of,
+    dollar_weight,
     load_claude_traces,
     recommendation_text,
     recommended_window,
     simulate_traces,
     total_usage,
+    usd_per_token,
     written_of,
 )
 from cimrihook.tail import FIVE_MINUTES, ONE_HOUR, read_session_tail
@@ -47,16 +49,6 @@ from cimrihook.tail import FIVE_MINUTES, ONE_HOUR, read_session_tail
 BANDS: Final = ((100_000, "up to 100k"), (200_000, "100k-200k"), (400_000, "200k-400k"))
 TOP_BAND: Final = "over 400k"
 REWRITE_TOKENS: Final = 100_000  # tek istekte bundan fazla girdi yazan istek büyük yeniden yazımdır
-# API liste fiyatları: taban girdi, USD / milyon token (2026-10, platform.claude.com fiyatları).
-# Önbellek ve çıktı çarpanları simulate.claude_prices'tan gelir; listede olmayan modeller
-# fiyatlandırılmaz ve raporda ayrıca sayılır.
-USD_PER_MTOK: Final = (
-    ("claude-opus-5", 4.0),
-    ("claude-opus-4", 5.0),
-    ("claude-sonnet-5", 2.0),
-    ("claude-sonnet-4", 3.0),
-    ("claude-haiku-4-5", 1.0),
-)
 # Eklentisiz, MCP'siz ve kullanıcı ayarsız Claude Code 2.1.288'in ilk istek bağlamı (A/B bench).
 BARE_PREFIX_TOKENS: Final = 16_600
 SESSION_START: Final = "session start"
@@ -202,14 +194,6 @@ def scan_transcript(path: Path, subagent: bool) -> TranscriptScan:
 def gap(previous: float | None, current: float | None) -> float | None:
     """İki istek arasındaki süre; zamanlardan biri yoksa None."""
     return None if previous is None or current is None else current - previous
-
-
-def usd_per_token(model: str) -> float | None:
-    """Modelin taban girdi liste fiyatı (USD/token); listede olmayan model için None."""
-    for marker, usd in USD_PER_MTOK:
-        if marker in model.lower():
-            return usd / 1e6
-    return None
 
 
 def band(context: int) -> str:
@@ -364,6 +348,7 @@ def diagnose_claude(projects_dir: Path, days: int, now: float) -> Diagnosis:
         days,
         average_write_weight(total_usage(requests)),
         CostOverrides(None, None, None, MEASURED_REFETCH_TOKENS, MEASURED_REFETCH_REQUESTS, None),
+        dollar_weight,
     )
     return Diagnosis(anatomy, simulation, guard, bench)
 

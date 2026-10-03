@@ -29,12 +29,11 @@ from cimrihook.doctor import (
     token_costs,
     tokens_text,
     unique_scans,
-    usd_per_token,
 )
 from cimrihook.errors import ConfigError, LedgerError
 from cimrihook.hook import ledger_path
 from cimrihook.install import load_record
-from cimrihook.simulate import context_of
+from cimrihook.simulate import context_of, usd_per_token
 
 LARGE_CONTEXT: Final = 200_000  # bu bağlamın üstündeki istekler büyük bağlamlı sayılır
 MIN_PERIOD_SECONDS: Final = 3_600.0  # bir saatten kısa dönemler karşılaştırılmaz

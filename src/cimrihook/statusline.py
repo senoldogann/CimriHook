@@ -23,12 +23,11 @@ from typing import Final
 
 from cimrihook.claude import as_object, require_str
 from cimrihook.config import Config
-from cimrihook.doctor import usd_per_token
 from cimrihook.errors import CimriHookError, HookPayloadError
 from cimrihook.hook import ledger_path
 from cimrihook.ledger import record_new_quota
 from cimrihook.model import QuotaSample
-from cimrihook.simulate import claude_prices
+from cimrihook.simulate import claude_prices, usd_per_token
 
 LIMIT_LABELS: Final = (("five_hour", "5h"), ("seven_day", "7d"))
 CACHE_TTLS: Final = {"5m": 300.0, "1h": 3_600.0}  # prompt_cache.ttl değerleri, saniye
