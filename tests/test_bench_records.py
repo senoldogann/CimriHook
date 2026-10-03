@@ -95,6 +95,7 @@ def test_run_matrix_rejects_arms_the_agent_cannot_apply() -> None:
     assert spec_problem(spec(Agent.CODEX, sequential, Variant.CODEC, 60_000)) is not None
     assert spec_problem(spec(Agent.CODEX, sequential, Variant.BRIEF, 60_000)) is not None
     assert spec_problem(spec(Agent.CODEX, Protocol.DEEP, Variant.GOVERNOR, 60_000)) is not None
+    assert spec_problem(spec(Agent.CODEX, Protocol.DEEPER, Variant.GOVERNOR, 60_000)) is not None
     assert spec_problem(spec(Agent.CLAUDE, sequential, Variant.GOVERNOR, 40_000)) is not None
     assert spec_problem(spec(Agent.CLAUDE, sequential, Variant.COMBINED, 100_000)) is None
     assert spec_problem(spec(Agent.CLAUDE, Protocol.DEEP, Variant.BRIEF, 183_000)) is None

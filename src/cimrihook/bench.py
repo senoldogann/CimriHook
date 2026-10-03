@@ -15,6 +15,7 @@ Protokoller:
 - deep: sequential'dan önce ajan hata yokken kütüphanenin tüm kaynak dosyalarını okur (yalnızca
   Claude Code). Bağlam baştan büyür ve okunan kodun çoğu sonraki adımlar için bayatlar; gerçek
   kullanımdaki yüksek bağlamlı (200k üstü) oturumları taklit eder.
+- deeper: deep gibi, ama ısınmada test dosyaları da okunur; oturum 400k'nın üstüne çıkar.
 
 Varyantlar (mekanizma ablasyonu):
 - baseline: ajanın varsayılan davranışı.
@@ -160,6 +161,13 @@ WARMUP_PROMPT: Final = (
     "tests, documentation and packaging files. Then reply with one short line per file saying "
     "what it provides. Do not change any file."
 )
+DEEPER_WARMUP_PROMPT: Final = (
+    "Before any bug appears, get to know this repository. Read every source file of the library "
+    "and every test file yourself, in full, with the Read tool, one file at a time and without "
+    "subagents; skip documentation and packaging files. Then reply with one short line per "
+    "library file saying what it provides and how it is tested. Do not change any file."
+)
+WARMUP_PROMPTS: Final = {"deep": WARMUP_PROMPT, "deeper": DEEPER_WARMUP_PROMPT}
 NEXT_BUG_PROMPT: Final = (
     "A new bug has just been introduced in the library code and the test suite fails again. Find "
     "and fix it in the library code. Do not modify, add, or delete any test files. Run the tests "
@@ -206,6 +214,7 @@ class Protocol(StrEnum):
     SINGLE = "single"
     SEQUENTIAL = "sequential"
     DEEP = "deep"
+    DEEPER = "deeper"
 
 
 @dataclass(frozen=True, slots=True)
@@ -532,7 +541,7 @@ def spec_problem(spec: RunSpec) -> str | None:
             f"codex cannot run variant {spec.variant.value!r}: only the compaction window is "
             "implemented for Codex, so run codex with --variants baseline,governor"
         )
-    if spec.agent is Agent.CODEX and spec.protocol is Protocol.DEEP:
+    if spec.agent is Agent.CODEX and spec.protocol in (Protocol.DEEP, Protocol.DEEPER):
         return (
             "codex cannot run the deep protocol: its warm-up turn is not mapped to a step in the "
             "Codex usage records"
@@ -816,7 +825,11 @@ def run_sequential(
             f"{before.tail}"
         )
     started = time.monotonic()
-    opening = warm_up(spec, workspace, run_dir, timeout) if spec.protocol is Protocol.DEEP else None
+    opening = (
+        warm_up(spec, workspace, run_dir, timeout)
+        if spec.protocol in (Protocol.DEEP, Protocol.DEEPER)
+        else None
+    )
     calls: list[AgentRun] = []
     step_passed: list[bool] = []
     for step, mutation in enumerate(spec.task.mutations, start=1):
@@ -850,7 +863,7 @@ def warm_up(spec: RunSpec, workspace: Path, run_dir: Path, timeout: int) -> Agen
     """deep protokolünün ısınma çağrısı: ajan hata yokken kütüphaneyi okur, hiçbir dosyayı
     değiştirmez. Süre aşımında maliyeti kaydedilemediği için çalıştırma ölçülemez."""
     seal(workspace)
-    call = start_agent(spec, WARMUP_PROMPT, workspace, run_dir, timeout, 0)
+    call = start_agent(spec, WARMUP_PROMPTS[spec.protocol.value], workspace, run_dir, timeout, 0)
     if call.timed_out:
         raise BenchError(f"{spec.task.id}: the warm-up call timed out after {timeout}s")
     changed = run_checked(("git", "status", "--porcelain"), workspace).stdout.strip()

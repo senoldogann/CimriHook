@@ -202,7 +202,9 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--tasks-dir", default=DEFAULT_TASKS_DIR)
     bench.add_argument("--tasks", help="comma-separated task ids (default: all)")
     bench.add_argument(
-        "--protocols", default="single", help="single, sequential and/or deep (deep: claude only)"
+        "--protocols",
+        default="single",
+        help="single, sequential, deep and/or deeper (deep and deeper: claude only)",
     )
     bench.add_argument("--agents", default="claude,codex")
     bench.add_argument(
@@ -315,7 +317,7 @@ def parse_agents(raw: str) -> tuple[Agent, ...]:
 
 
 def parse_protocols(raw: str) -> tuple[Protocol, ...]:
-    """Protokol listesi (single, sequential, deep)."""
+    """Protokol listesi (single, sequential, deep, deeper)."""
     allowed = {protocol.value for protocol in Protocol}
     values = split_csv(raw)
     unknown = [value for value in values if value not in allowed]
