@@ -1,22 +1,26 @@
 """Kurulum: CimriHook bileşenlerini Claude Code ayar dosyasına ekler ya da çıkarır.
 
-Kullanıcının ayarları yalnızca bu komutla değişir. Yazmadan önce dosyanın zaman damgalı yedeği
-alınır; --dry-run yalnızca yapılacak değişikliği gösterir. Aynı kurulum ikinci kez çalıştırıldığında
-bir şey eklemez. Kullanıcının kendi durum satırı varsa ezilmez. Kaldırma yalnızca CimriHook'un
-eklediklerini geri alır: komutu `-m cimrihook` içeren hook'lar ve durum satırı ile kurulum kaydına
-yazılmış ortam değişkenleri (önceki değerleri geri yüklenir); kullanıcının kendi hook'larına
-dokunmaz.
+Kullanıcının ayarları yalnızca bu komutla değişir. Yazmadan önce dosyanın yedeği alınır, yazma
+atomiktir ve sembolik bağlantılı ayar dosyasında hedef dosya güncellenir; --dry-run yalnızca
+yapılacak değişikliği gösterir. Aynı kurulum ikinci kez çalıştırıldığında bir şey eklemez.
+
+Kullanıcının kendi durum satırı komutu varsa ezilmez, zincirlenir: CimriHook önce o komutu aynı
+girdiyle çalıştırır, kendi parçasını sona ekler. Kaldırma yalnızca CimriHook'un eklediklerini geri
+alır: komutu `-m cimrihook` içeren hook'lar, kurulum kaydındaki ortam değişkenleri (önceki
+değerleri geri yüklenir) ve durum satırı (zincirlenen önceki komut geri gelir).
 """
 
 import difflib
 import json
+import os
 import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Final, TypeGuard
 
 from cimrihook.errors import ConfigError
+from cimrihook.settings import chained_statusline_command
 
 MARKER: Final = " -m cimrihook "  # CimriHook'un yazdığı komutları tanır
 INSTALL_RECORD: Final = "installed.json"
@@ -26,7 +30,7 @@ type Settings = dict[str, object]
 
 @dataclass(frozen=True, slots=True)
 class EnvChange:
-    """Kurulumun yazdığı ortam değişkeni ve kurulumdan önceki değeri."""
+    """Kurulumun yazdığı ortam değişkeni ve CimriHook'tan önceki değeri."""
 
     name: str
     value: str
@@ -34,21 +38,36 @@ class EnvChange:
 
 
 @dataclass(frozen=True, slots=True)
+class InstallRecord:
+    """Kaldırmada geri alınacaklar."""
+
+    env: tuple[EnvChange, ...]
+    status_line: object | None  # CimriHook'tan önceki durum satırı (zincirlenen); yoksa None
+
+
+@dataclass(frozen=True, slots=True)
 class InstallResult:
-    """Kurulumdan sonraki ayarlar ve kullanıcıya söylenecek notlar."""
+    """Kurulumdan sonraki ayarlar, güncel kayıt ve kullanıcıya söylenecek notlar."""
 
     settings: Settings
-    env_changes: tuple[EnvChange, ...]
+    record: InstallRecord
     notes: tuple[str, ...]
 
 
-def install(settings: Settings, blocks: Sequence[Settings]) -> InstallResult:
-    """Blokları ayarlara ekler; var olan aynı komutlar ve kullanıcının durum satırı korunur."""
+EMPTY_RECORD: Final = InstallRecord(env=(), status_line=None)
+
+
+def install(
+    settings: Settings, blocks: Sequence[Settings], earlier: InstallRecord
+) -> InstallResult:
+    """Blokları ayarlara ekler; var olan aynı komutlar korunur, durum satırı zincirlenir."""
     hooks = hooks_of(settings)
     env = env_of(settings)
     notes: list[str] = []
     changes: list[EnvChange] = []
-    status_line = settings.get("statusLine")
+    current = settings.get("statusLine")
+    status_line = current
+    previous_status = earlier.status_line if is_ours(current) else None
     for block in blocks:
         for event, entries in hooks_of(block).items():
             hooks[event] = [*hooks.get(event, []), *new_entries(hooks.get(event, []), entries)]
@@ -57,43 +76,56 @@ def install(settings: Settings, blocks: Sequence[Settings]) -> InstallResult:
             changes.append(EnvChange(name, str(value), None if previous is None else str(previous)))
             env[name] = value
         wanted = block.get("statusLine")
-        if wanted is not None and status_line is not None and not is_ours(status_line):
-            notes.append("kept your own statusLine; set it to `cimrihook statusline` to see ours")
-        elif wanted is not None:
-            status_line = wanted
+        if wanted is None:
+            continue
+        if current is not None and not is_ours(current) and not is_command(current):
+            notes.append("kept your own statusLine: it is not a command, so it cannot be chained")
+            continue
+        if current is not None and not is_ours(current):
+            previous_status = current
+            notes.append("your status line still runs first; CimriHook's part is added after it")
+        status_line = wanted if previous_status is None else chain(wanted, previous_status)
     return InstallResult(
         settings=with_values(
             settings, {"hooks": hooks or None, "env": env or None, "statusLine": status_line}
         ),
-        env_changes=tuple(changes),
+        record=InstallRecord(merge_env(earlier.env, changes), previous_status),
         notes=tuple(notes),
     )
 
 
-def uninstall(settings: Settings, env_changes: Sequence[EnvChange]) -> Settings:
-    """CimriHook'un eklediği hook'ları, durum satırını ve ortam değişkenlerini çıkarır."""
+def uninstall(settings: Settings, record: InstallRecord) -> Settings:
+    """CimriHook'un eklediği hook'ları, ortam değişkenlerini ve durum satırını çıkarır."""
     hooks = {
         event: kept
         for event, entries in hooks_of(settings).items()
         if (kept := [entry for entry in map(without_ours, entries) if entry is not None])
     }
     env = env_of(settings)
-    for change in env_changes:
+    for change in record.env:
         if env.get(change.name) == change.value:
             env = {
                 name: change.previous if name == change.name else value
                 for name, value in env.items()
                 if name != change.name or change.previous is not None
             }
-    status_line = settings.get("statusLine")
+    current = settings.get("statusLine")
     return with_values(
         settings,
         {
             "hooks": hooks or None,
             "env": env or None,
-            "statusLine": None if is_ours(status_line) else status_line,
+            "statusLine": record.status_line if is_ours(current) else current,
         },
     )
+
+
+def chain(ours: object, previous: object) -> dict[str, object]:
+    """CimriHook durum satırı, kullanıcının önceki komutunu önce çalıştıracak biçimde."""
+    if not is_command(ours) or not is_command(previous):
+        raise ConfigError(f"cannot chain status lines {ours!r} and {previous!r}")
+    command = chained_statusline_command(str(ours["command"]), str(previous["command"]))
+    return {**ours, "command": command}
 
 
 def with_values(settings: Settings, values: dict[str, object | None]) -> Settings:
@@ -165,6 +197,27 @@ def is_ours(status_line: object) -> bool:
     return isinstance(status_line, dict) and MARKER in str(status_line.get("command", ""))
 
 
+def is_command(status_line: object) -> TypeGuard[dict[str, object]]:
+    """Durum satırı bir kabuk komutu mu?"""
+    return (
+        isinstance(status_line, dict)
+        and status_line.get("type") == "command"
+        and isinstance(status_line.get("command"), str)
+    )
+
+
+def merge_env(old: Sequence[EnvChange], new: Sequence[EnvChange]) -> tuple[EnvChange, ...]:
+    """Ortam değişkeni kaydı; değişkeni daha önce CimriHook yazdıysa asıl önceki değer korunur."""
+    earlier = {change.name: change for change in old}
+    merged = {
+        change.name: EnvChange(change.name, change.value, earlier[change.name].previous)
+        if change.name in earlier and earlier[change.name].value == change.previous
+        else change
+        for change in new
+    }
+    return tuple(earlier[name] for name in earlier if name not in merged) + tuple(merged.values())
+
+
 def load_settings(path: Path) -> Settings:
     """Ayar dosyası; yoksa boş ayarlar."""
     if not path.exists():
@@ -189,68 +242,80 @@ def settings_diff(path: Path, before: Settings, after: Settings) -> str:
 
 
 def write_settings(path: Path, settings: Settings, now: float) -> Path | None:
-    """Ayarları yazar; dosya varsa önce zaman damgalı yedeğini alır ve yedeğin yolunu döndürür."""
-    backup = None
-    if path.exists():
-        backup = path.with_name(f"{path.name}.cimrihook-backup-{int(now)}")
-        shutil.copy2(path, backup)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    """Ayarları atomik olarak yazar; dosya varsa önce yedeğini alır ve yedeğin yolunu döndürür.
+
+    Sembolik bağlantılı ayar dosyasında bağlantı korunur, hedef dosya güncellenir.
+    """
+    target = path.resolve()
+    backup = backup_path(target, now) if target.exists() else None
+    if backup is not None:
+        shutil.copy2(target, backup)
+    write_atomically(target, json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
     return backup
 
 
-def save_record(home: Path, path: Path, changes: Sequence[EnvChange]) -> None:
-    """Kurulumun ortam değişkeni değişikliklerini, kaldırmada geri almak için kaydeder."""
-    home.mkdir(parents=True, exist_ok=True)
-    record = {
+def backup_path(target: Path, now: float) -> Path:
+    """Var olan bir yedeğin üzerine yazmayan yedek yolu."""
+    stem = f"{target.name}.cimrihook-backup-{int(now)}"
+    candidates = (target.with_name(stem if n == 0 else f"{stem}-{n}") for n in range(1000))
+    found = next((candidate for candidate in candidates if not candidate.exists()), None)
+    if found is None:
+        raise ConfigError(f"too many CimriHook backups named {stem}* next to {target}")
+    return found
+
+
+def write_atomically(target: Path, text: str) -> None:
+    """Metni geçici dosyaya yazıp yerine taşır; yarıda kalan yazma eski dosyayı bozmaz."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.cimrihook-tmp")
+    temporary.write_text(text, encoding="utf-8")
+    os.replace(temporary, target)
+
+
+def save_record(home: Path, path: Path, record: InstallRecord) -> None:
+    """Kaldırmada geri almak için kurulum kaydını yazar."""
+    data = {
         "settings": str(path),
-        "env": [{"name": c.name, "value": c.value, "previous": c.previous} for c in changes],
+        "env": [{"name": c.name, "value": c.value, "previous": c.previous} for c in record.env],
+        "status_line": record.status_line,
     }
-    (home / INSTALL_RECORD).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    write_atomically(home / INSTALL_RECORD, json.dumps(data, indent=2) + "\n")
 
 
-def load_record(home: Path, path: Path) -> tuple[EnvChange, ...]:
-    """Bu ayar dosyası için kaydedilmiş ortam değişkeni değişiklikleri; kayıt yoksa boş."""
+def load_record(home: Path, path: Path) -> InstallRecord:
+    """Bu ayar dosyası için kurulum kaydı; kayıt yoksa ya da başka dosyaya aitse boş kayıt."""
     file = home / INSTALL_RECORD
     if not file.exists():
-        return ()
-    record = json.loads(file.read_text(encoding="utf-8"))
-    if not isinstance(record, dict) or record.get("settings") != str(path):
-        return ()
-    entries = record.get("env")
+        return EMPTY_RECORD
+    data: object = json.loads(file.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or data.get("settings") != str(path):
+        return EMPTY_RECORD
+    entries = data.get("env")
     if not isinstance(entries, list):
         raise ConfigError(f"{file}: 'env' must be a list")
-    return tuple(
-        EnvChange(
-            str(entry["name"]),
-            str(entry["value"]),
-            previous if isinstance(previous := entry.get("previous"), str) else None,
-        )
-        for entry in entries
-        if isinstance(entry, dict)
-    )
-
-
-def merge_record(old: Sequence[EnvChange], new: Sequence[EnvChange]) -> tuple[EnvChange, ...]:
-    """Yeni kurulumun kaydı; değişkeni daha önce CimriHook yazdıysa asıl önceki değer korunur."""
-    earlier = {change.name: change for change in old}
-    return tuple(
-        EnvChange(change.name, change.value, earlier[change.name].previous)
-        if change.name in earlier and earlier[change.name].value == change.previous
-        else change
-        for change in new
+    return InstallRecord(
+        env=tuple(
+            EnvChange(
+                str(entry["name"]),
+                str(entry["value"]),
+                previous if isinstance(previous := entry.get("previous"), str) else None,
+            )
+            for entry in entries
+            if isinstance(entry, dict)
+        ),
+        status_line=data.get("status_line"),
     )
 
 
 def run_init(path: Path, blocks: Sequence[Settings], home: Path, dry_run: bool, now: float) -> str:
     """Kurulumu uygular ya da (dry_run) yalnızca farkını gösterir; kullanıcıya rapor döndürür."""
     before = load_settings(path)
-    result = install(before, blocks)
+    result = install(before, blocks, load_record(home, path))
     lines = [settings_diff(path, before, result.settings), *(f"note: {n}" for n in result.notes)]
     if dry_run or result.settings == before:
         return "\n".join([*lines, "dry run: nothing written" if dry_run else "already installed"])
     backup = write_settings(path, result.settings, now)
-    save_record(home, path, merge_record(load_record(home, path), result.env_changes))
+    save_record(home, path, result.record)
     saved = f"backup: {backup}" if backup is not None else "created a new settings file"
     return "\n".join([*lines, f"written: {path}", saved])
 

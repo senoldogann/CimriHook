@@ -49,7 +49,7 @@ from cimrihook.simulate import (
     simulate_claude,
     simulate_codex,
 )
-from cimrihook.statusline import run_statusline
+from cimrihook.statusline import run_chained_statusline, run_statusline
 
 DEFAULT_PROJECTS_DIR: Final = "~/.claude/projects"
 DEFAULT_AUDIT_DAYS: Final = 30
@@ -80,8 +80,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("hook", help="process one Claude Code hook payload from stdin")
-    commands.add_parser(
+    statusline = commands.add_parser(
         "statusline", help="print the Claude Code status line from its JSON input on stdin"
+    )
+    statusline.add_argument(
+        "--after", help="run this status line command first and add CimriHook's part after it"
     )
     commands.add_parser(
         "guard", help="UserPromptSubmit hook: ask once before re-caching a cold, large session"
@@ -310,6 +313,9 @@ def main() -> None:
         config = load_config(os.environ)
         if command == "hook":
             sys.stdout.write(run_hook(sys.stdin.read(), config))
+        elif command == "statusline" and args.after is not None:
+            raw = sys.stdin.read()
+            sys.stdout.write(run_chained_statusline(raw, config, time.time(), str(args.after)))
         elif command == "statusline":
             sys.stdout.write(run_statusline(sys.stdin.read(), config, time.time()))
         elif command == "guard":

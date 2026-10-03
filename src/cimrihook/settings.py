@@ -53,6 +53,11 @@ def statusline_settings(python: str) -> dict[str, object]:
     return {"statusLine": {"type": "command", "command": command(python, "statusline")}}
 
 
+def chained_statusline_command(ours: str, previous: str) -> str:
+    """Kullanıcının önceki durum satırı komutunu önce çalıştıran CimriHook durum satırı komutu."""
+    return f"{ours} --after {shlex.quote(previous)}"
+
+
 def governor_env(window: int) -> dict[str, object]:
     """Bağlam yöneticisi: Claude Code'un kendi otomatik sıkıştırma penceresini daraltır.
 

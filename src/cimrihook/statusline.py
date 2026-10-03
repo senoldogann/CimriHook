@@ -9,6 +9,7 @@ Kullanım limiti gözlemleri, planın token türlerini nasıl saydığını öğ
 """
 
 import json
+import subprocess
 from dataclasses import dataclass
 from typing import Final
 
@@ -24,6 +25,7 @@ from cimrihook.tail import ONE_HOUR, SessionTail, read_session_tail
 
 LIMIT_LABELS: Final = (("five_hour", "5h"), ("seven_day", "7d"))
 SEPARATOR: Final = " · "
+CHAIN_TIMEOUT_SECONDS: Final = 5.0  # kullanıcının önceki durum satırı komutuna tanınan süre
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +47,37 @@ class StatusInput:
     context_tokens: int | None  # bağlamdaki token (önbellek dahil); ilk yanıttan önce None
     session_usd: float | None
     limits: tuple[LimitUse, ...]
+
+
+def run_chained_statusline(raw: str, config: Config, now: float, previous_command: str) -> str:
+    """Kullanıcının önceki durum satırını aynı girdiyle çalıştırır ve CimriHook'unkini ekler.
+
+    Önceki komut (ör. başka bir aracın köprüsü) girdiyi kendisi de kullanabilir; ona aynen iletilir.
+    Komut başarısız olur ya da süreyi aşarsa bu, satırda açıkça belirtilir.
+    """
+    previous = previous_status(raw, previous_command)
+    ours = run_statusline(raw, config, now)
+    return SEPARATOR.join(part for part in (previous, ours) if part)
+
+
+def previous_status(raw: str, previous_command: str) -> str:
+    """Önceki durum satırı komutunun ilk çıktı satırı; hata durumu metne eklenir."""
+    try:
+        completed = subprocess.run(
+            previous_command,
+            shell=True,  # kullanıcının kendi ayarındaki komut, Claude Code'un çalıştırdığı gibi
+            input=raw,
+            capture_output=True,
+            text=True,
+            timeout=CHAIN_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return f"(previous status line timed out after {CHAIN_TIMEOUT_SECONDS:.0f}s)"
+    first = completed.stdout.split("\n", 1)[0].rstrip()
+    if completed.returncode != 0:
+        return f"{first} (previous status line exited {completed.returncode})".strip()
+    return first
 
 
 def run_statusline(raw: str, config: Config, now: float) -> str:
