@@ -57,6 +57,12 @@ CREATE TABLE IF NOT EXISTS quota_samples (
     model TEXT NOT NULL,
     PRIMARY KEY (limit_window, resets_at, used_percentage)
 );
+CREATE TABLE IF NOT EXISTS guard_blocks (
+    session_id TEXT NOT NULL,
+    last_response_at REAL NOT NULL,
+    blocked_at REAL NOT NULL,
+    PRIMARY KEY (session_id, last_response_at)
+);
 """
 VIEW_COLUMNS: Final = (
     "step, stream, request_key, encoding, start_line, total_lines, whole, line_count, body"
@@ -230,6 +236,14 @@ class Ledger:
             (session_id,),
         ).fetchall()
         return tuple(savings_from_row(row) for row in rows)
+
+    def claim_guard_block(self, session_id: str, last_response_at: float, now: float) -> bool:
+        """Bu boşluk dönemindeki ilk uyarıysa kaydeder ve True döner; uyarılmışsa False."""
+        cursor = self._db.execute(
+            "INSERT OR IGNORE INTO guard_blocks VALUES (?, ?, ?)",
+            (session_id, last_response_at, now),
+        )
+        return cursor.rowcount == 1
 
     def record_quota(self, samples: Sequence[QuotaSample]) -> None:
         """Kullanım limiti gözlemlerini kaydeder; aynı penceredeki aynı yüzde bir kez tutulur."""

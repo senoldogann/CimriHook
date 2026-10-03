@@ -9,7 +9,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from cimrihook.statusline import CacheState, LimitUse, StatusInput, render_status
+from cimrihook.statusline import LimitUse, StatusInput, render_status
+from cimrihook.tail import SessionTail
 
 NOW = 1_791_000_000.0
 STATUS = StatusInput(
@@ -24,13 +25,13 @@ STATUS = StatusInput(
 
 def test_warm_cache_prices_the_next_request_as_a_read() -> None:
     # 412000 x 0.05 (Opus 5.x okuma) x $4/MTok = $0.08; 3600 - 600 saniye = 50 dakika kaldı.
-    line = render_status(STATUS, CacheState(NOW - 600, 3_600.0), NOW)
+    line = render_status(STATUS, SessionTail(NOW - 600, 3_600.0, 412_000, "claude-opus-5-5"), NOW)
     assert line == "412k ctx · cache warm 50m · next $0.08 · 5h 42% · 7d 18% · $4.12"
 
 
 def test_cold_cache_prices_the_next_request_as_a_rewrite() -> None:
     # 5 dakikalık ömür dolmuş: 412000 x 1.25 x $4/MTok = $2.06.
-    line = render_status(STATUS, CacheState(NOW - 600, 300.0), NOW)
+    line = render_status(STATUS, SessionTail(NOW - 600, 300.0, 412_000, "claude-opus-5-5"), NOW)
     assert line == "412k ctx · cache cold · next $2.06 · 5h 42% · 7d 18% · $4.12"
 
 

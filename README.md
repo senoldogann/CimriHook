@@ -139,12 +139,27 @@ agent already has in its context:
 
 ```bash
 uv tool install --editable /path/to/CimriHook
-cimrihook settings          # prints the hooks block for Claude Code
+cimrihook settings                              # cold-prompt guard and status line
+cimrihook settings --compact-window 183000      # also compact earlier (value from doctor)
+cimrihook settings --brief --codec              # also short compactions and the tool codec
 ```
 
-Merge the printed `hooks` block into `~/.claude/settings.json` (all projects) or
-`.claude/settings.json` (one project). To try it for a single run:
-`claude --settings "$(cimrihook settings)"`.
+Merge the printed block into `~/.claude/settings.json` (all projects) or `.claude/settings.json`
+(one project). To try it for a single run: `claude --settings "$(cimrihook settings)"`.
+
+## Guard the cache
+
+When a session sits idle past its prompt-cache lifetime (1 hour on subscriptions, 5 minutes
+elsewhere), the next message re-caches the whole conversation. On a 900k-token session that is
+one request of about $7 at list prices. The cold-prompt guard (`UserPromptSubmit` hook) stops that
+message once, says what it would cost and suggests `/compact`; sending the message again goes
+ahead, and commands starting with `/` are never stopped. It only steps in above
+`CIMRIHOOK_GUARD_MIN_TOKENS` of context and never blocks on its own errors.
+
+`--brief` adds a `PreCompact` hook whose output Claude Code appends to its compaction prompt: keep
+the summary short and structured, refer to code by file path and line instead of pasting it. A
+shorter summary costs less output and is re-read by every later request; its effect on task
+quality is still to be measured, so it is opt-in.
 
 ## Measure
 
@@ -173,7 +188,8 @@ priced with the 5-minute/1-hour cache-write mix found in your own usage data.
 | Variable | Default | Meaning |
 |---|---|---|
 | `CIMRIHOOK_HOME` | `~/.cimrihook` | ledger directory (SQLite) |
-| `CIMRIHOOK_DISABLE` | empty | comma list of `ref,delta,outline`, for ablation studies |
+| `CIMRIHOOK_DISABLE` | empty | comma list of `guard,ref,delta,outline` to switch parts off |
+| `CIMRIHOOK_GUARD_MIN_TOKENS` | `150000` | the cold-prompt guard only stops sessions at least this large |
 | `CIMRIHOOK_OUTLINE_MIN_TOKENS` | `6000` | outline threshold |
 | `CIMRIHOOK_DELTA_MAX_RATIO` | `0.5` | send a delta only if it is at most this share of the raw result |
 | `CIMRIHOOK_MIN_SAVING_TOKENS` | `150` | do not re-encode for smaller savings |

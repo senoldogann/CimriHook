@@ -12,7 +12,10 @@ from cimrihook.model import Encoding
 DEFAULT_OUTLINE_MIN_TOKENS: Final = 6000
 DEFAULT_DELTA_MAX_RATIO: Final = 0.5
 DEFAULT_MIN_SAVING_TOKENS: Final = 150
+# Soğuk istem koruması bu bağlamın altında durdurmaz: Opus 5.x'te 1 saatlik yeniden yazım ~$1.2.
+DEFAULT_GUARD_MIN_TOKENS: Final = 150_000
 SWITCHABLE: Final = frozenset({Encoding.REF, Encoding.DELTA, Encoding.OUTLINE})
+GUARD: Final = "guard"
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,15 +24,22 @@ class Config:
 
     home: Path  # defter veritabanının bulunduğu dizin
     codec: CodecConfig
+    guard_enabled: bool
+    guard_min_tokens: int
 
 
 def load_config(env: Mapping[str, str]) -> Config:
     """CIMRIHOOK_* ortam değişkenlerini okur; tanımsız olanlar için belgelenmiş varsayılanlar."""
     home = Path(env["CIMRIHOOK_HOME"]) if "CIMRIHOOK_HOME" in env else Path.home() / ".cimrihook"
+    disabled = parse_disabled(env.get("CIMRIHOOK_DISABLE", ""))
     return Config(
         home=home,
+        guard_enabled=GUARD not in disabled,
+        guard_min_tokens=parse_int(env, "CIMRIHOOK_GUARD_MIN_TOKENS", DEFAULT_GUARD_MIN_TOKENS),
         codec=CodecConfig(
-            enabled=SWITCHABLE - parse_disabled(env.get("CIMRIHOOK_DISABLE", "")),
+            enabled=frozenset(
+                encoding for encoding in SWITCHABLE if encoding.value not in disabled
+            ),
             outline_min_tokens=parse_int(
                 env, "CIMRIHOOK_OUTLINE_MIN_TOKENS", DEFAULT_OUTLINE_MIN_TOKENS
             ),
@@ -41,16 +51,16 @@ def load_config(env: Mapping[str, str]) -> Config:
     )
 
 
-def parse_disabled(raw: str) -> frozenset[Encoding]:
-    """Virgülle ayrılmış kodlama adlarını (ref,delta,outline) çözer."""
+def parse_disabled(raw: str) -> frozenset[str]:
+    """Virgülle ayrılmış kapatılacak parçalar: kodlamalar (ref,delta,outline) ve guard."""
     names = [name.strip().lower() for name in raw.split(",") if name.strip()]
-    allowed = {encoding.value: encoding for encoding in SWITCHABLE}
+    allowed = {encoding.value for encoding in SWITCHABLE} | {GUARD}
     unknown = [name for name in names if name not in allowed]
     if unknown:
         raise ConfigError(
-            f"CIMRIHOOK_DISABLE has unknown encodings {unknown}; allowed: {sorted(allowed)}"
+            f"CIMRIHOOK_DISABLE has unknown names {unknown}; allowed: {sorted(allowed)}"
         )
-    return frozenset(allowed[name] for name in names)
+    return frozenset(names)
 
 
 def parse_int(env: Mapping[str, str], key: str, default: int) -> int:

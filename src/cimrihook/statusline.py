@@ -9,23 +9,19 @@ Kullanım limiti gözlemleri, planın token türlerini nasıl saydığını öğ
 """
 
 import json
-import os
 from dataclasses import dataclass
 from typing import Final
 
-from cimrihook.audit import message_usage, parse_line
-from cimrihook.claude import JsonObject, as_object, require_str
+from cimrihook.claude import as_object, require_str
 from cimrihook.config import Config
-from cimrihook.doctor import entry_time, usd_per_token
+from cimrihook.doctor import usd_per_token
 from cimrihook.errors import HookPayloadError
 from cimrihook.hook import ledger_path
 from cimrihook.ledger import Ledger
 from cimrihook.model import QuotaSample
-from cimrihook.simulate import SYNTHETIC_MODEL, claude_prices
+from cimrihook.simulate import claude_prices
+from cimrihook.tail import ONE_HOUR, SessionTail, read_session_tail
 
-TAIL_BYTES: Final = 262_144  # son isteği bulmak için transcript'in okunan son kısmı
-ONE_HOUR: Final = 3_600.0
-FIVE_MINUTES: Final = 300.0
 LIMIT_LABELS: Final = (("five_hour", "5h"), ("seven_day", "7d"))
 SEPARATOR: Final = " · "
 
@@ -51,14 +47,6 @@ class StatusInput:
     limits: tuple[LimitUse, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class CacheState:
-    """Önbelleğin durumu: son yanıtın zamanı ve önbellek ömrü."""
-
-    last_response_at: float  # epoch saniye
-    ttl_seconds: float
-
-
 def run_statusline(raw: str, config: Config, now: float) -> str:
     """Durum satırını üretir ve kullanım limiti gözlemlerini deftere yazar."""
     status = parse_status_input(raw)
@@ -66,7 +54,7 @@ def run_statusline(raw: str, config: Config, now: float) -> str:
     if samples:
         with Ledger(ledger_path(config.home)) as ledger:
             ledger.record_quota(samples)
-    return render_status(status, read_cache_state(status.transcript_path), now)
+    return render_status(status, read_session_tail(status.transcript_path), now)
 
 
 def parse_status_input(raw: str) -> StatusInput:
@@ -79,15 +67,13 @@ def parse_status_input(raw: str) -> StatusInput:
         ) from error
     payload = as_object(decoded, "statusline")
     model = as_object(payload.get("model"), "statusline.model")
-    context = payload.get("context_window")
-    cost = payload.get("cost")
     limits = payload.get("rate_limits")
     return StatusInput(
         session_id=require_str(payload, "session_id", "statusline"),
         transcript_path=require_str(payload, "transcript_path", "statusline"),
         model=require_str(model, "id", "statusline.model"),
-        context_tokens=optional_integer(context, "total_input_tokens"),
-        session_usd=optional_number(cost, "total_cost_usd"),
+        context_tokens=optional_integer(payload.get("context_window"), "total_input_tokens"),
+        session_usd=optional_number(payload.get("cost"), "total_cost_usd"),
         limits=tuple(
             use for window, _ in LIMIT_LABELS if (use := limit_use(limits, window)) is not None
         ),
@@ -137,57 +123,12 @@ def quota_samples(status: StatusInput, now: float) -> tuple[QuotaSample, ...]:
     )
 
 
-def read_cache_state(transcript_path: str) -> CacheState | None:
-    """Transcript'in sonundan son yanıtın zamanı ve önbelleğe yazım ömrü; bulunamazsa None."""
-    try:
-        size = os.path.getsize(transcript_path)
-    except FileNotFoundError:
-        return None
-    with open(transcript_path, "rb") as handle:
-        handle.seek(max(0, size - TAIL_BYTES))
-        lines = handle.read().split(b"\n")
-    entries = [entry for raw in reversed(lines) if (entry := parse_line(raw)) is not None]
-    responses = [entry for entry in entries if is_response(entry)]
-    last = responses[0] if responses else None
-    written = next((entry for entry in responses if cache_written(entry) > 0), None)
-    when = None if last is None else entry_time(last)
-    if when is None or written is None:
-        return None
-    ttl = ONE_HOUR if cache_written_1h(written) > 0 else FIVE_MINUTES
-    return CacheState(last_response_at=when, ttl_seconds=ttl)
-
-
-def is_response(entry: JsonObject) -> bool:
-    """API'den gelmiş, kullanım verisi taşıyan asistan satırı mı?"""
-    message = entry.get("message")
-    return (
-        entry.get("type") == "assistant"
-        and isinstance(message, dict)
-        and message.get("model") != SYNTHETIC_MODEL
-        and message_usage(message) is not None
-    )
-
-
-def cache_written(entry: JsonObject) -> int:
-    """Asistan satırının önbelleğe yazdığı token."""
-    message = entry.get("message")
-    usage = message_usage(message) if isinstance(message, dict) else None
-    return 0 if usage is None else usage.write_5m + usage.write_1h
-
-
-def cache_written_1h(entry: JsonObject) -> int:
-    """Asistan satırının bir saatlik ömürle yazdığı token."""
-    message = entry.get("message")
-    usage = message_usage(message) if isinstance(message, dict) else None
-    return 0 if usage is None else usage.write_1h
-
-
-def render_status(status: StatusInput, cache: CacheState | None, now: float) -> str:
+def render_status(status: StatusInput, tail: SessionTail | None, now: float) -> str:
     """Durum satırının metni; bilinmeyen parçalar atlanır."""
     context = status.context_tokens
     parts = [] if context is None else [f"{compact_tokens(context)} ctx"]
-    if cache is not None and context is not None:
-        parts.extend(cache_parts(status.model, context, cache, now))
+    if tail is not None and context is not None:
+        parts.extend(cache_parts(status.model, context, tail, now))
     labels = dict(LIMIT_LABELS)
     parts.extend(f"{labels[use.window]} {use.used_percentage:.0f}%" for use in status.limits)
     if status.session_usd is not None:
@@ -195,9 +136,9 @@ def render_status(status: StatusInput, cache: CacheState | None, now: float) -> 
     return SEPARATOR.join(parts)
 
 
-def cache_parts(model: str, context: int, cache: CacheState, now: float) -> list[str]:
+def cache_parts(model: str, context: int, tail: SessionTail, now: float) -> list[str]:
     """Önbellek sıcaklığı ve bir sonraki isteğin bağlam maliyeti (fiyatı biliniyorsa)."""
-    left = cache.ttl_seconds - (now - cache.last_response_at)
+    left = tail.ttl_seconds - (now - tail.last_response_at)
     prices = claude_prices(model)
     base = usd_per_token(model)
     if left > 0:
@@ -205,7 +146,7 @@ def cache_parts(model: str, context: int, cache: CacheState, now: float) -> list
         weight = prices.read
     else:
         state = "cache cold"
-        weight = prices.write_1h if cache.ttl_seconds >= ONE_HOUR else prices.write_5m
+        weight = prices.write_1h if tail.ttl_seconds >= ONE_HOUR else prices.write_5m
     return [state] if base is None else [state, f"next ${context * weight * base:.2f}"]
 
 
@@ -215,5 +156,5 @@ def compact_tokens(tokens: int) -> str:
 
 
 def duration(seconds: float) -> str:
-    """Kalan sürenin kısa hali (ör. 38m, 45s)."""
+    """Sürenin kısa hali (ör. 38m, 45s)."""
     return f"{int(seconds // 60)}m" if seconds >= 60 else f"{int(seconds)}s"

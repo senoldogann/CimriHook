@@ -1,5 +1,5 @@
-"""Komut satırı: hook | statusline | report | doctor | audit | simulate | settings | bench-run |
-bench-report | bench-remeasure | bench-calibrate."""
+"""Komut satırı: hook | statusline | guard | brief | report | doctor | audit | simulate | settings |
+bench-run | bench-report | bench-remeasure | bench-calibrate."""
 
 import argparse
 import json
@@ -26,10 +26,18 @@ from cimrihook.bench import (
 from cimrihook.config import Config, load_config
 from cimrihook.doctor import diagnose_claude, render_doctor
 from cimrihook.errors import BenchError, CimriHookError
+from cimrihook.guard import compaction_brief, guard_prompt
 from cimrihook.hook import ledger_path, run_hook
 from cimrihook.ledger import Ledger
 from cimrihook.report import render_savings
-from cimrihook.settings import governor_env, hook_settings
+from cimrihook.settings import (
+    brief_settings,
+    governor_env,
+    guard_settings,
+    hook_settings,
+    merge_settings,
+    statusline_settings,
+)
 from cimrihook.simulate import (
     CostOverrides,
     claude_hint,
@@ -71,6 +79,10 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "statusline", help="print the Claude Code status line from its JSON input on stdin"
     )
+    commands.add_parser(
+        "guard", help="UserPromptSubmit hook: ask once before re-caching a cold, large session"
+    )
+    commands.add_parser("brief", help="PreCompact hook: ask for a short, structured summary")
     report = commands.add_parser("report", help="show token savings recorded by the live hook")
     report.add_argument("--session", help="limit the report to one Claude Code session id")
     doctor = commands.add_parser(
@@ -118,11 +130,21 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="part of that context still cached (default: median of real compactions)",
     )
-    settings = commands.add_parser("settings", help="print the Claude Code settings JSON")
+    settings = commands.add_parser(
+        "settings",
+        help="print the Claude Code settings JSON (cold-prompt guard and status line by default)",
+    )
     settings.add_argument(
         "--compact-window",
         type=int,
-        help="also cap the context: auto-compact once it reaches this many tokens",
+        help="also set the auto-compact window; Claude Code compacts 33000 tokens below it "
+        "(minimum 100000)",
+    )
+    settings.add_argument(
+        "--brief", action="store_true", help="also ask compactions for a short, structured summary"
+    )
+    settings.add_argument(
+        "--codec", action="store_true", help="also re-encode tool results (REF/DELTA/OUTLINE)"
     )
     bench = commands.add_parser(
         "bench-run", help="A/B runs on real tasks with the logged-in Claude Code and Codex CLI"
@@ -257,6 +279,10 @@ def main() -> None:
             sys.stdout.write(run_hook(sys.stdin.read(), config))
         elif command == "statusline":
             sys.stdout.write(run_statusline(sys.stdin.read(), config, time.time()))
+        elif command == "guard":
+            sys.stdout.write(guard_prompt(sys.stdin.read(), config, time.time()))
+        elif command == "brief":
+            sys.stdout.write(compaction_brief(sys.stdin.read()))
         elif command == "report":
             session: str | None = args.session
             print(live_report(config, session))
@@ -305,8 +331,15 @@ def main() -> None:
             print(render_calibration(load_results(results_dir)))
         else:
             window: int | None = args.compact_window
-            extra = {} if window is None else governor_env(window)
-            print(json.dumps(hook_settings(sys.executable) | extra, indent=2))
+            python = sys.executable
+            blocks = [
+                guard_settings(python),
+                statusline_settings(python),
+                *([brief_settings(python)] if args.brief else []),
+                *([hook_settings(python)] if args.codec else []),
+                *([] if window is None else [governor_env(window)]),
+            ]
+            print(json.dumps(merge_settings(blocks), indent=2))
     except CimriHookError as error:
         print(f"cimrihook: {error}", file=sys.stderr)
         raise SystemExit(1) from error
