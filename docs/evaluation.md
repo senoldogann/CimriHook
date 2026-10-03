@@ -52,9 +52,25 @@ Claude Code 2.1.288, `claude-opus-5-5[1m]`, effort medium, 5 runs per arm, windo
   session: the cumulative ratio is x0.78 after 5 steps, x0.69 after 10 and x0.60 after 20.
 - The brief made no measurable difference on top of the window: brief vs governor x0.977
   [0.950-1.004].
-- No run and no step failed in any arm. With zero failures in 10 treated runs, the one-sided 95%
-  upper bound on the run failure rate is 26%; showing non-inferiority at -5 points per run would
-  take about 75 runs per arm.
+- No run and no step failed in any arm. With zero failures in 15 treated runs (both windows and
+  the brief), the one-sided 95% upper bound on the run failure rate is 18%; showing
+  non-inferiority at -5 points per run would take about 75 runs per arm.
+
+### The window `doctor` recommends (`deep`, Claude Code)
+
+Same scenario and baselines, window 233000 (compaction at about 200k tokens), 5 runs.
+
+| Window | Compaction at | vs baseline [95% CI] | Runs ok | Steps ok | Mean context | Compactions per run |
+|---|---|---|---|---|---|---|
+| 183000 | about 150k | x0.598 [0.581-0.616] | 5/5 | 100/100 | 79k | 2 |
+| 233000 | about 200k | x0.734 [0.714-0.755] | 5/5 | 100/100 | 141k | 1 |
+
+In this scenario the smaller window saves clearly more: these sessions peak at 350k tokens, so a
+200k trigger keeps much of the stale context. On the author's real sessions, which grow further and
+whose compaction summaries are longer (about 7k tokens against 1.5k here), the replay finds the
+two windows equal (-38.1% at 200k, -38.3% at 150k) while the 200k trigger needs half the
+compactions (384 against 707 a week). `doctor` therefore recommends the larger window; both
+windows passed every step.
 
 ### Long sequential sessions (moderate context)
 
@@ -79,13 +95,14 @@ accounting, not out-of-sample prediction.
 |---|---|---|---|---|
 | boltons deep | governor | x0.575 | x0.598 [0.581-0.616] | -2.3 pts |
 | boltons deep | brief | x0.539 | x0.584 [0.571-0.597] | -4.5 pts |
+| boltons deep, window 233000 | governor | x0.691 | x0.734 [0.714-0.755] | -4.2 pts |
 | boltons sequential (Claude) | combined | x0.955 | x0.998 [0.875-1.140] | -4.4 pts |
 | more-itertools sequential (Claude) | combined | x0.904 | x0.904 [0.666-1.226] | 0.0 pts |
 | boltons sequential (Codex) | governor | x0.691 | x0.751 [0.553-1.019] | -6.0 pts |
 | more-itertools sequential (Codex) | governor | x0.780 | x0.851 [0.321-2.258] | -7.1 pts |
 
 Every error is on the optimistic side, and in the deep runs the prediction lies below the measured
-interval. The gap fits the agent re-reading files after a compaction (0-13k tokens per compaction,
+interval. The replay did rank the two deep windows correctly. The gap fits the agent re-reading files after a compaction (0-13k tokens per compaction,
 about 7k at the median), which the replay cannot see; `doctor` and `simulate` therefore add 7,000
 re-read tokens to every simulated compaction.
 
@@ -123,6 +140,9 @@ cimrihook bench-run --name deep --tasks boltons-twenty-steps --protocols deep --
 cimrihook bench-report --name deep
 cimrihook bench-calibrate --name deep
 ```
+
+The 233000 set (`deep-233`) reuses the five baseline results of `deep` and adds the governor arm
+with `--window 233000`.
 
 Every result file in `bench/results/<set>/` keeps the run's model, effort, window, agent version
 and per-step costs; `cimrihook bench-remeasure` recomputes a set from the agents' logs.
