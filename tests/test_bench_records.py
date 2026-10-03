@@ -11,9 +11,11 @@ from cimrihook.bench import (
     RunSpec,
     Task,
     Variant,
+    arm_problem,
     claude_settings,
     codex_provider,
     load_codex_records,
+    load_task,
     spec_problem,
 )
 from cimrihook.errors import BenchError
@@ -100,8 +102,37 @@ def test_run_matrix_rejects_arms_the_agent_cannot_apply() -> None:
 
 
 def test_brief_arm_sets_the_window_and_the_compaction_brief_only() -> None:
-    settings = claude_settings(spec(Agent.CLAUDE, Protocol.DEEP, Variant.BRIEF, 183_000))
+    run_dir = Path("/runs/r1")
+    settings = claude_settings(spec(Agent.CLAUDE, Protocol.DEEP, Variant.BRIEF, 183_000), run_dir)
     assert settings["env"] == {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "183000"}
     hooks = settings["hooks"]
     assert isinstance(hooks, dict) and list(hooks) == ["PreCompact"]
-    assert "-m cimrihook brief" in json.dumps(hooks["PreCompact"])
+    assert "-m cimrihook brief && echo >> /runs/r1/brief-calls" in json.dumps(hooks["PreCompact"])
+
+
+def test_an_arm_whose_hook_never_ran_is_not_measured(tmp_path: Path) -> None:
+    brief = spec(Agent.CLAUDE, Protocol.DEEP, Variant.BRIEF, 183_000)
+    assert arm_problem(brief, tmp_path, 2) == "the brief hook succeeded 0 times for 2 compactions"
+    (tmp_path / "brief-calls").write_text("\n\n", encoding="utf-8")
+    assert arm_problem(brief, tmp_path, 2) is None
+    codec = spec(Agent.CLAUDE, Protocol.SEQUENTIAL, Variant.CODEC, 100_000)
+    assert arm_problem(codec, tmp_path, 0) is not None
+
+
+def test_task_definitions_cannot_inject_options_or_paths(tmp_path: Path) -> None:
+    task = {
+        "id": "../evil",
+        "repo": "git@example.com:x.git",
+        "ref": "--upload-pack=x",
+        "packages": ["--index-url=http://x"],
+        "test_command": ["pytest"],
+        "expected_failures": 1,
+        "prompt": "p",
+        "mutations": [{"path": "../../etc/passwd", "find": "a", "replace": "b"}],
+    }
+    path = tmp_path / "task.json"
+    path.write_text(json.dumps(task), encoding="utf-8")
+    with pytest.raises(BenchError) as raised:
+        load_task(path)
+    for fragment in ("id", "ref", "repo", "package", "mutation path"):
+        assert fragment in str(raised.value)
