@@ -59,9 +59,11 @@ def test_reinstall_from_another_interpreter_replaces_our_hooks() -> None:
 
 
 def test_diff_hides_values_of_variables_cimrihook_does_not_manage(tmp_path: Path) -> None:
-    settings, _, _ = install(USER_SETTINGS, BLOCKS, EMPTY_RECORD)
-    diff = settings_diff(tmp_path / "settings.json", USER_SETTINGS, settings)
-    assert "secret-value" not in diff
+    server = {"command": "mcp", "env": {"API_KEY": "server-secret"}}
+    before = USER_SETTINGS | {"mcpServers": {"tool": server}}
+    settings, _, _ = install(before, BLOCKS, EMPTY_RECORD)
+    diff = settings_diff(tmp_path / "settings.json", before, settings)
+    assert "secret-value" not in diff and "server-secret" not in diff
     assert '"183000"' in diff
 
 

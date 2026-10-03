@@ -2,9 +2,9 @@
 
 Kullanıcının ayarları yalnızca bu komutla değişir. Yazmadan önce dosyanın yedeği alınır, yazma
 atomiktir ve dosyanın izinleri korunur; sembolik bağlantılı ayar dosyasında hedef dosya güncellenir.
-Önce plan çıkarılır; kuru çalıştırma yalnızca planın farkını gösterir. Fark çıktısında CimriHook'un
-yönetmediği ortam değişkenlerinin değerleri gizlenir (API anahtarları terminale ve bir ajanın
-bağlamına girmesin).
+Önce plan çıkarılır; kuru çalıştırma yalnızca planın farkını gösterir. Fark çıktısında her `env`
+ve `headers` nesnesinin (ör. MCP sunucularınınki) değerleri gizlenir, CimriHook'un yönettikleri
+hariç: API anahtarları terminale ve bir ajanın bağlamına girmesin.
 
 Kurulum bildirimseldir: önce CimriHook'un önceki kurulumu geri alınır, sonra seçilen bileşenler
 eklenir. Aynı kurulum ikinci kez bir şey değiştirmez; eski sürümün komutları yenileriyle değişir,
@@ -37,6 +37,7 @@ AFTER_FLAG: Final = "--after"  # zincirlenen önceki durum satırı komutunun ar
 INSTALL_RECORD: Final = "installed.json"
 RECORD_VERSION: Final = 2
 MANAGED_ENV: Final = frozenset({"CLAUDE_CODE_AUTO_COMPACT_WINDOW"})  # farkta değeri görünenler
+SECRET_CONTAINERS: Final = frozenset({"env", "headers"})  # değerleri farkta gizlenen nesneler
 HIDDEN: Final = "<hidden>"
 PRIVATE_FILE_MODE: Final = 0o600
 PRIVATE_DIR_MODE: Final = 0o700
@@ -248,14 +249,23 @@ def load_settings(path: Path) -> Settings:
     return {str(key): value for key, value in decoded.items()}
 
 
-def masked(settings: Settings) -> Settings:
-    """Fark çıktısı için: CimriHook'un yönetmediği ortam değişkenlerinin değerleri gizli."""
-    env = settings.get("env")
-    if not isinstance(env, dict):
-        return settings
-    return settings | {
-        "env": {name: value if name in MANAGED_ENV else HIDDEN for name, value in env.items()}
-    }
+def masked(value: object) -> object:
+    """Fark çıktısı için: her düzeydeki env ve headers nesnelerinin değerleri gizli."""
+    if isinstance(value, dict):
+        return {
+            key: hidden_values(item) if key in SECRET_CONTAINERS else masked(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [masked(item) for item in value]
+    return value
+
+
+def hidden_values(container: object) -> object:
+    """Nesnenin CimriHook'un yönetmediği değerleri yerine işaret; nesne değilse olduğu gibi."""
+    if not isinstance(container, dict):
+        return container
+    return {name: value if name in MANAGED_ENV else HIDDEN for name, value in container.items()}
 
 
 def settings_diff(path: Path, before: Settings, after: Settings) -> str:
