@@ -14,7 +14,7 @@ Kullanıcının kendi durum satırı komutu varsa ezilmez, zincirlenir: CimriHoo
 girdiyle çalıştırır, kendi parçasını sona ekler. Önceki komut yalnızca ayar dosyasındaki zincirleme
 komutun `--after` argümanında durur ve kaldırmada oradan geri yüklenir; kurulum kaydından
 çalıştırılabilir bir komut okunmaz. Kayıt, ayar dosyası başına yalnızca CimriHook'un yazdığı ortam
-değişkenlerinin önceki değerlerini tutar.
+değişkenlerinin ve üst düzey ayarların (sıkıştırma penceresi) önceki değerlerini tutar.
 """
 
 import difflib
@@ -37,6 +37,8 @@ AFTER_FLAG: Final = "--after"  # zincirlenen önceki durum satırı komutunun ar
 INSTALL_RECORD: Final = "installed.json"
 RECORD_VERSION: Final = 2
 MANAGED_ENV: Final = frozenset({"CLAUDE_CODE_AUTO_COMPACT_WINDOW"})  # farkta değeri görünenler
+WINDOW_ENV: Final = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"  # ayarlanmışsa autoCompactWindow'u ezer
+MANAGED_KEYS: Final = ("autoCompactWindow",)  # CimriHook'un yazdığı üst düzey tam sayı ayarları
 SECRET_CONTAINERS: Final = frozenset({"env", "headers"})  # değerleri farkta gizlenen nesneler
 HIDDEN: Final = "<hidden>"
 PRIVATE_FILE_MODE: Final = 0o600
@@ -55,10 +57,20 @@ class EnvChange:
 
 
 @dataclass(frozen=True, slots=True)
+class SettingChange:
+    """Kurulumun yazdığı üst düzey tam sayı ayarı ve CimriHook'tan önceki değeri."""
+
+    key: str
+    value: int
+    previous: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class InstallRecord:
-    """Kaldırmada geri alınacak ortam değişkenleri."""
+    """Kaldırmada geri alınacak ortam değişkenleri ve üst düzey ayarlar."""
 
     env: tuple[EnvChange, ...]
+    settings: tuple[SettingChange, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +84,7 @@ class Plan:
     notes: tuple[str, ...]
 
 
-EMPTY_RECORD: Final = InstallRecord(env=())
+EMPTY_RECORD: Final = InstallRecord(env=(), settings=())
 
 
 def install(
@@ -87,7 +99,9 @@ def install(
     hooks = hooks_of(clean)
     env = env_of(clean)
     status_line = clean.get("statusLine")
+    values: dict[str, object | None] = {}
     changes: list[EnvChange] = []
+    setting_changes: list[SettingChange] = []
     notes: list[str] = []
     for block in blocks:
         for event, entries in hooks_of(block).items():
@@ -96,6 +110,18 @@ def install(
             previous = env.get(name)
             changes.append(EnvChange(name, str(value), None if previous is None else str(previous)))
             env[name] = value
+        for key in MANAGED_KEYS:
+            wanted_value = block.get(key)
+            if wanted_value is None:
+                continue
+            setting_changes.append(
+                SettingChange(key, integer_setting(wanted_value, key), current_integer(clean, key))
+            )
+            values[key] = wanted_value
+            if WINDOW_ENV in env:
+                notes.append(
+                    f"{WINDOW_ENV} in your env overrides {key}; remove it for this window to apply"
+                )
         wanted = block.get("statusLine")
         if wanted is None:
             continue
@@ -107,9 +133,28 @@ def install(
         else:
             notes.append("kept your own statusLine: it is not a command, so it cannot be chained")
     after = with_values(
-        settings, {"hooks": hooks or None, "env": env or None, "statusLine": status_line}
+        with_values(settings, {key: clean.get(key) for key in MANAGED_KEYS}),
+        {"hooks": hooks or None, "env": env or None, "statusLine": status_line, **values},
     )
-    return after, InstallRecord(tuple(changes)), tuple(notes)
+    return after, InstallRecord(tuple(changes), tuple(setting_changes)), tuple(notes)
+
+
+def integer_setting(value: object, key: str) -> int:
+    """Bloktaki tam sayı ayar değeri."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError(f"setting {key!r} must be an integer, got {value!r}")
+    return value
+
+
+def current_integer(settings: Settings, key: str) -> int | None:
+    """Ayar dosyasındaki tam sayı ayarı; yoksa None. Başka tipte bir değer el ile ayarlanmıştır:
+    üzerine yazmak yerine hata."""
+    value = settings.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError(f"settings {key!r} is {value!r}; set it by hand or remove it first")
+    return value
 
 
 def uninstall(settings: Settings, record: InstallRecord) -> Settings:
@@ -131,12 +176,18 @@ def uninstall(settings: Settings, record: InstallRecord) -> Settings:
                 for name, value in env.items()
                 if name != change.name or change.previous is not None
             }
+    restored = {
+        change.key: change.previous
+        for change in record.settings
+        if settings.get(change.key) == change.value
+    }
     return with_values(
         settings,
         {
             "hooks": hooks or None,
             "env": env or None,
             "statusLine": restored_status_line(settings.get("statusLine")),
+            **restored,
         },
     )
 
@@ -352,10 +403,14 @@ def load_records(home: Path) -> dict[str, InstallRecord]:
 
 
 def parse_record(value: object, file: Path) -> InstallRecord:
-    """Tek ayar dosyasının kaydı; bozuk girdi hatadır."""
+    """Tek ayar dosyasının kaydı; bozuk girdi hatadır. 'settings' listesi olmayan kayıt, üst düzey
+    ayar yazmayan eski sürümlerdendir."""
     entries = value.get("env") if isinstance(value, dict) else None
     if not isinstance(entries, list):
         raise ConfigError(f"{file}: every install record needs an 'env' list")
+    raw_settings = value.get("settings", []) if isinstance(value, dict) else []
+    if not isinstance(raw_settings, list):
+        raise ConfigError(f"{file}: 'settings' must be a list")
     changes: list[EnvChange] = []
     for entry in entries:
         name = entry.get("name") if isinstance(entry, dict) else None
@@ -366,7 +421,21 @@ def parse_record(value: object, file: Path) -> InstallRecord:
         if previous is not None and not isinstance(previous, str):
             raise ConfigError(f"{file}: malformed previous value in {entry!r}")
         changes.append(EnvChange(name, current, previous))
-    return InstallRecord(tuple(changes))
+    return InstallRecord(
+        tuple(changes), tuple(parse_setting(entry, file) for entry in raw_settings)
+    )
+
+
+def parse_setting(entry: object, file: Path) -> SettingChange:
+    """Kayıttaki üst düzey ayar değişikliği."""
+    key = entry.get("key") if isinstance(entry, dict) else None
+    value = entry.get("value") if isinstance(entry, dict) else None
+    previous = entry.get("previous") if isinstance(entry, dict) else None
+    if not isinstance(key, str) or isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError(f"{file}: malformed setting entry {entry!r}")
+    if previous is not None and (isinstance(previous, bool) or not isinstance(previous, int)):
+        raise ConfigError(f"{file}: malformed previous value in {entry!r}")
+    return SettingChange(key, value, previous)
 
 
 def load_record(home: Path, path: Path) -> InstallRecord:
@@ -383,7 +452,10 @@ def save_record(home: Path, path: Path, record: InstallRecord) -> None:
             key: {
                 "env": [
                     {"name": c.name, "value": c.value, "previous": c.previous} for c in item.env
-                ]
+                ],
+                "settings": [
+                    {"key": c.key, "value": c.value, "previous": c.previous} for c in item.settings
+                ],
             }
             for key, item in records.items()
         },

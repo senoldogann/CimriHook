@@ -39,7 +39,8 @@ COLD_READ_SHARE: Final = 0.5
 # maliyetin altında kaldığı payı açıklayan yeniden okuma, sıkıştırma başına medyan (0-13k arası).
 MEASURED_REFETCH_TOKENS: Final = 7_000
 MEASURED_REFETCH_REQUESTS: Final = 1
-CLAUDE_MIN_COMPACT_WINDOW: Final = 100_000  # CLAUDE_CODE_AUTO_COMPACT_WINDOW belgelenmiş alt sınırı
+CLAUDE_MIN_COMPACT_WINDOW: Final = 100_000  # autoCompactWindow ve ortam değişkeninin alt sınırı
+CLAUDE_MAX_COMPACT_WINDOW: Final = 1_000_000  # autoCompactWindow ayarının üst sınırı
 # Claude Code 2.1.288 otomatik sıkıştırmayı pencere − min(çıktı sınırı, 20000) − 13000 tokenlık
 # bağlamda tetikler; bugünkü modellerin çıktı sınırı 20000'in üstündedir.
 CLAUDE_COMPACT_OFFSET: Final = 33_000

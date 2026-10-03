@@ -25,7 +25,7 @@ never sends the same information twice.
 
 ```bash
 cimrihook simulate --days 30                   # cost of each compaction policy on your sessions
-cimrihook init --compact-window 183000         # adds CLAUDE_CODE_AUTO_COMPACT_WINDOW
+cimrihook init --compact-window 183000         # sets Claude Code's autoCompactWindow
 cimrihook bench-calibrate --name <set>         # simulated vs measured savings of an A/B set
 ```
 
@@ -44,9 +44,13 @@ models, and a forked or resumed session's copied history counts once. Check task
 A/B run before adopting a small window.
 
 Claude Code compacts once the context reaches the window minus 33,000 tokens (a 20,000-token
-output reserve and a 13,000-token buffer) and raises windows below 100,000 to 100,000, so
-compaction cannot start before about 67,000 tokens. `simulate` prints the setting for its best
-policy.
+output reserve and a 13,000-token buffer). `init --compact-window` writes Claude Code's own
+`autoCompactWindow` setting (100,000 to 1,000,000, capped at the model's context window), so
+compaction cannot start before about 67,000 tokens; `/autocompact` and per-model `modelSettings`
+can still override it. A `CLAUDE_CODE_AUTO_COMPACT_WINDOW` environment variable overrides every
+setting, so `init` warns when one is set. The A/B harness uses that variable on purpose, so an
+arm's window cannot be changed by your settings. `simulate` and `doctor` print the setting for
+their best policy.
 
 ## See it live
 

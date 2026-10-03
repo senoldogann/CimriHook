@@ -63,11 +63,22 @@ def chained_statusline_command(ours: str, previous: str) -> str:
     return f"{ours} --after {shlex.quote(previous)}"
 
 
-def governor_env(window: int) -> dict[str, object]:
-    """Bağlam yöneticisi: Claude Code'un kendi otomatik sıkıştırma penceresini daraltır.
+def governor_settings(window: int) -> dict[str, object]:
+    """Bağlam yöneticisi: Claude Code'un kendi otomatik sıkıştırma penceresi ayarı.
 
     Maliyetin büyük kısmı her istekte yeniden okunan bağlamdan geldiği için pencereyi küçültmek
-    en büyük kaldıraçtır; uygun pencere `cimrihook simulate` ile kullanıcının verisinden seçilir.
+    en büyük kaldıraçtır; uygun pencere `cimrihook doctor` ile kullanıcının verisinden seçilir.
+    Claude Code 2.1.288 `autoCompactWindow` değerini (100000-1000000) modelin penceresiyle sınırlar
+    ve sıkıştırmayı pencere − 33000 bağlamda tetikler. Ortam değişkeninin aksine /autocompact ve
+    model başına ayarlar (modelSettings) bu değeri geçersiz kılabilir.
+    """
+    return {"autoCompactWindow": window}
+
+
+def governor_env(window: int) -> dict[str, object]:
+    """Bağlam yöneticisi, ortam değişkeniyle: CLAUDE_CODE_AUTO_COMPACT_WINDOW her ayarı ezer.
+
+    A/B düzeneği bunu kullanır: kolun penceresi kullanıcı ya da proje ayarlarından etkilenmez.
     """
     return {"env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": str(window)}}
 

@@ -33,7 +33,7 @@ from cimrihook.ledger import BUSY_TIMEOUT_SECONDS, Ledger
 from cimrihook.report import render_savings
 from cimrihook.settings import (
     brief_settings,
-    governor_env,
+    governor_settings,
     guard_settings,
     hook_settings,
     merge_settings,
@@ -41,6 +41,7 @@ from cimrihook.settings import (
 )
 from cimrihook.simulate import (
     CLAUDE_COMPACT_OFFSET,
+    CLAUDE_MAX_COMPACT_WINDOW,
     CLAUDE_MIN_COMPACT_WINDOW,
     MEASURED_REFETCH_REQUESTS,
     MEASURED_REFETCH_TOKENS,
@@ -239,11 +240,11 @@ def live_report(config: Config, session: str | None) -> str:
 def selected_blocks(args: argparse.Namespace) -> list[dict[str, object]]:
     """Seçilen bileşenlerin ayar blokları: koruma ve durum satırı her zaman, diğerleri seçilince."""
     window = optional_int(args.compact_window)
-    if window is not None and window < CLAUDE_MIN_COMPACT_WINDOW:
+    if window is not None and not CLAUDE_MIN_COMPACT_WINDOW <= window <= CLAUDE_MAX_COMPACT_WINDOW:
         raise ConfigError(
-            f"--compact-window {window} is below {CLAUDE_MIN_COMPACT_WINDOW}; Claude Code would "
-            f"raise it to {CLAUDE_MIN_COMPACT_WINDOW} and compact at about "
-            f"{CLAUDE_MIN_COMPACT_WINDOW - CLAUDE_COMPACT_OFFSET} tokens"
+            f"--compact-window {window} is outside Claude Code's autoCompactWindow range "
+            f"{CLAUDE_MIN_COMPACT_WINDOW}-{CLAUDE_MAX_COMPACT_WINDOW}; the earliest compaction is "
+            f"at about {CLAUDE_MIN_COMPACT_WINDOW - CLAUDE_COMPACT_OFFSET} tokens"
         )
     python = sys.executable
     return [
@@ -251,7 +252,7 @@ def selected_blocks(args: argparse.Namespace) -> list[dict[str, object]]:
         statusline_settings(python),
         *([brief_settings(python)] if args.brief else []),
         *([hook_settings(python)] if args.codec else []),
-        *([] if window is None else [governor_env(window)]),
+        *([] if window is None else [governor_settings(window)]),
     ]
 
 
