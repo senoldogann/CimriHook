@@ -21,7 +21,7 @@ context; CimriHook manages how long it stays there, through the agents' own sett
 **Measured** (Claude Code with Opus 5.5 and a 1M context, 5 runs per arm,
 [details](docs/evaluation.md)): in 20-step bug-fixing sessions that start from about 230k tokens of
 context, compacting at 150k tokens cut the provider-billed cost by 40% (95% CI 38-42%) and
-compacting at 200k by 27% (24-29%); every one of the 300 steps passed. In shorter sessions that
+compacting at 200k by 27% (24.5-28.6%); every one of the 300 steps passed. In shorter sessions that
 peak below 125k tokens the effect is small (Claude Code x0.95) or uncertain (Codex x0.80, interval
 includes 1).
 
