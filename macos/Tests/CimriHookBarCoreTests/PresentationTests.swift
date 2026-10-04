@@ -74,7 +74,7 @@ let gainOutput = Data(
     #expect(try pace(window(10), now) == .lastsUntilReset)
     #expect(try pace(window(100), now) == .full)
     #expect(try pace(window(0), now) == nil)
-    #expect(paceText(.fillsAt(try resetDate("2026-10-05T02:30:00Z")), now) == "full in 1 h 30 min at this pace")
+    #expect(paceText(.fillsAt(try resetDate("2026-10-05T02:30:00Z")), now) == "Full in 1 h 30 min")
 }
 
 @Test func mainWindowsLeaveOutModelScopedOnes() throws {

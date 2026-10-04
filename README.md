@@ -6,7 +6,7 @@
 ![Claude Code and Codex CLI](https://img.shields.io/badge/agents-Claude%20Code%20%C2%B7%20Codex%20CLI-8A63D2.svg)
 
 <img src="docs/images/menu-bar-panel.png" align="right" width="300"
-     alt="CimriHook's macOS menu bar panel on its Claude Code tab: each window's use, reset and pace">
+     alt="CimriHook's macOS menu bar panel: each Claude Code and Codex window's use, reset and pace">
 
 > *cimri* (Turkish): miser. CimriHook stops AI coding agents from paying again and again for
 > context they no longer need.
@@ -288,17 +288,16 @@ error is shown in the line instead (Claude Code blanks the whole status line on 
 ### macOS menu bar panel
 
 `macos/` holds a small SwiftUI menu bar app (macOS 14 or later). The menu bar shows each
-provider's mark with its fullest window. Its panel has a tab per provider and one for the gain
-(⌘1 to ⌘3), and shows every 5-hour and weekly window of
+provider's mark with its fullest window. Its panel scrolls within a fixed height and shows every
+5-hour and weekly window of
 Claude Code and Codex with the time left until it resets and the reset's clock time, whether it
 fills before then at the rate it has filled since it opened, what a point of each Codex window
 cost over the last 30 days with the spans and points behind the fit, and everything
 `cimrihook gain` measures: each before/after figure and the compaction receipt.
 
 <p>
-  <img src="docs/images/menu-bar-panel.png" width="32%" alt="Claude Code tab: each window's use, reset and pace">
-  <img src="docs/images/menu-bar-codex.png" width="32%" alt="Codex tab: windows and what a point of each costs">
-  <img src="docs/images/menu-bar-gain.png" width="32%" alt="Gain tab: before/after figures and the compaction receipt">
+  <img src="docs/images/menu-bar-panel.png" width="40%" alt="The top of the panel: Claude Code and Codex windows">
+  <img src="docs/images/menu-bar-gain.png" width="40%" alt="Scrolled down: what a Codex point costs and the gain since init">
 </p>
 
 ```bash

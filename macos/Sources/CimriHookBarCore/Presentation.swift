@@ -151,12 +151,12 @@ public func pace(_ window: QuotaWindow, _ now: Date) throws -> Pace? {
     return fills < reset ? .fillsAt(fills) : .lastsUntilReset
 }
 
-/// `full until it resets`, `full in 47 min at this pace`, `lasts until it resets at this pace`.
+/// `Full`, `Full in 47 min`, `On pace` (lasts until it resets at the rate so far).
 public func paceText(_ pace: Pace, _ now: Date) -> String {
     switch pace {
-    case .full: "full until it resets"
-    case .fillsAt(let date): "full in \(countdown(now, date)) at this pace"
-    case .lastsUntilReset: "lasts until it resets at this pace"
+    case .full: "Full"
+    case .fillsAt(let date): "Full in \(countdown(now, date))"
+    case .lastsUntilReset: "On pace"
     }
 }
 

@@ -2,65 +2,31 @@ import AppKit
 import CimriHookBarCore
 import SwiftUI
 
-/// A page of the panel, chosen in the rail on its left.
-enum PanelTab: Hashable {
-    case claude, codex, gain
-}
-
-/// The panel that opens from the menu bar: a rail of tabs on the left, the chosen page on the right.
+/// The panel that opens from the menu bar: one card per provider, then the gain, scrolling
+/// inside a fixed height between a fixed header and footer.
 struct PanelView: View {
     let store: PanelStore
-    @State private var tab: PanelTab = .claude
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            HStack(alignment: .top, spacing: 10) {
-                VStack(spacing: 6) {
-                    RailButton(selection: $tab, tab: .claude, shortcut: "1", caption: railPercent(store.claude)) {
-                        logoMark(.claude)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    ProviderCard(logo: .claude, title: "Claude Code", reading: store.claude) {
+                        EmptyView()
                     }
-                    RailButton(selection: $tab, tab: .codex, shortcut: "2", caption: railPercent(store.codex)) {
-                        logoMark(.openAI)
+                    ProviderCard(logo: .openAI, title: "Codex", reading: store.codex) {
+                        PointCostLines(reading: store.codexCost)
                     }
-                    RailButton(selection: $tab, tab: .gain, shortcut: "3", caption: "Gain") {
-                        Image(systemName: "chart.line.downtrend.xyaxis").font(.system(size: 14, weight: .medium))
-                    }
+                    Card { GainSection(reading: store.gain) }
                 }
-                page
             }
+            .scrollIndicators(.automatic)
+            .frame(height: 520)
             footer
         }
         .padding(12)
-        .frame(width: 340)
-    }
-
-    @ViewBuilder
-    private var page: some View {
-        switch tab {
-        case .claude:
-            ProviderCard(logo: .claude, title: "Claude Code", reading: store.claude) {
-                EmptyView()
-            }
-        case .codex:
-            ProviderCard(logo: .openAI, title: "Codex", reading: store.codex) {
-                PointCostLines(reading: store.codexCost)
-            }
-        case .gain:
-            Card { GainSection(reading: store.gain) }
-        }
-    }
-
-    private func logoMark(_ logo: ProviderLogo) -> some View {
-        Image(nsImage: logo.image).renderingMode(.template)
-            .resizable()
-            .frame(width: 16, height: 16)
-            .foregroundStyle(logo.tint)
-    }
-
-    private func railPercent(_ reading: Loaded<QuotaSnapshot>) -> String {
-        guard case .loaded(let snapshot) = reading, let fullest = fullestPercent(snapshot) else { return "–" }
-        return "\(Int(fullest.rounded()))%"
+        .frame(width: 320)
     }
 
     private var header: some View {
@@ -96,36 +62,6 @@ struct PanelView: View {
         .font(.caption)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 4)
-    }
-}
-
-/// A tab in the rail: its mark over a short caption, filled while it is chosen.
-struct RailButton<Mark: View>: View {
-    @Binding var selection: PanelTab
-    let tab: PanelTab
-    let shortcut: KeyEquivalent
-    let caption: String
-    @ViewBuilder let mark: Mark
-
-    var body: some View {
-        Button {
-            selection = tab
-        } label: {
-            VStack(spacing: 3) {
-                mark.frame(height: 18)
-                Text(caption)
-                    .font(.system(size: 10, weight: .medium).monospacedDigit())
-                    .foregroundStyle(selection == tab ? .primary : .secondary)
-            }
-            .frame(width: 44, height: 46)
-            .background(
-                selection == tab ? AnyShapeStyle(.fill.secondary) : AnyShapeStyle(.clear),
-                in: .rect(cornerRadius: 9, style: .continuous)
-            )
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut(shortcut)
     }
 }
 
@@ -206,15 +142,16 @@ struct WindowRow: View {
             }
             UsageBar(percent: window.usedPercent)
             TimelineView(.periodic(from: .now, by: 60)) { context in
-                VStack(alignment: .leading, spacing: 2) {
+                HStack {
                     if let reset = try? window.resetsAt.map(resetDate) {
                         Text("Resets in \(countdown(context.date, reset)) · \(resetMoment(reset, context.date))")
                             .help(reset.formatted(date: .complete, time: .shortened))
                     }
+                    Spacer()
                     if let heading = try? pace(window, context.date) {
-                        let sentence = paceText(heading, context.date)
-                        Text(sentence.prefix(1).uppercased() + sentence.dropFirst())
+                        Text(paceText(heading, context.date))
                             .foregroundStyle(paceColor(heading))
+                            .help("At the rate it has filled since it opened")
                     }
                 }
                 .font(.caption)
@@ -263,19 +200,19 @@ struct PointCostLines: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("1 point over the last 30 days").font(.caption.weight(.medium))
+            Text("1 point · last 30 days").font(.caption.weight(.medium))
             switch reading {
             case .loading:
-                Text("Reading rollouts…").foregroundStyle(.secondary)
+                Text("Reading…").foregroundStyle(.secondary)
             case .failed(let message):
                 FailureText(message: message)
             case .loaded(let costs) where costs.isEmpty:
-                Text("No Codex rollouts with window readings yet.").foregroundStyle(.secondary)
+                Text("No rollouts yet").foregroundStyle(.secondary)
             case .loaded(let costs):
                 ForEach(costs, id: \.kind) { cost in
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("\(pointCostLabel(cost)) ≈ \(pointCostText(cost) ?? "not enough readings yet")")
-                        Text(verbatim: "\(cost.spans) spans · \(Int(cost.points.rounded())) points\(cost.inputTokens != nil && cost.outputTokens != nil ? "" : " · in and out pooled")")
+                        Text("\(pointCostLabel(cost)) ≈ \(pointCostText(cost) ?? "too few readings")")
+                        Text(verbatim: "\(cost.spans) spans · \(Int(cost.points.rounded())) pts\(cost.inputTokens != nil && cost.outputTokens != nil ? "" : " · pooled")")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
@@ -309,62 +246,59 @@ struct GainSection: View {
     @ViewBuilder
     private func content(_ gain: Gain) -> some View {
         let summary = summarize(gain)
-        HStack(alignment: .top, spacing: 12) {
-            Figure(value: percentText(summary.spendPerRequestChange), label: "Per request")
-            Figure(value: percentText(summary.meanContextChange), label: "Context")
-            if let saved = summary.receiptSavedUsd {
-                Figure(value: String(format: "$%.0f", saved), label: "Saved")
-            }
-        }
         Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
             GridRow {
                 Text("")
                 Text("Before").gridColumnAlignment(.trailing)
                 Text("After").gridColumnAlignment(.trailing)
+                Text("Change").gridColumnAlignment(.trailing)
             }
             .foregroundStyle(.tertiary)
-            CompareRow(label: "Requests", before: "\(gain.before.requests)", after: "\(gain.after.requests)")
-            CompareRow(label: "Spend", before: usd(gain.before.usd), after: usd(gain.after.usd))
             CompareRow(
                 label: "Per request",
                 before: String(format: "$%.3f", perRequest(gain.before)),
-                after: String(format: "$%.3f", perRequest(gain.after)))
+                after: String(format: "$%.3f", perRequest(gain.after)),
+                change: percentText(summary.spendPerRequestChange))
             CompareRow(
                 label: "Mean context",
                 before: tokenText(gain.before.meanContext),
-                after: tokenText(gain.after.meanContext))
+                after: tokenText(gain.after.meanContext),
+                change: percentText(summary.meanContextChange))
             CompareRow(
-                label: "Spend over 200k",
+                label: "Over 200k",
                 before: shareText(summary.largeContextShareBefore),
-                after: shareText(summary.largeContextShareAfter))
+                after: shareText(summary.largeContextShareAfter),
+                change: "")
             CompareRow(
-                label: "Compactions", before: "\(gain.before.compactions)", after: "\(gain.after.compactions)")
+                label: "Requests", before: "\(gain.before.requests)", after: "\(gain.after.requests)", change: "")
+            CompareRow(label: "Spend", before: usd(gain.before.usd), after: usd(gain.after.usd), change: "")
             CompareRow(
-                label: "Idle re-cache", before: usd(gain.before.idleRewriteUsd), after: usd(gain.after.idleRewriteUsd))
-            CompareRow(label: "Guard stops", before: "\(gain.before.guardStops)", after: "\(gain.after.guardStops)")
+                label: "Compactions", before: "\(gain.before.compactions)", after: "\(gain.after.compactions)",
+                change: "")
+            CompareRow(
+                label: "Idle re-cache", before: usd(gain.before.idleRewriteUsd),
+                after: usd(gain.after.idleRewriteUsd), change: "")
+            CompareRow(
+                label: "Guard stops", before: "\(gain.before.guardStops)", after: "\(gain.after.guardStops)",
+                change: "")
         }
         .font(.caption.monospacedDigit())
         .foregroundStyle(.secondary)
         receipt(gain.receipt, summary)
-        VStack(alignment: .leading, spacing: 2) {
-            Text(String(format: "Periods compared: %.1f days each, since %@", summary.days,
-                Date(timeIntervalSince1970: gain.installedAt).formatted(date: .abbreviated, time: .shortened)))
-            Text("API list prices, not a subscription bill. Before/after view, not an A/B test.")
-        }
-        .font(.caption2)
-        .foregroundStyle(.tertiary)
-        .fixedSize(horizontal: false, vertical: true)
+        Text(String(format: "%.1f days each, since %@ · list prices, not a bill · before/after, not A/B",
+            summary.days, Date(timeIntervalSince1970: gain.installedAt).formatted(date: .numeric, time: .shortened)))
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
     private func receipt(_ receipt: GainReceipt, _ summary: GainSummary) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Compaction receipt").font(.caption.weight(.medium))
             if let saved = summary.receiptSavedUsd {
-                Text("\(usd(saved)) saved (\(percentText(summary.receiptChange))) over \(receipt.compactions) compactions in \(receipt.sessions) sessions")
-                Text("\(usd(receipt.requestsUsd)) requests + \(usd(receipt.compactionCallsUsd)) compaction calls vs \(usd(receipt.withoutCompactionsUsd)) without")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                Text("Compactions saved \(usd(saved)) (\(percentText(summary.receiptChange)))")
+                    .foregroundStyle(.primary)
+                Text("\(receipt.compactions) in \(receipt.sessions) sessions · \(usd(receipt.requestsUsd)) + \(usd(receipt.compactionCallsUsd)) calls vs \(usd(receipt.withoutCompactionsUsd)) without")
             } else {
                 Text("No compaction since init yet")
             }
@@ -381,34 +315,20 @@ struct GainSection: View {
     }
 }
 
-/// One measure before and after init.
+/// One measure before and after init, with its relative change where it means something.
 struct CompareRow: View {
     let label: String
     let before: String
     let after: String
+    let change: String
 
     var body: some View {
         GridRow {
             Text(label)
             Text(before).gridColumnAlignment(.trailing)
             Text(after).gridColumnAlignment(.trailing).foregroundStyle(.primary)
+            Text(change).gridColumnAlignment(.trailing).foregroundStyle(.primary)
         }
-    }
-}
-
-/// A large number over its caption.
-struct Figure: View {
-    let value: String
-    let label: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(.system(.title2, design: .rounded).weight(.semibold).monospacedDigit())
-                .contentTransition(.numericText())
-            Text(label).font(.caption).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
