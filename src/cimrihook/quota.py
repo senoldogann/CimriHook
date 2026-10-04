@@ -1,4 +1,4 @@
-"""Mevcut CLI bağlantısından model isteği göndermeden abonelik pencerelerini oku."""
+"""Read the subscription windows through the installed CLI, without a model request."""
 
 import hashlib
 import json
@@ -18,12 +18,12 @@ MAX_FRAME_BYTES: Final = 1_048_576
 
 
 class QuotaError(CimriHookError):
-    """CLI kontrol bağlantısı veya provider limit yanıtı geçersiz."""
+    """The CLI control connection or the provider's limit response is invalid."""
 
 
 @dataclass(frozen=True, slots=True)
 class QuotaWindow:
-    """Provider'ın bildirdiği yüzde; olmayan süre/sıfırlama bilgisi tahmin edilmez."""
+    """A percentage as the provider reports it; a missing duration or reset time is not guessed."""
 
     id: str
     used_percent: float
@@ -33,7 +33,7 @@ class QuotaWindow:
 
 @dataclass(frozen=True, slots=True)
 class QuotaSnapshot:
-    """Hesap geneli gözlem; tek bir görevin tüketimi veya USD ölçümü değildir."""
+    """An account-wide observation, not the use of one task or a dollar measurement."""
 
     provider: str
     observed_at: str
@@ -43,14 +43,14 @@ class QuotaSnapshot:
 
 
 def object_value(value: object, where: str) -> dict[str, object]:
-    """JSON nesnesini daralt; bozuk protokol verisini boş kayıt gibi kabul etme."""
+    """Narrows a JSON object; corrupt protocol data is an error, not an empty record."""
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
         raise QuotaError(f"{where}: expected a JSON object")
     return {str(key): item for key, item in value.items()}
 
 
 def percent_value(value: object, where: str) -> float:
-    """Sonlu 0–100 yüzdesini ondalıklarını kaybetmeden doğrula."""
+    """Validates a finite 0-100 percentage and keeps its decimals."""
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise QuotaError(f"{where}: expected a numeric utilization")
     percent = float(value)
@@ -60,7 +60,7 @@ def percent_value(value: object, where: str) -> float:
 
 
 def reset_string(value: object, where: str) -> str | None:
-    """Claude ISO zamanını doğrula; eksik değer bilinmiyor olarak kalır."""
+    """Validates a Claude ISO time; a missing value stays unknown."""
     if value is None:
         return None
     if not isinstance(value, str):
@@ -75,7 +75,7 @@ def reset_string(value: object, where: str) -> str | None:
 
 
 def claude_quota(response: object, observed_at: str) -> QuotaSnapshot:
-    """get_usage yüzde verir; streamed rate_limit_event kesriyle karıştırılmaz."""
+    """get_usage reports percentages; unlike the fraction of a streamed rate_limit_event."""
     body = object_value(response, "Claude get_usage")
     available = body.get("rate_limits_available")
     if not isinstance(available, bool):
@@ -122,7 +122,7 @@ def claude_quota(response: object, observed_at: str) -> QuotaSnapshot:
 
 
 def codex_quota(response: object, observed_at: str) -> QuotaSnapshot:
-    """Ana codex allowance'ı seç; model kapsamlı snapshot ana pencereyi değiştirmez."""
+    """Picks the main codex allowance; a model-scoped snapshot does not replace the main windows."""
     body = object_value(response, "Codex account/rateLimits/read")
     by_id = body.get("rateLimitsByLimitId")
     buckets = {} if by_id is None else object_value(by_id, "Codex rateLimitsByLimitId")
@@ -163,7 +163,7 @@ def codex_quota(response: object, observed_at: str) -> QuotaSnapshot:
 
 
 class CliControl:
-    """Sınırlı newline JSON bağlantısı; stdout/stderr beraber boşaltılır."""
+    """A bounded newline-delimited JSON connection; stdout and stderr are drained together."""
 
     def __init__(self, command: Sequence[str], env: Mapping[str, str], timeout: float) -> None:
         if not math.isfinite(timeout) or timeout <= 0:
@@ -188,7 +188,7 @@ class CliControl:
         self.buffer = b""
 
     def send(self, payload: Mapping[str, object]) -> None:
-        """Yalnız kontrol kayıtları gönder; user prompt veya turn oluşturma yoktur."""
+        """Sends control records only; never a user prompt or a turn."""
         assert self.process.stdin is not None
         try:
             self.process.stdin.write((json.dumps(payload, allow_nan=False) + "\n").encode())
@@ -197,7 +197,7 @@ class CliControl:
             raise QuotaError(f"{self.command}: control input closed") from error
 
     def receive(self) -> dict[str, object]:
-        """Bildirimleri çağırana bırak; buffered kayıtlar select beklemeden okunur."""
+        """Leaves notifications to the caller; buffered records skip the select wait."""
         while True:
             remaining = self.deadline - time.monotonic()
             if remaining <= 0:
@@ -222,7 +222,7 @@ class CliControl:
                         raise QuotaError(f"{self.command}: control response exceeded 1 MiB")
 
     def close(self) -> None:
-        """Başarı/timeout/hata fark etmeksizin alt süreci ve pipe'ları kapat."""
+        """Closes the child process and its pipes on success, timeout or error."""
         self.selector.close()
         if self.process.poll() is None:
             self.process.terminate()
@@ -237,7 +237,7 @@ class CliControl:
 
 
 def claude_response(control: CliControl, identity: str, subtype: str) -> dict[str, object]:
-    """Claude control_response içindeki matching request sonucunu bekle."""
+    """Waits for the control_response that answers the request."""
     control.send(
         {"type": "control_request", "request_id": identity, "request": {"subtype": subtype}}
     )
@@ -256,7 +256,7 @@ def claude_response(control: CliControl, identity: str, subtype: str) -> dict[st
 def codex_response(
     control: CliControl, identity: int, method: str, params: Mapping[str, object]
 ) -> dict[str, object]:
-    """Codex JSON-RPC matching request sonucunu bekle."""
+    """Waits for the Codex JSON-RPC response that answers the request."""
     control.send({"id": identity, "method": method, "params": dict(params)})
     while True:
         event = control.receive()
@@ -269,7 +269,7 @@ def codex_response(
 
 
 def read_claude_quota(timeout: float) -> QuotaSnapshot:
-    """T3 probe gibi hooks/MCP kapalı bir CLI kontrol oturumu aç; model çağrısı yok."""
+    """Opens a CLI control session with hooks and MCP off, as T3's probe does; no model call."""
     command = (
         "claude",
         "-p",
@@ -300,7 +300,7 @@ def read_claude_quota(timeout: float) -> QuotaSnapshot:
 
 
 def read_codex_quota(timeout: float) -> QuotaSnapshot:
-    """Codex app-server'dan hesabın ana limitini oku; thread/turn başlatma yok."""
+    """Reads the account's main limit from the Codex app-server; no thread or turn is started."""
     control = CliControl(("codex", "app-server", "--stdio"), os.environ, timeout)
     try:
         codex_response(
@@ -320,5 +320,5 @@ def read_codex_quota(timeout: float) -> QuotaSnapshot:
 
 
 def quota_json(snapshot: QuotaSnapshot) -> str:
-    """Provider gözlemini session fiyatlarına karıştırmadan JSON olarak sun."""
+    """The provider's observation as JSON, kept apart from session prices."""
     return json.dumps(asdict(snapshot), indent=2, allow_nan=False)
