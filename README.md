@@ -20,17 +20,19 @@ context; CimriHook manages how long it stays there, through the agents' own sett
 
 **Measured** (Claude Code with Opus 5.5 and a 1M context, 5 runs per arm,
 [details](docs/evaluation.md)): in 20-step bug-fixing sessions that grow to about 450k tokens,
-compacting at 200k tokens cut the provider-billed cost by 39% (95% CI 31.5-45.6%). RTK, measured in
-the same runs, changed nothing: x1.026 [0.912-1.154] alone, x0.985 [0.935-1.039] on top of the
-window. In sessions that peak at 350k, compacting at 150k saved 40% (38-42%) and at 200k 27%
-(24.5-28.6%). All 800 steps of these runs passed. In shorter sessions that peak below 125k tokens
-the effect is small (Claude Code x0.95) or uncertain (Codex x0.80, interval includes 1).
+compacting at 150k tokens cut the provider-billed cost by 46% (95% CI 38.9-52.0%) and at 200k by
+39% (31.5-45.6%). RTK, measured in the same runs, changed nothing: x1.026 [0.912-1.154] alone,
+x0.985 [0.935-1.039] on top of the window. In sessions that peak at 350k, compacting at 150k saved
+40% (38-42%) and at 200k 27% (24.5-28.6%). All 900 steps of these runs passed. In shorter sessions
+that peak below 125k tokens the effect is small (Claude Code x0.95) or uncertain (Codex x0.80,
+interval includes 1).
 
 | 20 bug fixes, sessions up to 450k tokens | Cost | vs baseline [95% CI] | Steps passed |
 |---|---|---|---|
 | Claude Code as it ships | $13.15 | - | 100/100 |
 | + RTK | $13.50 | x1.026 [0.912-1.154] | 100/100 |
 | + CimriHook window (`--compact-window 233000`) | $8.03 | x0.610 [0.544-0.685] | 100/100 |
+| + CimriHook window (`--compact-window 183000`) | $7.13 | x0.542 [0.480-0.611] | 100/100 |
 | + both | $7.91 | x0.602 [0.535-0.676] | 100/100 |
 
 RTK shrinks command output as it enters the context. In these sessions most of the context came
@@ -81,10 +83,20 @@ change, so uv would otherwise reuse the old build.
 
 ```bash
 cimrihook doctor --days 7   # where your spend goes and what would change it
+cimrihook limits            # what a point of your 5-hour and weekly windows costs (Pro/Max)
 cimrihook gain              # the time since your last init vs the same time before it
 cimrihook audit --days 30   # replay your past transcripts: what would CimriHook have saved?
 cimrihook report            # savings recorded by the live hook
 ```
+
+On Pro and Max plans there is no bill: usage fills a 5-hour and a weekly window. Anthropic does
+not publish what a cache read, a cache write or an output token counts there, but Claude Code
+itself warns that switching model or effort mid-conversation "re-reads everything so far, which
+adds to your usage": the windows fill with the same token flows CimriHook prices. With the mod
+enabled, every turn records the session's list-price spend and the windows' use, and `limits`
+turns that into a rate for your own plan, such as "1 point of the 5-hour window is about $X of
+usage". Use outside Claude Code (claude.ai chats, other machines) also fills the windows, so with
+such use a point looks cheaper than it is.
 
 `gain` compares the time since your last `cimrihook init` that changed your settings with the same
 length of time before it: requests, spend at list prices, spend per request, mean context, the
@@ -180,6 +192,13 @@ context size:
 - **Cold fallback:** if the timer could not run (the machine slept), the first prompt you send into
   an idle session whose cache has expired is preceded by a compaction: that request was going to
   rewrite the whole context anyway.
+- **Limit meter:** on a subscription, every turn appends the session's list-price spend and the
+  use of the 5-hour and weekly windows to `~/.cimrihook/limits/`; `cimrihook limits` turns it into
+  what a point of each window costs on your plan.
+- **Boundary compaction (experimental, `CIMRIHOOK_MOD_BOUNDARY_TOKENS=N`):** a prompt that enters
+  a conversation larger than N tokens is preceded by a compaction, so the summary closes a
+  finished task instead of cutting into the middle of one; the window stays the backstop inside a
+  task. Not measured yet.
 - **Mask-first (experimental, `CIMRIHOOK_MOD_MASK=1`):** an automatic compaction keeps the
   conversation and replaces older tool results with a one-line placeholder instead of asking the
   model for a summary (observation masking, which matched summarisation at lower cost in the

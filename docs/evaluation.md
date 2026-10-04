@@ -60,27 +60,29 @@ Claude Code 2.1.288, `claude-opus-5-5[1m]`, effort medium, 5 runs per arm, windo
 
 ### Sessions that grow to 450k tokens: the window against RTK (`deeper`, Claude Code)
 
-Claude Code 2.1.288, `claude-opus-5-5[1m]`, effort medium, 5 runs per arm, window 233000
-(compaction at about 200k tokens), a 2x2 design with RTK 0.51.
+Claude Code 2.1.288, `claude-opus-5-5[1m]`, effort medium, 5 runs per arm, a 2x2 design with
+RTK 0.51 at window 233000 (compaction at about 200k tokens), and window 183000 (about 150k)
+against the same five baselines (`deeper-183`).
 
 | Arm | Cost (geometric mean) | vs baseline [95% CI] | Runs ok | Steps ok | Mean context | Compactions per run |
 |---|---|---|---|---|---|---|
 | baseline | $13.15 | - | 5/5 | 100/100 | 350k | 0 |
-| window | $8.03 | x0.610 [0.544-0.685] | 5/5 | 100/100 | 107k | 2 |
+| window 233000 | $8.03 | x0.610 [0.544-0.685] | 5/5 | 100/100 | 107k | 2 |
+| window 183000 | $7.13 | x0.542 [0.480-0.611] | 5/5 | 100/100 | 75k | 3 |
 | RTK | $13.50 | x1.026 [0.912-1.154] | 5/5 | 100/100 | 349k | 0 |
-| RTK + window | $7.91 | x0.602 [0.535-0.676] | 5/5 | 100/100 | 105k | 2 |
+| RTK + window 233000 | $7.91 | x0.602 [0.535-0.676] | 5/5 | 100/100 | 105k | 2 |
 
-- The window cut the provider-billed cost by 39% (95% CI 31.5-45.6%). The same window saved 27% in the
-  `deep` sessions, which peak at 350k: the further a session would grow, the more a fixed
-  compaction point saves. The cumulative ratio is x0.80 after 5 steps, x0.71 after 10 and x0.61
-  after 20.
+- Window 233000 cut the provider-billed cost by 39% (95% CI 31.5-45.6%), window 183000 by 46%
+  (38.9-52.0%). The 233000 window saved 27% in the `deep` sessions, which peak at 350k: the
+  further a session would grow, the more a fixed compaction point saves. With 233000 the
+  cumulative ratio is x0.80 after 5 steps, x0.71 after 10 and x0.61 after 20.
 - RTK made no measurable difference, alone (x1.026) or on top of the window (RTK + window against
   the window alone: x0.985 [0.935-1.039]). RTK rewrites shell commands; most of these sessions'
   context comes from file reads and the agent's own messages, which it does not touch. Sessions
   dominated by long command output (builds, large test logs) may differ.
-- All 400 steps passed in all four arms. Across every arm with a window so far (`deep`,
-  `deep-233` and `deeper`: 25 runs, 500 steps) no run failed; the one-sided 95% upper bound on
-  the run failure rate is 11%.
+- All 500 steps passed in all five arms. Across every arm with a window so far (`deep`,
+  `deep-233`, `deeper` and `deeper-183`: 30 runs, 600 steps) no run failed; the one-sided 95%
+  upper bound on the run failure rate is 9.5%.
 
 ### Mask-first compaction (`deeper`, pilot of one run)
 
@@ -146,6 +148,7 @@ accounting, not out-of-sample prediction.
 | boltons deep, window 233000 | governor | x0.691 | x0.734 [0.714-0.755] | -4.2 pts |
 | boltons deeper, window 233000 | governor | x0.502 | x0.610 [0.544-0.685] | -10.9 pts |
 | boltons deeper, window 233000 | RTK + window | x0.510 | x0.602 [0.535-0.676] | -9.2 pts |
+| boltons deeper, window 183000 | governor | x0.466 | x0.542 [0.480-0.611] | -7.6 pts |
 | boltons sequential (Claude) | combined | x0.955 | x0.998 [0.875-1.140] | -4.4 pts |
 | more-itertools sequential (Claude) | combined | x0.904 | x0.904 [0.666-1.226] | 0.0 pts |
 | boltons sequential (Codex) | governor | x0.691 | x0.751 [0.553-1.019] | -6.0 pts |
@@ -159,6 +162,30 @@ simulated compaction. In `deeper` the gap is larger (-10.9 points): there every 
 the baseline session already holds from its first reading, while after a compaction the agent
 reads it again at every step. The more of the dropped context a session needs later, the more
 optimistic the replay.
+
+## Ideas that did not pay off
+
+Measured before shipping, cheapest test first. None of these is in CimriHook.
+
+- **Delegating work to subagents when the context is large.** A prompt note told the agent that a
+  step at N tokens costs N/30k times a step in a fresh subagent. Opus 5.5 followed it, one
+  subagent per bug, but each step still cost $0.34-0.44 against about $0.37 in the baseline:
+  here the large context held exactly the files the subagent then had to read again. Stopped
+  after five steps of one `deeper` run.
+- **Running the tests after every edit and attaching the result** to spare the request the agent
+  spends on running them. Haiku 4.5 and Sonnet 5.5 both ran the tests again anyway, even with a
+  note saying they did not need to.
+- **A 5-minute cache kept warm by cheap read requests** instead of 1-hour cache writes. Replayed
+  on the author's week, it costs 3.9-70% more than today's 1-hour cache: each keep-alive reads
+  the whole 200-400k context, while the 1-hour premium only applies to the new tokens.
+- **A smaller window for subagents than for the main conversation.** Replaying the author's
+  subagent sessions separately puts their best window at the same 150-200k as the main ones.
+- **Compressing command output harder.** The author's week put 9.0M tokens of shell output into
+  the context, most of it file views and searches the agent asked for. Re-read on every later
+  request, that output is about 9% of the cache-read cost, so even perfect compression would
+  save 3-5%. RTK's measured effect in the A/B above is in line with that.
+- **Mask-first compaction** saved nothing against the window in its pilot; it stays an
+  experimental opt-in for its millisecond compactions (above).
 
 ## What the numbers do not show
 
@@ -196,7 +223,8 @@ cimrihook bench-calibrate --name deep
 ```
 
 The 233000 set (`deep-233`) reuses the five baseline results of `deep` and adds the governor arm
-with `--window 233000`. The 2x2 set needs RTK on the `PATH`:
+with `--window 233000`; `deeper-183` reuses the baselines of `deeper` the same way with
+`--window 183000`. The 2x2 set needs RTK on the `PATH`:
 
 ```bash
 cimrihook bench-run --name deeper --tasks boltons-twenty-steps --protocols deeper --agents claude \
