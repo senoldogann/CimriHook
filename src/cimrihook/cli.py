@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Final, NoReturn
 
@@ -13,6 +14,7 @@ from cimrihook import __version__
 from cimrihook.bench import (
     Agent,
     Protocol,
+    RunResult,
     Variant,
     load_results,
     load_run_limits,
@@ -37,7 +39,7 @@ from cimrihook.errors import BenchError, CimriHookError, ConfigError
 from cimrihook.gain import measure_gain, render_gain
 from cimrihook.guard import guard_prompt
 from cimrihook.install import apply_init, apply_remove, plan_init, plan_remove, render_plan
-from cimrihook.limits import limits_dir, read_samples, render_limits, window_rates
+from cimrihook.limits import LimitSample, limits_dir, read_samples, render_limits, window_rates
 from cimrihook.mods import mod_dir, write_mod
 from cimrihook.settings import (
     cache_ttl_settings,
@@ -83,6 +85,10 @@ DEFAULT_EFFORT: Final = "medium"
 DEFAULT_WINDOW: Final = 100_000
 DEFAULT_CONCURRENCY: Final = 2
 DEFAULT_TIMEOUT_SECONDS: Final = 2_400
+BACKGROUND_HELP: Final = (
+    "directory of the other sessions' limit readings (`limits/*.jsonl` files), which the "
+    "meter arms' weights set apart; default: the mod's ledger in CIMRIHOOK_HOME, if any"
+)
 PRIVATE_UMASK: Final = 0o077
 
 
@@ -231,6 +237,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench_report = commands.add_parser("bench-report", help="summarize an A/B result set")
     bench_report.add_argument("--name", required=True)
     bench_report.add_argument("--results-dir", default=DEFAULT_RESULTS_DIR)
+    bench_report.add_argument("--background", default=None, help=BACKGROUND_HELP)
     remeasure = commands.add_parser(
         "bench-remeasure",
         help="re-measure a result set from the agents' logs with the current schema (no runs)",
@@ -238,6 +245,7 @@ def build_parser() -> argparse.ArgumentParser:
     remeasure.add_argument("--name", required=True)
     remeasure.add_argument("--results-dir", default=DEFAULT_RESULTS_DIR)
     remeasure.add_argument("--work-dir", default=DEFAULT_WORK_DIR)
+    remeasure.add_argument("--background", default=None, help=BACKGROUND_HELP)
     calibrate = commands.add_parser(
         "bench-calibrate",
         help="check the simulator's prediction against a measured A/B result set",
@@ -291,6 +299,11 @@ def selected_blocks(args: argparse.Namespace, home: Path) -> list[dict[str, obje
 def optional_int(value: object) -> int | None:
     """An argparse value that is either not given (None) or an integer."""
     return None if value is None else int(str(value))
+
+
+def optional_text(value: object) -> str | None:
+    """An argparse value that is either not given (None) or a string."""
+    return None if value is None else str(value)
 
 
 def split_csv(raw: str) -> tuple[str, ...]:
@@ -351,6 +364,27 @@ def bench_run(args: argparse.Namespace) -> None:
         int(args.concurrency),
         int(args.timeout),
     )
+
+
+def background_samples(requested: str | None, home: Path) -> list[LimitSample]:
+    """The readings of the sessions outside the meter runs.
+
+    The directory asked for, which must exist; else the mod's own ledger, where no ledger means
+    that no other session was recorded.
+    """
+    if requested is not None:
+        return read_samples(Path(requested).expanduser())
+    ledger = limits_dir(home)
+    return read_samples(ledger) if ledger.is_dir() else []
+
+
+def bench_report_text(
+    results: Sequence[RunResult], results_dir: Path, requested: str | None, home: Path
+) -> str:
+    """The report of a result set; the meter arms' readings are read from beside the results."""
+    run_limits = load_run_limits(results_dir, results)
+    background = background_samples(requested, home) if run_limits else []
+    return render_bench_report(results, run_limits, background)
 
 
 def main() -> None:
@@ -434,12 +468,16 @@ def main() -> None:
         elif command == "bench-report":
             results_dir = Path(str(args.results_dir)) / str(args.name)
             results = load_results(results_dir)
-            print(render_bench_report(results, load_run_limits(results_dir, results)))
+            print(
+                bench_report_text(results, results_dir, optional_text(args.background), config.home)
+            )
         elif command == "bench-remeasure":
             name = str(args.name)
             results_dir = Path(str(args.results_dir)) / name
             results = remeasure_results(results_dir, Path(str(args.work_dir)) / name)
-            print(render_bench_report(results, load_run_limits(results_dir, results)))
+            print(
+                bench_report_text(results, results_dir, optional_text(args.background), config.home)
+            )
         elif command == "bench-calibrate":
             results_dir = Path(str(args.results_dir)) / str(args.name)
             print(render_calibration(load_results(results_dir)))

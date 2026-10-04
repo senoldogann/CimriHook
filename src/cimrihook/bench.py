@@ -37,7 +37,9 @@ Variants (mechanism ablation):
   only as a limit meter: after every turn the use percentage of the subscription's 5-hour and
   weekly windows is written next to the run as `<run>.limits.jsonl` (Claude Code only, with a
   subscription). For an A/B in window points both arms must be meter; the report then sets the
-  points of meter-governor against meter, and the account should otherwise be idle meanwhile.
+  points of meter-governor against meter. Other use of the account moves the windows meanwhile:
+  given the readings of the other recorded sessions, the report fits how many points a
+  list-price dollar moves the window in each arm and in those sessions (cimrihook.weights).
 
 Measurement:
 - The primary cost is at the provider level and includes compaction and helper calls. For Claude
@@ -100,6 +102,18 @@ from cimrihook.stats import (
     ratio_estimate,
 )
 from cimrihook.transcripts import Usage, average_write_weight, parse_line
+from cimrihook.weights import (
+    WeightFit,
+    crossing_spans,
+    fit_weights,
+    pooled_spans,
+    sessions_of,
+    spend_curve,
+    weight_of,
+    weight_ratio,
+    weight_text,
+    window_crossings,
+)
 
 RESULT_SCHEMA: Final = 2
 MAX_TURNS: Final = 400
@@ -224,6 +238,8 @@ MOD_VARIANTS: Final = frozenset(
 METER_VARIANTS: Final = frozenset({Variant.METER, Variant.METER_GOVERNOR})
 LIMITS_SUFFIX: Final = ".limits.jsonl"  # per-run window readings, beside the run result
 RUN_MIN_POINTS: Final = 3.0  # mean points per run under which a window is too coarse to compare
+OTHER_SESSIONS: Final = "other sessions"  # weight class: recorded sessions that are no arm
+POOLED: Final = "pooled"  # weight class: every recorded session at one weight
 METER_DIR: Final = "meter"  # CIMRIHOOK_HOME of a mod arm, inside the run directory
 BOUNDARY_TOKENS: Final = 100_000  # boundary arm: compact before a prompt above this context
 RTK_VARIANTS: Final = frozenset({Variant.RTK, Variant.RTK_GOVERNOR})
@@ -1621,7 +1637,10 @@ def load_run_limits(
         path = limits_path(results_dir, result.run_id)
         if not path.is_file():
             raise BenchError(f"{path}: the readings of meter run {result.run_id} are missing")
-        readings[result.run_id] = tuple(session_samples(path))
+        samples = tuple(session_samples(path))
+        if not samples:
+            raise BenchError(f"{path}: meter run {result.run_id} has no readings")
+        readings[result.run_id] = samples
     return readings
 
 
@@ -1787,7 +1806,9 @@ def scenario(result: RunResult) -> str:
 
 
 def render_bench_report(
-    results: Sequence[RunResult], run_limits: Mapping[str, Sequence[LimitSample]]
+    results: Sequence[RunResult],
+    run_limits: Mapping[str, Sequence[LimitSample]],
+    background: Sequence[LimitSample],
 ) -> str:
     """Cell summaries, scenario- and agent-level A/B comparisons, and the unmeasurable runs.
 
@@ -1795,7 +1816,8 @@ def render_bench_report(
     price table) and includes the compaction requests; the 'transcript' column does not. The
     agent-level summary combines with equal weight only the scenarios in which both arms have the
     same number of measured runs; with fewer than two measurements in an arm, no confidence
-    interval is given. The meter arms' window readings (by run id) add the limit-use section.
+    interval is given. The meter arms' window readings (by run id) and the readings of the other
+    recorded sessions add the limit-use section.
     """
     measured = [result for result in results if result.error is None]
     errors = [result for result in results if result.error is not None]
@@ -1826,7 +1848,7 @@ def render_bench_report(
         *checkpoint_comparisons(costed),
         "Codex price-sheet sensitivity (pooled ratio over cached x0.1/0.25 and output x4/6/8):",
         *codex_sensitivity(costed),
-        *limit_use_lines(measured, run_limits),
+        *limit_use_lines(measured, run_limits, background),
         *(f"  unmeasured {result.run_id}: {result.error}" for result in errors),
     ]
     return "\n".join(lines)
@@ -2153,15 +2175,19 @@ def codex_sensitivity(costed: Sequence[RunResult]) -> list[str]:
 
 
 def limit_use_lines(
-    measured: Sequence[RunResult], run_limits: Mapping[str, Sequence[LimitSample]]
+    measured: Sequence[RunResult],
+    run_limits: Mapping[str, Sequence[LimitSample]],
+    background: Sequence[LimitSample],
 ) -> list[str]:
     """The points the meter arms' runs moved the subscription's windows, per scenario and window.
 
     A run's points are the window's percentage at its last reading minus its first, in one window
     period; a run the window reset under is left out of that window. The windows report whole
-    percents, so each run is good to about one point. The governor arm is set against the meter
-    arm in points, in the spend between the same readings and in spend per point: if a list-price
-    dollar fills the window the same in both arms, the points follow the spend.
+    percents, so each run is good to about one point, and whatever else ran on the account
+    meanwhile moves the window too. The governor arm is set against the meter arm in points, in
+    the spend between the same readings and in spend per point (if the account was otherwise idle
+    and a list-price dollar fills the window the same in both arms, the points follow the spend),
+    and in weights that set the other recorded sessions apart (see `weight_lines`).
     """
     metered = [result for result in measured if result.run_id in run_limits]
     if not metered:
@@ -2186,12 +2212,109 @@ def limit_use_lines(
                 use_line(Variant.METER_GOVERNOR.value, len(treated), counted_treated),
                 f"    {Variant.METER_GOVERNOR.value} vs {Variant.METER.value}: "
                 f"{use_comparison(counted_control, counted_treated)}",
+                *weight_lines(kind, control, treated, metered, run_limits, background),
             ]
     lines.append(
-        "  Use outside these runs (claude.ai, other sessions) also fills the windows: keep the "
-        "account otherwise idle while meter arms run."
+        "  Raw points include use outside these runs; the weights set the recorded sessions "
+        "apart (--background), but use no session records (claude.ai, sessions without the mod) "
+        "still raises them."
     )
     return lines
+
+
+def weight_lines(
+    kind: str,
+    control: Sequence[RunResult],
+    treated: Sequence[RunResult],
+    metered: Sequence[RunResult],
+    run_limits: Mapping[str, Sequence[LimitSample]],
+    background: Sequence[LimitSample],
+) -> list[str]:
+    """How many points one list-price dollar moves a window, in each arm and in other sessions.
+
+    The readings of the runs and of the background sessions are merged; between two consecutive
+    whole-percent crossings of the window the points are exact, and the spend of each class is
+    read off its sessions' cumulative spend (see `cimrihook.weights`). The classes are the two
+    arms of this scenario and the other recorded sessions: the background and the runs of other
+    scenarios. Only the time of this scenario's runs counts.
+    """
+    arms = [(Variant.METER.value, control), (Variant.METER_GOVERNOR.value, treated)]
+    own_ids = {run.run_id for _, runs in arms for run in runs}
+    own = [run_limits[run_id] for run_id in sorted(own_ids)]
+    elsewhere = [run_limits[run.run_id] for run in metered if run.run_id not in own_ids]
+    moments = [sample.time for samples in own for sample in samples]
+    first, last = min(moments), max(moments)
+    readings = [sample for samples in [*own, *elsewhere] for sample in samples] + list(background)
+    classes = [[spend_curve(run_limits[run.run_id]) for run in runs] for _, runs in arms] + [
+        [spend_curve(samples) for samples in [*sessions_of(background), *elsewhere]]
+    ]
+    spans = crossing_spans(window_crossings(readings, kind), classes, first, last)
+    fit = fit_weights(spans, [*(name for name, _ in arms), OTHER_SESSIONS])
+    if fit is None:
+        return [
+            f"    weights: none ({len(spans)} spans between whole-percent crossings are too few "
+            "or too alike to tell the arms and the other sessions apart)"
+        ]
+    meanwhile = sessions_of([sample for sample in background if first <= sample.time <= last])
+    lines = [
+        f"    weights from {fit.spans} spans between whole-percent crossings "
+        f"({fit.degrees} degrees of freedom, residual {fit.residual:.2f} points; "
+        f"{len(meanwhile)} other sessions recorded meanwhile): points = weight x list-price spend",
+        *(f"      {weight.name:<15} {weight_text(weight)}" for weight in fit.weights),
+    ]
+    pooled = fit_weights(pooled_spans(spans), [POOLED])
+    if pooled is not None:
+        lines.append(
+            f"      {POOLED:<15} {weight_text(pooled.weights[0])} (one weight for every session)"
+        )
+    ratio = weight_ratio(fit, Variant.METER_GOVERNOR.value, Variant.METER.value)
+    lines.append(
+        f"    {Variant.METER_GOVERNOR.value} vs {Variant.METER.value}: "
+        f"{weight_comparison(ratio, cost_ratio(control, treated))}"
+    )
+    uses = run_use_parts(fit, arms, run_limits)
+    if uses:
+        lines.append(f"    per run (weight x mean list-price spend): {', '.join(uses)}")
+    return lines
+
+
+def cost_ratio(control: Sequence[RunResult], treated: Sequence[RunResult]) -> RatioEstimate | None:
+    """Provider cost of the treated arm over the control arm; None if an arm has no costed run."""
+    costed_control, costed_treated = costed_runs(control), costed_runs(treated)
+    if not costed_control or not costed_treated:
+        return None
+    return ratio_estimate(
+        [final_cost(run) for run in costed_control], [final_cost(run) for run in costed_treated]
+    )
+
+
+def weight_comparison(weights: RatioEstimate | None, cost: RatioEstimate | None) -> str:
+    """The weight ratio, the provider cost ratio and their product, the window use per task."""
+    parts = [
+        "weight none (an arm is missing or its weight is not positive)"
+        if weights is None
+        else f"weight {ratio_text(weights)}"
+    ]
+    if cost is not None:
+        parts.append(f"provider cost {ratio_text(cost)}")
+    if weights is not None and cost is not None:
+        parts.append(f"window use x{weights.ratio * cost.ratio:.3f} (weight x cost)")
+    return "; ".join(parts)
+
+
+def run_use_parts(
+    fit: WeightFit,
+    arms: Sequence[tuple[str, Sequence[RunResult]]],
+    run_limits: Mapping[str, Sequence[LimitSample]],
+) -> list[str]:
+    """Points a run of each arm takes: its weight times the arm's mean list-price spend per run."""
+    parts: list[str] = []
+    for name, runs in arms:
+        weight = weight_of(fit, name)
+        if weight is not None and runs:
+            spend = statistics.fmean(spend_curve(run_limits[run.run_id]).usd[-1] for run in runs)
+            parts.append(f"{name} {weight.weight * spend:.1f} points")
+    return parts
 
 
 def kind_points_of(
