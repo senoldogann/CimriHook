@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from cimrihook.codec import estimate_tokens
 from cimrihook.errors import ConfigError
 from cimrihook.gain import measure_gain, render_gain
 from cimrihook.install import INSTALL_RECORD, InstallRecord, save_record
@@ -56,3 +57,40 @@ def test_gain_needs_a_recorded_install(tmp_path: Path) -> None:
     (tmp_path / "home" / INSTALL_RECORD).write_text(json.dumps({"installs": {}}), encoding="utf-8")
     with pytest.raises(ConfigError, match="run `cimrihook init` first"):
         measure_gain(tmp_path, tmp_path / "home", tmp_path / "settings.json", T0)
+
+
+def test_receipt_reprices_the_same_requests_without_the_automatic_compaction(
+    tmp_path: Path,
+) -> None:
+    projects = tmp_path / "projects" / "p"
+    projects.mkdir(parents=True)
+    stamp = datetime.fromtimestamp(T0 + 1_100, UTC).isoformat().replace("+00:00", "Z")
+    boundary = {
+        "type": "system",
+        "subtype": "compact_boundary",
+        "timestamp": stamp,
+        "compactMetadata": {"trigger": "auto", "preTokens": 300_000},
+    }
+    summary_text = "x" * 4_000
+    summary = {"type": "user", "isCompactSummary": True, "message": {"content": summary_text}}
+    lines = [
+        assistant("a1", 1_000, 299_000, 1_000),
+        json.dumps(boundary),
+        json.dumps(summary),
+        assistant("a2", 1_200, 10_000, 40_000),
+        assistant("a3", 1_300, 50_000, 2_000),
+    ]
+    (projects / "s.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    home = tmp_path / "home"
+    settings = tmp_path / "settings.json"
+    save_record(home, settings, InstallRecord((), (), T0))
+    receipt = measure_gain(tmp_path / "projects", home, settings, T0 + 7_200).receipt
+    # Opus 5.x taban birimleri: a1 17,450; a2 (sıkıştırmadan sonra) 81,000; a3 7,000.
+    # Sıkıştırma çağrısı 300k x 0.05 + özet x 5. Karşı-olgusalda a2 bütün bağlamı (50k + silinen
+    # 250k) okur: 15,500; a3 silinen 250k'yı da okur: 19,500. Kısa oturumda sıkıştırma kendini
+    # ödemez: makbuz negatif tasarruf gösterir.
+    assert (receipt.compactions, receipt.sessions) == (1, 1)
+    assert receipt.requests_usd == pytest.approx(105_450 * 4e-6)
+    calls = 300_000 * 0.05 + estimate_tokens(summary_text) * 5.0
+    assert receipt.compaction_calls_usd == pytest.approx(calls * 4e-6)
+    assert receipt.without_compactions_usd == pytest.approx((17_450 + 15_500 + 19_500) * 4e-6)

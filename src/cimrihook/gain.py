@@ -7,6 +7,15 @@ istekler bir kez sayılır, zamanı olmayan istek bir döneme atanamadığı iç
 iş yükü farklıdır: bu bir A/B testi değil, önce-sonra görünümüdür. Bu yüzden toplam harcama
 yanında işin miktarından daha az etkilenen oranlar gösterilir: istek başına harcama, ortalama
 bağlam ve harcamanın büyük bağlamlı isteklerdeki payı.
+
+Makbuz ise eşleştirilmiştir: kurulumdan sonraki oturumların kendi istekleri, o dönemdeki otomatik
+sıkıştırmalar hiç olmasaydı ne tutacağıyla yeniden fiyatlanır. Sıkıştırmanın sildiği bağlam
+sonraki her istekte önbellekten yeniden okunurdu; sıkıştırmadan sonraki ilk isteğin yazdığı özet ve
+yeniden eklenen dosyalar ise yazılmaz, eski bağlam okunurdu. Sıkıştırma çağrıları transcript'e
+yazılmadığı için gerçek tarafa tahminle eklenir (bağlamın bir kez okunması ve özetin çıktısı).
+Bağlam modelin varsayılan eşiğini geçecek olsaydı Claude Code yine sıkıştırırdı; orada taşınan
+bağlam sıfırlanır. Yeniden okumayı ve ajanın değişen davranışını göremez: A/B koşularında bu tür
+yeniden oynatma 0-7 puan iyimser çıktı.
 """
 
 import math
@@ -25,9 +34,11 @@ from cimrihook.errors import ConfigError, LedgerError
 from cimrihook.hook import ledger_path
 from cimrihook.install import load_record
 from cimrihook.scan import TranscriptScan, scan_transcript, token_costs, unique_scans
-from cimrihook.simulate import context_of, usd_per_token
+from cimrihook.simulate import claude_prices, context_of, usd_per_token
 
 LARGE_CONTEXT: Final = 200_000  # bu bağlamın üstündeki istekler büyük bağlamlı sayılır
+# Pencere olmasaydı Claude Code'un 1M bağlamlı modellerde sıkıştıracağı bağlam (pencere − 33k).
+DEFAULT_COMPACTION_CONTEXT: Final = 967_000
 MIN_PERIOD_SECONDS: Final = 3_600.0  # bir saatten kısa dönemler karşılaştırılmaz
 
 
@@ -47,12 +58,24 @@ class Period:
 
 
 @dataclass(frozen=True, slots=True)
+class Receipt:
+    """Kurulumdan sonraki oturumlar: gerçek maliyet ve otomatik sıkıştırmalar olmasaydı tahmini."""
+
+    compactions: int  # dönemdeki otomatik sıkıştırmalar
+    sessions: int  # bu sıkıştırmaların olduğu oturumlar
+    requests_usd: float  # o oturumların dönemdeki istekleri
+    compaction_calls_usd: float  # sıkıştırma çağrılarının tahmini (transcript'te yok)
+    without_compactions_usd: float  # aynı istekler, sıkıştırmasız yeniden fiyatlanmış
+
+
+@dataclass(frozen=True, slots=True)
 class Gain:
-    """Kurulumdan önceki ve sonraki dönem."""
+    """Kurulumdan önceki ve sonraki dönem, ve sonraki dönemin makbuzu."""
 
     installed_at: float
     before: Period
     after: Period
+    receipt: Receipt
 
 
 def measure_gain(projects_dir: Path, home: Path, settings_path: Path, now: float) -> Gain:
@@ -76,6 +99,62 @@ def measure_gain(projects_dir: Path, home: Path, settings_path: Path, now: float
         installed_at=installed_at,
         before=period(scans, start, installed_at, stops),
         after=period(scans, installed_at, now, stops),
+        receipt=receipt(scans, installed_at, now),
+    )
+
+
+def receipt(scans: Sequence[TranscriptScan], start: float, end: float) -> Receipt:
+    """[start, end) aralığındaki otomatik sıkıştırmaların eşleştirilmiş karşı-olgusalı."""
+    parts = [session_receipt(scan, start, end) for scan in scans]
+    touched = [part for part in parts if part.compactions]
+    return Receipt(
+        compactions=sum(part.compactions for part in touched),
+        sessions=len(touched),
+        requests_usd=sum(part.requests_usd for part in touched),
+        compaction_calls_usd=sum(part.compaction_calls_usd for part in touched),
+        without_compactions_usd=sum(part.without_compactions_usd for part in touched),
+    )
+
+
+def session_receipt(scan: TranscriptScan, start: float, end: float) -> Receipt:
+    """Tek oturum: sıkıştırmadan sonraki ilk istek, sırayla o sıkıştırmayla eşleşir."""
+    boundaries = iter(scan.compactions)
+    carried = 0  # sıkıştırmaların sildiği, karşı-olgusalda bağlamda kalan token
+    compactions = 0
+    actual = calls = counterfactual = 0.0
+    for request in scan.requests:
+        compaction = next(boundaries, None) if request.after_compaction else None
+        inside = request.timestamp is not None and start <= request.timestamp < end
+        base = usd_per_token(request.model)
+        if not inside or base is None:
+            carried = 0 if compaction is not None else carried  # pencere dışı: zincir kopar
+            continue
+        prices = claude_prices(request.model)
+        context = context_of(request.usage)
+        cost = sum(token_costs(request, base))
+        actual += cost
+        if compaction is not None and compaction.automatic:
+            compactions += 1
+            calls += (
+                compaction.trigger * prices.read + compaction.summary_tokens * prices.output
+            ) * base
+            carried += max(0, compaction.trigger - context)
+            if context + carried > DEFAULT_COMPACTION_CONTEXT:
+                carried = 0  # varsayılan eşik de burada sıkıştırırdı
+            # Karşı-olgusal: sıkıştırma sonrası yazım yok, bütün bağlam önbellekten okunur.
+            counterfactual += (
+                (context + carried) * prices.read + request.usage.output * prices.output
+            ) * base
+            continue
+        if context + carried > DEFAULT_COMPACTION_CONTEXT:
+            carried = 0
+        counterfactual += cost + carried * prices.read * base
+    return Receipt(
+        compactions=compactions,
+        sessions=1 if compactions else 0,
+        requests_usd=actual,
+        compaction_calls_usd=calls,
+        without_compactions_usd=counterfactual,
     )
 
 
@@ -177,8 +256,27 @@ def render_gain(gain: Gain) -> str:
             *(f"  {label:<30}{old:>12}{new:>12}{delta:>10}" for label, old, new, delta in rows),
             "Workloads differ between the two periods, so this is a before/after view, not an A/B "
             "test; per-request spend and mean context depend least on how much you worked.",
+            *receipt_lines(gain.receipt),
         ]
     )
+
+
+def receipt_lines(receipt: Receipt) -> list[str]:
+    """Eşleştirilmiş makbuzun metni."""
+    if not receipt.compactions:
+        return ["Receipt: no automatic compaction since the last init, so nothing to compare yet."]
+    actual = receipt.requests_usd + receipt.compaction_calls_usd
+    saved = receipt.without_compactions_usd - actual
+    return [
+        f"Receipt for the {receipt.sessions:,} sessions with automatic compactions since then "
+        f"({receipt.compactions:,} compactions): they cost ${actual:,.2f} (requests "
+        f"${receipt.requests_usd:,.2f} + compaction calls about "
+        f"${receipt.compaction_calls_usd:,.2f}). The same requests without those compactions: "
+        f"about ${receipt.without_compactions_usd:,.2f}, so the window saved about ${saved:,.2f} "
+        f"({change(receipt.without_compactions_usd, actual)}). This replay keeps the removed "
+        "context and re-reads it on every later request; in A/B runs such replays were 0-7 points "
+        "optimistic.",
+    ]
 
 
 def per_request(summary: Period) -> float:

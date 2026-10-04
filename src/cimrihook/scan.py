@@ -11,7 +11,13 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from cimrihook.audit import Usage, entry_time, message_usage, parse_line
-from cimrihook.simulate import SYNTHETIC_MODEL, claude_prices, compact_metadata_tokens
+from cimrihook.codec import estimate_tokens
+from cimrihook.simulate import (
+    SYNTHETIC_MODEL,
+    claude_prices,
+    compact_metadata_tokens,
+    content_text,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +41,8 @@ class Compaction:
 
     timestamp: float | None
     trigger: int  # sıkıştırmayı tetikleyen bağlam
+    automatic: bool  # Claude Code'un kendi tetiklediği (elle /compact değil)
+    summary_tokens: int  # özetin tahmini token sayısı (özet metninden); özet yoksa 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,10 +72,16 @@ def scan_transcript(path: Path, subagent: bool) -> TranscriptScan:
                 continue
             if entry.get("type") == "system" and entry.get("subtype") == "compact_boundary":
                 trigger = compact_metadata_tokens(entry, "preTokens", str(path))
-                compactions.append(Compaction(entry_time(entry), trigger))
+                metadata = entry.get("compactMetadata")
+                kind = metadata.get("trigger") if isinstance(metadata, dict) else None
+                compactions.append(Compaction(entry_time(entry), trigger, kind == "auto", 0))
                 awaiting = True
                 continue
             message = entry.get("message")
+            if entry.get("isCompactSummary") is True and compactions and isinstance(message, dict):
+                summary = estimate_tokens(content_text(message.get("content")))
+                compactions[-1] = replace(compactions[-1], summary_tokens=summary)
+                continue
             if entry.get("type") != "assistant" or not isinstance(message, dict):
                 continue
             message_id = message.get("id")
