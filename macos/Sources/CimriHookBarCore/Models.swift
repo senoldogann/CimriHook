@@ -6,6 +6,13 @@ public struct QuotaWindow: Decodable, Sendable, Equatable {
     public let usedPercent: Double
     public let resetsAt: String?
     public let durationMinutes: Int?
+
+    public init(id: String, usedPercent: Double, resetsAt: String?, durationMinutes: Int?) {
+        self.id = id
+        self.usedPercent = usedPercent
+        self.resetsAt = resetsAt
+        self.durationMinutes = durationMinutes
+    }
 }
 
 /// An account-wide reading of one provider's windows; not the usage of a single task.

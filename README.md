@@ -287,9 +287,10 @@ error is shown in the line instead (Claude Code blanks the whole status line on 
 
 ### macOS menu bar panel
 
-`macos/` holds a small SwiftUI menu bar app (macOS 14 or later). The menu bar shows the fullest
-window of each provider (`C 39%  X 100%`); its panel shows every 5-hour and weekly window of
-Claude Code and Codex with the time left until it resets, what a point of each Codex window cost
+`macos/` holds a small SwiftUI menu bar app (macOS 14 or later). The menu bar shows each
+provider's mark with its fullest window; its panel shows every 5-hour and weekly window of
+Claude Code and Codex with the time left until it resets, whether it fills before then at the
+rate it has filled since it opened, what a point of each Codex window cost
 over the last 30 days, and the ratios of `cimrihook gain`.
 
 ```bash

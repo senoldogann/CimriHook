@@ -37,8 +37,6 @@ final class PanelStore {
         Task { await self.refreshForever() }
     }
 
-    var barTitle: String { CimriHookBarCore.barTitle(claude.value, codex.value) }
-
     func refreshForever() async {
         while !Task.isCancelled {
             await refresh()

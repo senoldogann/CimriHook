@@ -47,13 +47,9 @@ public func countdown(_ now: Date, _ reset: Date) -> String {
     return "\(minutes / (24 * 60)) d \(minutes % (24 * 60) / 60) h"
 }
 
-/// The text in the menu bar: each provider's fullest window, `C 38%  X 100%`.
-public func barTitle(_ claude: QuotaSnapshot?, _ codex: QuotaSnapshot?) -> String {
-    let parts = [("C", claude), ("X", codex)].compactMap { letter, snapshot -> String? in
-        guard let fullest = snapshot?.windows.map(\.usedPercent).max() else { return nil }
-        return "\(letter) \(Int(fullest.rounded()))%"
-    }
-    return parts.isEmpty ? "CimriHook" : parts.joined(separator: "  ")
+/// The use of a provider's fullest window, which the menu bar shows; nil without a reading.
+public func fullestPercent(_ snapshot: QuotaSnapshot?) -> Double? {
+    snapshot?.windows.map(\.usedPercent).max()
 }
 
 /// Relative change from one value to another; nil when there is nothing to compare against.
@@ -128,3 +124,58 @@ public func pointCostText(_ cost: PointCost) -> String? {
     return cost.baseUnits.map { "\(tokenText($0)) base units" }
 }
 
+
+private let minimumPaceSeconds: TimeInterval = 15 * 60
+
+/// Where a window is heading at the rate it filled since it opened.
+public enum Pace: Sendable, Equatable {
+    case full  // already at 100%
+    case fillsAt(Date)  // reaches 100% before it resets
+    case lastsUntilReset
+}
+
+/// The pace of a window from its use since it opened (reset time minus its length).
+///
+/// Nil without a length or a reset time, before any use, or in its first quarter hour, when a
+/// few requests would make the rate say more than it knows.
+public func pace(_ window: QuotaWindow, _ now: Date) throws -> Pace? {
+    if window.usedPercent >= 100 { return .full }
+    guard let minutes = window.durationMinutes, let text = window.resetsAt,
+        window.usedPercent > 0
+    else { return nil }
+    let reset = try resetDate(text)
+    let elapsed = now.timeIntervalSince(reset.addingTimeInterval(-Double(minutes) * 60))
+    guard elapsed >= minimumPaceSeconds else { return nil }
+    let fills = now.addingTimeInterval((100 - window.usedPercent) / (window.usedPercent / elapsed))
+    return fills < reset ? .fillsAt(fills) : .lastsUntilReset
+}
+
+/// `full until it resets`, `full in 47 min at this pace`, `lasts until it resets at this pace`.
+public func paceText(_ pace: Pace, _ now: Date) -> String {
+    switch pace {
+    case .full: "full until it resets"
+    case .fillsAt(let date): "full in \(countdown(now, date)) at this pace"
+    case .lastsUntilReset: "lasts until it resets at this pace"
+    }
+}
+
+/// The account-wide 5-hour and weekly windows of a reading; model-scoped windows are left out.
+public struct MainWindows: Sendable, Equatable {
+    public let fiveHour: QuotaWindow?
+    public let weekly: QuotaWindow?
+}
+
+/// The 5-hour and weekly windows that the ring gauges show.
+public func mainWindows(_ snapshot: QuotaSnapshot) -> MainWindows {
+    let shared = snapshot.windows.filter { !$0.id.hasPrefix(modelScopedPrefix) }
+    return MainWindows(
+        fiveHour: shared.first { $0.durationMinutes == 300 },
+        weekly: shared.first { $0.durationMinutes == 10_080 }
+    )
+}
+
+/// The windows the rings do not show, such as Claude's model-scoped weekly windows.
+public func otherWindows(_ snapshot: QuotaSnapshot) -> [QuotaWindow] {
+    let main = mainWindows(snapshot)
+    return snapshot.windows.filter { $0 != main.fiveHour && $0 != main.weekly }
+}

@@ -31,7 +31,8 @@ let gainOutput = Data(
     #expect(countdown(reset.addingTimeInterval(-81 * 60), reset) == "1 h 21 min")
     #expect(countdown(reset.addingTimeInterval(-(4 * 86_400 + 23 * 3_600)), reset) == "4 d 23 h")
     #expect(countdown(reset.addingTimeInterval(60), reset) == "now")
-    #expect(barTitle(snapshot, nil) == "C 38%")
+    #expect(fullestPercent(snapshot) == 38)
+    #expect(fullestPercent(nil) == nil)
 }
 
 @Test func gainSummaryMatchesTheCliRatios() throws {
@@ -60,3 +61,31 @@ let gainOutput = Data(
     #expect(pointCostText(costs[1]) == "442K base units")
 }
 
+
+@Test func paceProjectsTheFillFromTheUseSinceTheWindowOpened() throws {
+    // A 5-hour window resetting at 05:00 opened at 00:00; at 01:00 it is 40% used.
+    let now = try resetDate("2026-10-05T01:00:00Z")
+    let window = { (used: Double) in
+        QuotaWindow(
+            id: "five_hour", usedPercent: used, resetsAt: "2026-10-05T05:00:00Z",
+            durationMinutes: 300)
+    }
+    #expect(try pace(window(40), now) == .fillsAt(try resetDate("2026-10-05T02:30:00Z")))
+    #expect(try pace(window(10), now) == .lastsUntilReset)
+    #expect(try pace(window(100), now) == .full)
+    #expect(try pace(window(0), now) == nil)
+    #expect(paceText(.fillsAt(try resetDate("2026-10-05T02:30:00Z")), now) == "full in 1 h 30 min at this pace")
+}
+
+@Test func mainWindowsLeaveOutModelScopedOnes() throws {
+    let snapshot = try decodeQuota(claudeQuota)
+    #expect(mainWindows(snapshot).fiveHour?.id == "five_hour")
+    #expect(mainWindows(snapshot).weekly == nil)
+    #expect(otherWindows(snapshot).map(\.id) == ["seven_day_model:Fable"])
+}
+
+@Test func paceWaitsForAQuarterHourOfUse() throws {
+    let window = QuotaWindow(
+        id: "five_hour", usedPercent: 2, resetsAt: "2026-10-05T05:00:00Z", durationMinutes: 300)
+    #expect(try pace(window, try resetDate("2026-10-05T00:05:00Z")) == nil)
+}

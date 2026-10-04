@@ -19,8 +19,7 @@ struct CimriHookBarApp: App {
         MenuBarExtra {
             PanelView(store: store)
         } label: {
-            Image(systemName: "gauge.with.dots.needle.50percent")
-            Text(store.barTitle)
+            Image(nsImage: menuBarImage(store.claude.value, store.codex.value))
         }
         .menuBarExtraStyle(.window)
     }
