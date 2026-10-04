@@ -471,7 +471,7 @@ def recommendations(anatomy: Anatomy, simulation: SimulationResult | None) -> li
                 "  compact earlier: "
                 f"{recommendation_text(chosen, cheapest, simulation.outcomes[0].cost)} "
                 f"(simulation with {MEASURED_REFETCH_TOKENS // 1000}k tokens re-read after each "
-                "compaction; the A/B runs so far found the simulator a few points optimistic, see "
+                "compaction; in the A/B runs so far the simulator was 0-11 points optimistic, see "
                 f"`cimrihook bench-calibrate`). Apply with {claude_hint(window)}"
             )
     if idle.count:

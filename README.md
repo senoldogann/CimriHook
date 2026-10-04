@@ -19,13 +19,23 @@ context; CimriHook manages how long it stays there, through the agents' own sett
 | Encode (experimental) | re-encodes tool results against what the agent already holds | `init --codec` |
 
 **Measured** (Claude Code with Opus 5.5 and a 1M context, 5 runs per arm,
-[details](docs/evaluation.md)): in 20-step bug-fixing sessions that start from about 230k tokens of
-context, compacting at 150k tokens cut the provider-billed cost by 40% (95% CI 38-42%) and
-compacting at 200k by 27% (24.5-28.6%); every one of the 300 steps passed. In shorter sessions that
-peak below 125k tokens the effect is small (Claude Code x0.95) or uncertain (Codex x0.80, interval
-includes 1).
+[details](docs/evaluation.md)): in 20-step bug-fixing sessions that grow to about 450k tokens,
+compacting at 200k tokens cut the provider-billed cost by 39% (95% CI 31.5-45.6%). RTK, measured in
+the same runs, changed nothing: x1.026 [0.912-1.154] alone, x0.985 [0.935-1.039] on top of the
+window. In sessions that peak at 350k, compacting at 150k saved 40% (38-42%) and at 200k 27%
+(24.5-28.6%). All 800 steps of these runs passed. In shorter sessions that peak below 125k tokens
+the effect is small (Claude Code x0.95) or uncertain (Codex x0.80, interval includes 1).
 
-It complements RTK: RTK shrinks what enters the context, CimriHook decides how long it stays.
+| 20 bug fixes, sessions up to 450k tokens | Cost | vs baseline [95% CI] | Steps passed |
+|---|---|---|---|
+| Claude Code as it ships | $13.15 | - | 100/100 |
+| + RTK | $13.50 | x1.026 [0.912-1.154] | 100/100 |
+| + CimriHook window (`--compact-window 233000`) | $8.03 | x0.610 [0.544-0.685] | 100/100 |
+| + both | $7.91 | x0.602 [0.535-0.676] | 100/100 |
+
+RTK shrinks command output as it enters the context. In these sessions most of the context came
+from file reads and the agent's own messages, which stay in the context and are re-read on every
+request; CimriHook decides how long they stay. The two work together without conflict.
 
 ## Install
 
@@ -101,9 +111,10 @@ and the next request carries the new context (system prompt, tools, summary and 
 files), of which only the part that is no longer cached is written again. Simulated savings assume
 the agent behaves the same otherwise. `bench-calibrate` replays the baseline runs of an A/B set at
 the treatment's real trigger point and prints how far the prediction is from the measured ratio.
-So far its errors were all on the optimistic side (0 to 7 points), which is why the replay adds
+So far its errors were all on the optimistic side (0 to 11 points), which is why the replay adds
 7,000 re-read tokens after every compaction (the median the A/B runs imply); change it with
-`--refetch-tokens`. Sessions are replayed whole, each Claude session is weighed by its model's
+`--refetch-tokens`. The error is largest when a session later needs much of what the compaction
+dropped: then the agent reads it again at every step. Sessions are replayed whole, each Claude session is weighed by its model's
 list price (Codex stays in base input units), a forked or resumed session's copied history counts
 once, and CimriHook's own A/B runs are left out. Check task quality with an A/B run before
 adopting a small window.
@@ -262,6 +273,9 @@ Codex CLI (`codex exec`) in one arm per mechanism:
 | `codec` | codec hooks only | not available (hooks cannot rewrite tool output) |
 | `combined` | window and codec hooks | not available |
 | `brief` | window and the compaction brief (PreCompact) | not available |
+| `rtk` | RTK's hook (`rtk hook claude`; RTK must be on the `PATH`) | not available |
+| `rtk-governor` | RTK's hook and the window | not available |
+| `mask` | window and the CimriHook mod with mask-first compaction | not available |
 
 - **Isolation:** every run gets its own workspace and virtual environment. Agents get only an
   allowlisted environment (no inherited `CLAUDE_CODE_*`/`ANTHROPIC_*` variables). Claude Code
@@ -283,7 +297,8 @@ Codex CLI (`codex exec`) in one arm per mechanism:
 - **Long sessions:** the `sequential` protocol injects the bugs one at a time into the same session,
   so the context accumulates the way it does in real work. The `deep` protocol (Claude Code only)
   first has the agent read every library source file, so the session starts at about 200k tokens
-  of context that mostly goes stale: the regime where most real spend happens.
+  of context that mostly goes stale: the regime where most real spend happens. `deeper` also has
+  it read every test file first; its baseline sessions peak at about 450k tokens.
 - **Resumable:** results are written per run, so an interrupted batch picks up where it stopped.
   Runs that hit a usage limit (a failed turn, or a step without model requests) are recorded as
   unmeasured and re-run.

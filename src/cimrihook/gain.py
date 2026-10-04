@@ -274,7 +274,7 @@ def receipt_lines(receipt: Receipt) -> list[str]:
         f"${receipt.compaction_calls_usd:,.2f}). The same requests without those compactions: "
         f"about ${receipt.without_compactions_usd:,.2f}, so the window saved about ${saved:,.2f} "
         f"({change(receipt.without_compactions_usd, actual)}). This replay keeps the removed "
-        "context and re-reads it on every later request; in A/B runs such replays were 0-7 points "
+        "context and re-reads it on every later request; in A/B runs such replays were 0-11 points "
         "optimistic.",
     ]
 
