@@ -280,7 +280,80 @@ Measured before shipping, cheapest test first. None of these is in CimriHook.
 - An early pilot's 40k Claude Code window was silently raised to 100000 by Claude Code; the
   harness now rejects windows below 100000.
 
-## Reproduce
+## Verified task closure pilot (2026-10-04)
+
+Goal: remove externally verified task work from active context while retaining the cached
+shared prefix, original user constraints, corrections and a short result receipt. Hold model
+and effort fixed; evaluate cache and resume feasibility before an A/B saving claim.
+
+The full-read pilot ran with Claude Code **2.1.289**, **Opus 5.5 1M / medium** and the existing
+**183000 governor window**. The host required a successful full `Read` of the disposable fixture,
+checked its first and last markers, ran unchanged Python tests, and archived the original JSONL.
+
+| Gate | Observation | Result |
+|---|---|---|
+| Warm shared conversation beyond static input | static input 5347; first fix cache read 30000 | Pass |
+| First main request after closure retains shared cache | 30000 cached tokens, 100% of first fix's cache read; gap 3.509 seconds | Pass |
+| Observation stays removed | absent at first post-close and second resume starts | Pass |
+| Fixture and retained contract | external tests pass before/after; both JSON answers retain identifier, value 75 and tests_verified: true using actual tool evidence | Pass |
+| Closure generates no summary request | cumulative provider cost unchanged at $0.4735866 during `/compact` | Pass |
+
+The last fix request carried **55732 input tokens**; the first post-close request carried
+**31079**, and the second resume **31568**. The observed first reduction is **44.2%**. These
+are different consecutive requests, not a paired cost or quota comparison. The full session's
+last cumulative API-equivalent cost was **$0.507106**; cumulative totals are not added together.
+Projected messages went from 18 to 11; character counts are not treated as tokens.
+
+Raw Claude utilization remained **5% five-hour / 48% weekly** before and after the pilot.
+This does not imply zero consumption: the CLI returned whole account-wide percentages.
+The next useful evaluation is an interleaved comparison against the existing governor on
+real multi-task fixtures, with unchanged tests, rework/refetch tracking and enough activity
+to resolve limit changes. This pilot does not establish general quality or subscription savings.
+
+API findings from the attempts leading to the full-read pilot:
+
+- Programmatic `$.session.compact()` is unavailable in `-p`/SDK sessions in this build.
+  Calling it from `prompt.submit` is also rejected. The experiment uses the supported
+  controlled `/compact` command, with validation and a scoped veto in its compaction hook.
+- The engine appends a known command message before manual compaction. Only that exact final
+  control message is excluded from the completed-boundary comparison.
+- Decoded tool `result` bodies may be cleared after a turn and restored on resume. Comparison
+  uses stable visible text, tool identities/inputs and error flags; opaque handles are never
+  persisted. Returned prefix objects use handles from the current compact event.
+- An earlier successful run sampled the observation and reduced context only about 8%.
+  The final driver rejects sampling and requires a full successful `Read` before closure.
+- The first full-read run removed all task tool evidence. It preserved the number and
+  identifier, but the assistant explicitly rejected the receipt's verification provenance.
+  This revealed a quality defect the original recall predicate missed. The final implementation
+  retains actual successful Edit and unittest tool-use/result pairs without old handles;
+  it requires both continuations to use that test evidence. The earlier
+  [report without tool proof](../bench/results/task-closure-pilot-20261004/report-without-tool-proof.json)
+  is marked unsuccessful under the stronger contract gate.
+- Rejected proof, changed prefix/files, archive/receipt-write errors and hook exceptions veto
+  compaction without invoking downstream summarization. Normal usage does not enable closure.
+
+The quota command independently reads Claude `get_usage` and Codex `account/rateLimits/read`.
+Protocol normalization was checked against T3 Code commit
+[`4ee6bfd`](https://github.com/pingdotgg/t3code/tree/4ee6bfd50ef4a089440d5c3662db2298da9cc50e):
+[Claude quota reader](https://github.com/pingdotgg/t3code/blob/4ee6bfd50ef4a089440d5c3662db2298da9cc50e/apps/server/src/provider/Layers/claudeUsageLimits.ts),
+[Codex quota reader](https://github.com/pingdotgg/t3code/blob/4ee6bfd50ef4a089440d5c3662db2298da9cc50e/apps/server/src/provider/Layers/codexUsageLimits.ts),
+[Usage documentation](https://github.com/pingdotgg/t3code/blob/4ee6bfd50ef4a089440d5c3662db2298da9cc50e/docs/user/usage.md).
+Usage pricing and actual allowance observations are separate in T3 and in CimriHook.
+
+[Provider measurements](../bench/results/task-closure-pilot-20261004/report.json) include
+first-request usage, raw quota snapshots and cumulative cost. The full original transcript,
+projection archive, fixture and logs are retained privately under
+`~/.cimrihook/experiments/task-closure-20261004-with-proof/`. The public report contains the isolated
+fixture's answers and measurements, without credentials.
+
+```bash
+cimrihook closure-probe --output /tmp/cimrihook-closure-new
+cimrihook quota --agent claude
+cimrihook quota --agent codex
+uv run python tests/run_mod_tests.py
+```
+
+## Reproduce existing A/B studies
 
 ```bash
 cimrihook bench-run --name deep --tasks boltons-twenty-steps --protocols deep --agents claude \

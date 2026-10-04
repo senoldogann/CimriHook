@@ -1,8 +1,8 @@
 """CimriHook's Claude Code mod: installs the plugin folder from the files in the package.
 
 The mod is a set of Claude Code function hooks (2.1.286 and later; the desktop app included):
-it schedules compaction around the cache lifetime (see mod/register.ts). The plugin is three
-files: .claude-plugin/plugin.json, hooks/hooks.json and hooks/register.ts. The package keeps
+it schedules compaction around the cache lifetime (see mod/register.ts). The plugin includes
+an opt-in closure probe alongside its hooks and metadata. The package keeps
 them in a flat folder and the installation builds the plugin layout. Claude Code loads the
 folder from CLAUDE_CODE_PLUGIN_DIRS; the variable is also read from the env block of the user
 settings, including for sessions the desktop app starts.
@@ -18,6 +18,7 @@ LAYOUT: Final = (
     (".claude-plugin/plugin.json", "plugin.json"),
     ("hooks/hooks.json", "hooks.json"),
     ("hooks/register.ts", "register.ts"),
+    ("hooks/closure.ts", "closure.ts"),
 )
 
 

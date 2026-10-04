@@ -288,6 +288,43 @@ remembers your previous value for `--remove`.
 
 ## Evaluate with your real subscriptions
 
+### Read current account limits
+
+```bash
+cimrihook quota --agent claude
+cimrihook quota --agent codex
+```
+
+These commands read the authenticated CLI's control protocol without sending a model prompt.
+The JSON reports account-wide windows, their raw utilization and reset times. Decimal values
+are preserved when supplied. A provider may return only whole percentages; a small task can
+leave the reading unchanged. Missing windows stay missing and transport/auth errors are explicit.
+These observations are separate from the session cost ledger and cannot attribute simultaneous
+activity to one task. Implementation was checked against T3 Code's separate quota readers;
+its Usage dollar totals are API price estimates, not subscription allowance.
+
+### Verified task closure pilot
+
+```bash
+cimrihook closure-probe --output /tmp/cimrihook-closure-new
+```
+
+The command creates an isolated fixture and private plugin configuration. It warms a common
+prefix, fixes a task at the same model and effort, checks unchanged tests externally, archives
+the original transcript, and replaces the completed task's tool history with a verified result
+receipt and actual successful edit/test tool records. The common prefix and original user
+constraints stay. It then checks the first model
+request and another resume. This is opt-in through the pilot; normal sessions do not close tasks.
+The output directory must be new. Default: Opus 5.5 1M, medium, 183000 governor window;
+each generation call has a 12-turn/$3 ceiling and a 300-second timeout.
+
+The proof-preserving full-read pilot retained all 30000 measured cache-read tokens of the common
+prefix and removed the observation across two resumes. Both continuations used the actual
+retained test evidence. Request input fell from 55732 tokens on the last fix request to 31079
+on the first request after closure. That is a feasibility result on
+one small fixture, not a measured subscription saving or general quality result.
+[Measurements and API constraints](docs/evaluation.md#verified-task-closure-pilot-2026-10-04).
+
 Results so far, with the method and the corrections to earlier figures, are in
 [docs/evaluation.md](docs/evaluation.md).
 
@@ -392,6 +429,7 @@ runs: use that no session records still raises the weights.
 ```bash
 uv sync
 uv run ruff check && uv run mypy && uv run pytest
+uv run python tests/run_mod_tests.py  # installed Claude's hook engine; no model requests
 ```
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the conventions and how to share your own measurements;

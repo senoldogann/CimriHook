@@ -1,93 +1,50 @@
-// CimriHook mod: schedules compaction around the prompt cache's lifetime.
-//
-// Warm compaction: on a subscription the main conversation's cache lives one hour. When the session
-// has sat idle until five minutes before that hour runs out and its context is large, the mod
-// compacts while the cache is still warm: the summary request reads the context at the cache-read
-// price, and when the person comes back the first request writes the short summary instead of the
-// whole conversation.
-//
-// Cold fallback: when the timer could not run (the machine slept, or the session was resumed after a
-// restart), the first prompt sent into an idle session whose cache has expired is preceded by a
-// compaction; that request was going to rewrite the whole context anyway.
-//
-// Mask-first (opt-in, CIMRIHOOK_MOD_MASK=1): an automatic compaction of the main conversation keeps
-// every message and replaces older tool results with a short placeholder instead of an LLM summary.
-// When that would not shrink the context enough, the engine's own summary runs instead.
-//
-// Boundary compaction (opt-in, CIMRIHOOK_MOD_BOUNDARY_TOKENS): a prompt that enters a main
-// conversation larger than this is preceded by a compaction, so the summary closes the finished
-// task and the new one starts on a small context; the auto-compact window stays the backstop inside
-// a task, where a compaction can cut the agent off mid-work.
-//
-// Limit meter: on a subscription, every measurement of the session (after each turn, and when a
-// 5-hour or weekly window moves a point) appends the session's list-price spend and the windows'
-// use to <CIMRIHOOK_HOME or ~/.cimrihook>/limits/<session id>.jsonl, so `cimrihook limits` can
-// measure what share of each window a dollar of usage takes on your own plan.
-//
-// Prefix record: when a session's first turn ends, the context breakdown that /context shows
-// (system prompt, tools, MCP tools, agents, memory files, skills, messages) is written to
-// <home>/prefix/<session id>.json, so `cimrihook doctor` can say what rides on every request.
-
+// CimriHook: cache ömrü yöneticisi, limit kayıtları ve isteğe bağlı doğrulanmış görev kapatma deneyi.
 import type { Register, SessionMessage, ToolResultSummary } from 'claude-code'
+import { canonical, CLOSE_INSTRUCTION, closeMessages, completedMessages, object, project, validRequest } from './closure'
 
-const CACHE_LIFETIME_MS = 60 * 60 * 1000 // main conversation on a subscription
-const WARM_MARGIN_MS = 5 * 60 * 1000 // compact this long before the cache expires
+const CACHE_LIFETIME_MS = 60 * 60 * 1000
+const WARM_MARGIN_MS = 5 * 60 * 1000
 const TICK_MS = 60 * 1000
-const DEFAULT_MIN_TOKENS = 100_000 // below this a cold rewrite is cheap
-const KEEP_RECENT_MESSAGES = 12 // mask-first looks this far back for tool results to keep whole
-const RECENT_RESULTS_SHARE = 0.1 // ...as long as they stay within this share of the context
-const MASK_MIN_CHARS = 500 // shorter tool results stay
-const MAX_KEPT_SHARE = 0.6 // mask-first must remove at least 40% or the summary runs
+const DEFAULT_MIN_TOKENS = 100_000
+const KEEP_RECENT_MESSAGES = 12
+const RECENT_RESULTS_SHARE = 0.1
+const MASK_MIN_CHARS = 500
+const MAX_KEPT_SHARE = 0.6
 
-type Session = {
-  running: boolean
-  lastTurnEnd: number | undefined
-  compacted: boolean
-  limits: { id: string; lines: string[] } | undefined // this session's limit samples so far
-  prefixRecorded: boolean
+/** Engine çağrıları hook içindedir; yardımcılar yalnız verilen değerleri dönüştürür. */
+function homeOf(configured: string | undefined, home: string | undefined): string {
+  return configured ?? `${home ?? '.'}/.cimrihook`
 }
 
-type Engine = {
-  env: { get: (name: string) => Promise<string | undefined> }
-  fs: { write: (path: string, text: string) => Promise<void> }
-  session: {
-    id: () => Promise<string>
-    usage: (args: { breakdown: 'full' }) => Promise<{
-      context: { breakdown?: { categories: readonly { name: string; tokens: number; kind: string }[] } }
-    }>
-  }
-  clock: { now: () => Promise<number> }
-}
-
-/** CimriHook's home: CIMRIHOOK_HOME, or ~/.cimrihook. */
-async function homeOf($: Engine): Promise<string> {
-  return (await $.env.get('CIMRIHOOK_HOME')) ?? `${(await $.env.get('HOME')) ?? '.'}/.cimrihook`
-}
-
-/** Writes the breakdown of the session's context, as /context counts it (one token count per tool and memory file). */
-async function recordPrefix($: Engine): Promise<void> {
-  const usage = await $.session.usage({ breakdown: 'full' })
-  const rows = usage.context.breakdown?.categories
-  if (rows === undefined) return
-  const record = {
-    t: await $.clock.now(),
-    rows: rows.map(({ name, tokens, kind }) => ({ name, tokens, kind })),
-  }
-  await $.fs.write(`${await homeOf($)}/prefix/${await $.session.id()}.json`, `${JSON.stringify(record)}\n`)
+function worthCompacting(usage: { context: { tokens?: number }; rateLimits: readonly unknown[] }, min: number): boolean {
+  return usage.rateLimits.length > 0 && (usage.context.tokens ?? 0) >= min
 }
 
 export const register: Register = (on) => {
-  const session: Session = {
-    running: false,
-    lastTurnEnd: undefined,
-    compacted: false,
-    limits: undefined,
+  const session = {
+    running: false, compacted: false, compacting: false,
+    lastTurnEnd: undefined as number | undefined,
+    limits: undefined as { id: string; lines: string[] } | undefined,
     prefixRecorded: false,
   }
+  const closure = { enabled: false, requests: [] as unknown[] }
 
   on('turn.start', async ($, e, next) => {
-    session.running = true
+    if (e.agentId === undefined) session.running = true
     return next(e)
+  })
+
+  on('turn.step', async function* ($, e, next) {
+    const started = await $.clock.now()
+    const result = yield* next(e)
+    if (e.agentId === undefined && await $.env.get('CIMRIHOOK_MOD_CLOSE_PROBE') === '1') {
+      const base = `${await $.env.get('CIMRIHOOK_HOME')}/closure/${await $.session.id()}`
+      const phase = await $.env.get('CIMRIHOOK_PROBE_PHASE')
+      closure.requests.push({ index: e.index, model: e.model, effort: e.effort, started,
+        ended: await $.clock.now(), usage: result.usage })
+      await $.fs.write(`${base}.${phase}.requests.json`, JSON.stringify(closure.requests))
+    }
+    return result
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -96,18 +53,30 @@ export const register: Register = (on) => {
       session.running = false
       session.lastTurnEnd = await $.clock.now()
       session.compacted = false
+      if (await $.env.get('CIMRIHOOK_MOD_CLOSE_PROBE') === '1') {
+        const base = `${await $.env.get('CIMRIHOOK_HOME')}/closure/${await $.session.id()}`
+        if (await $.fs.exists(`${base}.anchor.json`)) {
+          await $.fs.write(`${base}.completed.json`, JSON.stringify(project(await $.session.messages())))
+        }
+      }
       if (!session.prefixRecorded) {
-        session.prefixRecorded = true
-        await recordPrefix($).catch((error: unknown) => {
+        try {
+          const usage = await $.session.usage({ breakdown: 'full' })
+          const rows = usage.context.breakdown?.categories
+          if (rows !== undefined) {
+            const record = { t: await $.clock.now(), rows: rows.map(({ name, tokens, kind }) => ({ name, tokens, kind })) }
+            const home = homeOf(await $.env.get('CIMRIHOOK_HOME'), await $.env.get('HOME'))
+            await $.fs.write(`${home}/prefix/${await $.session.id()}.json`, `${JSON.stringify(record)}\n`)
+            session.prefixRecorded = true
+          }
+        } catch (error) {
           $.ui.log(`CimriHook prefix record: ${String(error)}`, { to: 'debug' })
-        })
+        }
       }
     }
     return result
   })
 
-  // A resumed session starts with no turn of its own: take the last response's time from the
-  // SessionStart hook input, so the cold fallback also works hours after a restart.
   on('classic.SessionStart', async ($, e, next) => {
     if (e.source === 'resume' && typeof e.seconds_since_last_response === 'number') {
       session.lastTurnEnd = (await $.clock.now()) - e.seconds_since_last_response * 1000
@@ -121,35 +90,67 @@ export const register: Register = (on) => {
     const minTokens = Number((await $.env.get('CIMRIHOOK_MOD_MIN_TOKENS')) ?? DEFAULT_MIN_TOKENS)
     $.clock.every(TICK_MS, () => {
       void (async () => {
-        if (session.running || session.compacted || session.lastTurnEnd === undefined) return
+        if (session.running || session.compacted || session.compacting || session.lastTurnEnd === undefined) return
         const idle = (await $.clock.now()) - session.lastTurnEnd
         if (idle < CACHE_LIFETIME_MS - WARM_MARGIN_MS || idle >= CACHE_LIFETIME_MS) return
-        if (!(await worthCompacting($, minTokens))) return
-        session.compacted = true
-        const outcome = await $.session.compact()
-        if (outcome.skip === undefined) {
-          $.ui.toast('CimriHook compacted this idle session before its prompt cache expired')
+        if (!worthCompacting(await $.session.usage(), minTokens)) return
+        session.compacting = true
+        try {
+          const outcome = await $.session.compact()
+          session.compacted = outcome.skip === undefined
+          if (session.compacted) $.ui.toast('CimriHook compacted this idle session before its prompt cache expired')
+        } finally {
+          session.compacting = false
         }
-      })().catch(() => undefined)
+      })().catch((error: unknown) => {
+        $.ui.log(`CimriHook idle compaction: ${String(error)}`, { to: 'debug' })
+      })
     })
     return result
   })
 
   on('prompt.submit', async ($, e, next) => {
-    if (e.turnId === undefined && !session.compacted) {
-      const idle =
-        session.lastTurnEnd === undefined ? 0 : (await $.clock.now()) - session.lastTurnEnd
-      const minTokens = Number((await $.env.get('CIMRIHOOK_MOD_MIN_TOKENS')) ?? DEFAULT_MIN_TOKENS)
-      const boundary = await $.env.get('CIMRIHOOK_MOD_BOUNDARY_TOKENS')
-      const cold = idle >= CACHE_LIFETIME_MS && (await worthCompacting($, minTokens))
-      const large =
-        boundary !== undefined &&
-        ((await $.session.usage()).context.tokens ?? 0) >= Number(boundary)
-      if (cold || large) {
-        session.compacted = true
-        await $.session.compact().catch(() => undefined)
+    if (await $.env.get('CIMRIHOOK_MOD_CLOSE_PROBE') === '1' && e.turnId === undefined) {
+      closure.enabled = true
+      const base = `${await $.env.get('CIMRIHOOK_HOME')}/closure/${await $.session.id()}`
+      if (await $.fs.exists(`${base}.request.json`)) {
+        const pending: unknown = JSON.parse(await $.fs.read(`${base}.request.json`))
+        if (!(object(pending) && pending.consumed === true) && e.text.trim() !== `/compact ${CLOSE_INSTRUCTION}`) {
+          return { drop: 'CimriHook closure: pending request requires the controlled /compact command' }
+        }
+      }
+      if (await $.fs.exists(`${base}.armed.json`) && !await $.fs.exists(`${base}.anchor.json`)) {
+        await $.fs.write(`${base}.anchor.json`, JSON.stringify(project(await $.session.messages())))
+      }
+      const phase = await $.env.get('CIMRIHOOK_PROBE_PHASE')
+      if (phase !== undefined) {
+        const before = project(await $.session.messages())
+        await $.fs.write(`${base}.${phase}.start.json`, JSON.stringify({
+          messages: before, hasObservation: canonical(before).includes('DISPOSABLE_OBSERVATION_7f928'),
+        }))
       }
     }
+    if (e.turnId === undefined && !session.compacted && !session.compacting) {
+      const idle = session.lastTurnEnd === undefined ? 0 : (await $.clock.now()) - session.lastTurnEnd
+      const min = Number((await $.env.get('CIMRIHOOK_MOD_MIN_TOKENS')) ?? DEFAULT_MIN_TOKENS)
+      const boundary = await $.env.get('CIMRIHOOK_MOD_BOUNDARY_TOKENS')
+      const cold = idle >= CACHE_LIFETIME_MS && worthCompacting(await $.session.usage(), min)
+      const large = boundary !== undefined && ((await $.session.usage()).context.tokens ?? 0) >= Number(boundary)
+      if (cold || large) {
+        session.compacting = true
+        try {
+          const outcome = await $.session.compact()
+          session.compacted = outcome.skip === undefined
+        } catch (error) {
+          $.ui.log(`CimriHook prompt compaction: ${String(error)}`, { to: 'debug' })
+        } finally {
+          session.compacting = false
+        }
+      }
+    }
+    return next(e)
+  }).catch(($, e, next) => {
+    if (closure.enabled && !next.called) return { drop: `CimriHook closure prompt veto: ${next.error.message}` }
     return next(e)
   })
 
@@ -159,18 +160,13 @@ export const register: Register = (on) => {
     if (e.rateLimits.length === 0 || usd === undefined) return result
     try {
       const id = await $.session.id()
-      const path = `${await homeOf($)}/limits/${id}.jsonl`
+      const home = homeOf(await $.env.get('CIMRIHOOK_HOME'), await $.env.get('HOME'))
+      const path = `${home}/limits/${id}.jsonl`
       if (session.limits?.id !== id) {
-        const lines = (await $.fs.exists(path))
-          ? (await $.fs.read(path)).split('\n').filter((line) => line !== '')
-          : []
+        const lines = (await $.fs.exists(path)) ? (await $.fs.read(path)).split('\n').filter((line) => line !== '') : []
         session.limits = { id, lines }
       }
-      const limits = e.rateLimits.map((limit) => ({
-        kind: limit.kind,
-        percentUsed: limit.percentUsed,
-        resetsAt: limit.resetsAt,
-      }))
+      const limits = e.rateLimits.map((limit) => ({ kind: limit.kind, percentUsed: limit.percentUsed, resetsAt: limit.resetsAt }))
       session.limits.lines.push(JSON.stringify({ t: await $.clock.now(), usd, limits }))
       await $.fs.write(path, `${session.limits.lines.join('\n')}\n`)
     } catch (error) {
@@ -179,29 +175,59 @@ export const register: Register = (on) => {
     return result
   })
 
-  // Every compaction of the main conversation counts, not only the mod's own: after Claude Code's
-  // automatic or idle compaction or a manual /compact the context is small again, so neither the
-  // warm compaction nor the cold fallback runs before the next turn ends.
   on('session.compact', async ($, e, next) => {
+    if (e.agentId === undefined && (e.trigger === 'plugin' || e.trigger === 'manual') &&
+        e.instructions === CLOSE_INSTRUCTION && await $.env.get('CIMRIHOOK_MOD_CLOSE_PROBE') === '1') {
+      try {
+        const base = `${await $.env.get('CIMRIHOOK_HOME')}/closure/${await $.session.id()}`
+        const raw: unknown = JSON.parse(await $.fs.read(`${base}.request.json`))
+        const anchor: unknown = JSON.parse(await $.fs.read(`${base}.anchor.json`))
+        if (!validRequest(raw) || raw.sessionId !== await $.session.id()) {
+          return { skip: 'CimriHook closure: invalid external verification' }
+        }
+        const current = completedMessages(e.messages)
+        if (canonical(raw.anchor) !== canonical(anchor) ||
+            canonical(project(current)) !== canonical(raw.completed) ||
+            canonical(project(current.slice(0, raw.anchor.length))) !== canonical(raw.anchor)) {
+          await $.fs.write(`${base}.rejection.json`, JSON.stringify({
+            anchorMatched: canonical(raw.anchor) === canonical(anchor),
+            completedMatched: canonical(project(current)) === canonical(raw.completed),
+            prefixMatched: canonical(project(current.slice(0, raw.anchor.length))) === canonical(raw.anchor),
+            current: project(current),
+          }))
+          return { skip: 'CimriHook closure: transcript or anchor changed' }
+        }
+        const workspace = await $.env.get('CIMRIHOOK_PROBE_WORKSPACE')
+        if (workspace === undefined) return { skip: 'CimriHook closure: missing fixture workspace' }
+        for (const [name, expected] of Object.entries(raw.files)) {
+          if (await $.fs.read(`${workspace}/${name}`) !== expected) return { skip: `CimriHook closure: verified file changed (${name})` }
+        }
+        const closed = closeMessages(current, raw)
+        // Önce projeksiyon arşivi; tam JSONL yedeğini deney sürücüsü alır.
+        await $.fs.write(`${base}.projection-archive.json`, JSON.stringify(project(e.messages)))
+        await $.fs.write(`${base}.closed.json`, JSON.stringify({
+          messagesBefore: e.messages.length, messagesAfter: closed.length,
+          charsBefore: canonical(project(e.messages)).length, charsAfter: canonical(project(closed)).length,
+          projected: project(closed),
+        }))
+        await $.fs.write(`${base}.request.json`, JSON.stringify({ consumed: true }))
+        session.compacted = true
+        return { messages: closed }
+      } catch (error) {
+        return { skip: `CimriHook closure veto: ${String(error)}` }
+      }
+    }
     const main = e.agentId === undefined
-    const mask = main && e.trigger === 'auto' && (await $.env.get('CIMRIHOOK_MOD_MASK')) === '1'
+    const mask = main && e.trigger === 'auto' && await $.env.get('CIMRIHOOK_MOD_MASK') === '1'
     const masked = mask ? maskOlderResults(e.messages) : undefined
-    const result =
-      masked !== undefined && size(masked) <= MAX_KEPT_SHARE * size(e.messages)
-        ? { messages: masked }
-        : await next(e)
+    const result = masked !== undefined && size(masked) <= MAX_KEPT_SHARE * size(e.messages) ?
+      { messages: masked } : await next(e)
     if (main && e.trigger !== 'precompute' && result.skip === undefined) session.compacted = true
     return result
+  }).catch(($, e, next) => {
+    if (e.instructions === CLOSE_INSTRUCTION) return { skip: `CimriHook closure hook veto: ${next.error.message}` }
+    return next(e)
   })
-}
-
-/** Is this a subscription session (1-hour cache) with a context large enough to compact? */
-async function worthCompacting(
-  $: { session: { usage: () => Promise<{ context: { tokens?: number }; rateLimits: readonly unknown[] }> } },
-  minTokens: number,
-): Promise<boolean> {
-  const usage = await $.session.usage()
-  return usage.rateLimits.length > 0 && (usage.context.tokens ?? 0) >= minTokens
 }
 
 /**

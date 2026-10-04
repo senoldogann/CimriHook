@@ -1,4 +1,5 @@
-"""Command line: statusline | guard | doctor | gain | limits | simulate | init | settings |
+"""Command line: quota | closure-probe | statusline | guard | doctor | gain | limits |
+simulate | init | settings |
 bench-run | bench-report | bench-remeasure | bench-calibrate."""
 
 import argparse
@@ -26,6 +27,7 @@ from cimrihook.bench import (
     run_plan,
     select_tasks,
 )
+from cimrihook.closure_probe import run_probe
 from cimrihook.codex_config import (
     apply_codex_remove,
     apply_codex_window,
@@ -41,6 +43,7 @@ from cimrihook.guard import guard_prompt
 from cimrihook.install import apply_init, apply_remove, plan_init, plan_remove, render_plan
 from cimrihook.limits import LimitSample, limits_dir, read_samples
 from cimrihook.mods import mod_dir, write_mod
+from cimrihook.quota import quota_json, read_claude_quota, read_codex_quota
 from cimrihook.settings import (
     cache_ttl_settings,
     governor_settings,
@@ -133,6 +136,18 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "limits", help="what a point of your 5-hour and weekly windows costs in usage"
     )
+    quota = commands.add_parser(
+        "quota", help="read current account-wide subscription windows without a model request"
+    )
+    quota.add_argument("--agent", choices=("claude", "codex"), required=True)
+    quota.add_argument("--timeout", type=float, default=25.0)
+    closure = commands.add_parser(
+        "closure-probe", help="run an isolated verified task closure pilot"
+    )
+    closure.add_argument("--output", type=Path, required=True)
+    closure.add_argument("--model", default=DEFAULT_CLAUDE_MODEL)
+    closure.add_argument("--effort", choices=("low", "medium", "high"), default=DEFAULT_EFFORT)
+    closure.add_argument("--timeout", type=int, default=300)
     simulate = commands.add_parser(
         "simulate", help="replay past sessions under compaction policies and compare their cost"
     )
@@ -431,6 +446,16 @@ def main() -> None:
         elif command == "limits":
             samples = read_samples(limits_dir(config.home))
             print(render_limits(samples))
+        elif command == "quota":
+            snapshot = (
+                read_claude_quota(float(args.timeout))
+                if args.agent == "claude"
+                else read_codex_quota(float(args.timeout))
+            )
+            print(quota_json(snapshot))
+        elif command == "closure-probe":
+            print(json.dumps(run_probe(args.output, str(args.model), str(args.effort),
+                                       int(args.timeout)), indent=2))
         elif command == "simulate":
             agent: str = args.agent
             logs_dir = DEFAULT_LOGS[agent] if args.logs_dir is None else str(args.logs_dir)

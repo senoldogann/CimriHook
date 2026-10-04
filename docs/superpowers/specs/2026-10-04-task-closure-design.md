@@ -56,15 +56,28 @@ içerikleri bulunur. Mod kapanıştan önce fixture dosyalarını tekrar okur; f
 state reddedilir. Request bir kez tüketilir; ikinci resume'da uygulanmaz. Ardından
 anchor yeniden yakalanmaz. Probe home host'un oluşturduğu private dizindir.
 
-Sonraki idle main prompt'tan önce mod mevcut `session.compact` arayüzünü kullanır.
+Kurulu 2.1.289 sürümü `-p`/SDK içinde `$.session.compact()` çağrısını ve
+`prompt.submit` içinden compaction'ı reddeder. Headless pilot bu nedenle ayrı,
+kontrollü `/compact CimriHook externally verified closure pilot` komutuyla
+`session.compact` hook'unu çalıştırır; bu komut yeni model isteği üretmemelidir.
+Sonraki generation prompt'u yalnız tüketilmiş request sonrasında kabul edilir.
+Pilot otomatik interactive kapanış uygulamaz; kontrollü komut kullanır.
 Kapatma handler'ı başlangıçtaki mesajların hâlâ aynı prefix olduğunu kontrol eder.
+Kanonik karşılaştırma görünür text, araç kimliği/input'u ve sonuç text/error
+alanlarına dayanır; turn sonunda boşaltılıp resume'da geri yüklenen decoded
+`result` gövdeleri karşılaştırmadan çıkarılır. Engine'in eklediği tam eşleşen
+son `/compact` kontrol mesajı tamamlanmış görev sınırından ayrılır; başka hiçbir
+mesaj bu istisnayla çıkarılmaz.
 Değişmiş prefix, eksik/bozuk kanıt veya task ortasında native compaction varsa
 deney kapatma girişimi hata olarak kaydedilir; `{ skip: reason }` veto sonucu
 döner, downstream çağrılmaz ve başarı sayılmaz. Archive write hatası da veto olur.
 Closure dispatch'ine bağlı scoped catch hook exception/timeout'ta da veto döner.
 Kontrol sağlanırsa başlangıç mesajları engine handle'larıyla korunur, task içindeki
-bütün özgün user prompt/düzeltmeleri ve son assistant sonuç metni tutulur, tool
-sonuçları/ara assistant adımları aktif geçmişten çıkarılır. Dış doğrulama kanıtı
+bütün özgün user prompt/düzeltmeleri ve son assistant sonuç metni tutulur.
+Gerçek başarılı Edit ve test Bash çağrısının input/result çiftleri küçük kanıt
+olarak handle kullanılmadan yeniden kurulur; seçilen idler tamamlanmış
+transcript ile eşleştirilir. Eksik/başarısız kanıt kapatmayı veto eder.
+Diğer tool sonuçları/ara assistant adımları aktif geçmişten çıkarılır. Dış doğrulama kanıtı
 eklenir. Önce projected mesaj arşivi yazılır. Bu thinking/attachment açısından tam
 transcript yedeği değildir; host ayrıca özgün CLI JSONL transcript'ini kapatma
 öncesinde kopyalar. Handle yalnız mevcut compact event'inden alınır.
@@ -85,6 +98,9 @@ kapatmayı tetikler. Bir ek resume küçülen geçmişin kalıcı olduğunu kont
 Sonuç JSON'u CLI version/model/effort, fixture doğrulaması, arşiv ve kapatma
 metrikleri, turn bazlı provider token usage/cost, varsa öncesi/sonrası quota
 snapshotları içerir. Cache başarısı ve resume başarısı ayrı boolean'lar olur.
+Contract kontrolü her iki devamda aynı identifier, 75 değeri ve gerçek korunmuş
+test çıktısına dayalı tests_verified: true arar. Yalnız doğru sayıyı hatırlayan
+fakat doğrulama kanıtını reddeden yanıt başarılı sayılmaz.
 Cache gate yalnız kapatma sonrası ilk main model isteğini kullanır. Warm-up ilk
 isteğinin toplam input'u static/tool başlangıç için taban ölçümdür. Fix ilk
 isteğinde cache read bunun en az 8192 token üzerinde olmalı (conversation anchor
@@ -98,6 +114,9 @@ Engine'ın mod handle'ı veya resume davranışı beklentiyi sağlamazsa sonuç 
 tasarruf iddiası yazılmaz. Ham token sayıları provider response'undan gelir;
 karakter boyutları token diye sunulmaz. Pilot quota deltasını hesap geneli gözlem
 olarak raporlar; background kullanımın görev atfını belirsizleştirdiğini belirtir.
+
+Host ayrıca büyük disposable gözlemin gerçekten tam Read ile geldiğini araç
+input'u, başarılı sonuç ve ilk/son marker ile doğrular; örnekleme pilotu kapatmaz.
 
 ## Sağlamlık düzeltmesi
 
