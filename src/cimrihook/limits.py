@@ -63,6 +63,15 @@ class WindowRate:
         return self.usd / self.points if self.points >= MIN_POINTS else None
 
 
+@dataclass(frozen=True, slots=True)
+class RunPoints:
+    """Points one run moved a window and the list-price spend between the same two readings."""
+
+    kind: str
+    points: float
+    usd: float
+
+
 def limits_dir(home: Path) -> Path:
     """Directory of the mod's measurement files."""
     return home / LIMITS_DIR
@@ -152,6 +161,37 @@ def window_rates(samples: Sequence[LimitSample]) -> list[WindowRate]:
             kind, current.periods + 1, current.points + points, current.usd + spend[(kind, period)]
         )
     return [rates[kind] for kind in sorted(rates)]
+
+
+def run_points(samples: Sequence[LimitSample], where: str) -> list[RunPoints]:
+    """Points each window kind moved between the first and the last reading of one run.
+
+    A kind whose reset time changed during the run (the window reset under it) is left out: the
+    readings of two periods are not one count. The windows report whole percents, so the points of
+    a run are good to about one point.
+    """
+    ordered = sorted(samples, key=lambda sample: sample.time)
+    kinds = sorted({window.kind for sample in ordered for window in sample.windows})
+    counted = [kind_points(ordered, kind, where) for kind in kinds]
+    return [points for points in counted if points is not None]
+
+
+def kind_points(ordered: Sequence[LimitSample], kind: str, where: str) -> RunPoints | None:
+    """Points and spend of one window kind in a run; None if its reset time changed."""
+    readings = [
+        (sample, window) for sample in ordered for window in sample.windows if window.kind == kind
+    ]
+    if len({window.resets_at for _, window in readings}) != 1:
+        return None
+    (first_sample, first_window), (last_sample, last_window) = readings[0], readings[-1]
+    points = last_window.percent - first_window.percent
+    usd = last_sample.usd - first_sample.usd
+    if points < 0 or usd < 0:
+        raise ConfigError(
+            f"{where}: the {kind} readings go backwards within one window period "
+            f"(points {points}, spend ${usd:.4f})"
+        )
+    return RunPoints(kind, points, usd)
 
 
 def render_limits(samples: Sequence[LimitSample], rates: Sequence[WindowRate]) -> str:

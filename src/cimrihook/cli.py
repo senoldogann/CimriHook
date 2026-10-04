@@ -15,6 +15,7 @@ from cimrihook.bench import (
     Protocol,
     Variant,
     load_results,
+    load_run_limits,
     load_tasks,
     plan_runs,
     remeasure_results,
@@ -432,13 +433,13 @@ def main() -> None:
             bench_run(args)
         elif command == "bench-report":
             results_dir = Path(str(args.results_dir)) / str(args.name)
-            print(render_bench_report(load_results(results_dir)))
+            results = load_results(results_dir)
+            print(render_bench_report(results, load_run_limits(results_dir, results)))
         elif command == "bench-remeasure":
             name = str(args.name)
-            results = remeasure_results(
-                Path(str(args.results_dir)) / name, Path(str(args.work_dir)) / name
-            )
-            print(render_bench_report(results))
+            results_dir = Path(str(args.results_dir)) / name
+            results = remeasure_results(results_dir, Path(str(args.work_dir)) / name)
+            print(render_bench_report(results, load_run_limits(results_dir, results)))
         elif command == "bench-calibrate":
             results_dir = Path(str(args.results_dir)) / str(args.name)
             print(render_calibration(load_results(results_dir)))

@@ -36,7 +36,8 @@ Variants (mechanism ablation):
 - meter and meter-governor: behave like baseline and governor, but the CimriHook mod is loaded
   only as a limit meter: after every turn the use percentage of the subscription's 5-hour and
   weekly windows is written next to the run as `<run>.limits.jsonl` (Claude Code only, with a
-  subscription). For an A/B in window points both arms must be meter.
+  subscription). For an A/B in window points both arms must be meter; the report then sets the
+  points of meter-governor against meter, and the account should otherwise be idle meanwhile.
 
 Measurement:
 - The primary cost is at the provider level and includes compaction and helper calls. For Claude
@@ -71,6 +72,7 @@ from pathlib import Path
 from typing import Final
 
 from cimrihook.errors import BenchError
+from cimrihook.limits import WINDOW_NAMES, LimitSample, RunPoints, run_points, session_samples
 from cimrihook.mods import MOD_NAME, write_mod
 from cimrihook.settings import governor_env, merge_settings
 from cimrihook.simulate import (
@@ -221,6 +223,7 @@ MOD_VARIANTS: Final = frozenset(
 # behave like baseline and governor, and each run keeps its readings next to its result.
 METER_VARIANTS: Final = frozenset({Variant.METER, Variant.METER_GOVERNOR})
 LIMITS_SUFFIX: Final = ".limits.jsonl"  # per-run window readings, beside the run result
+RUN_MIN_POINTS: Final = 3.0  # mean points per run under which a window is too coarse to compare
 METER_DIR: Final = "meter"  # CIMRIHOOK_HOME of a mod arm, inside the run directory
 BOUNDARY_TOKENS: Final = 100_000  # boundary arm: compact before a prompt above this context
 RTK_VARIANTS: Final = frozenset({Variant.RTK, Variant.RTK_GOVERNOR})
@@ -1607,6 +1610,21 @@ def load_results(results_dir: Path) -> tuple[RunResult, ...]:
     )
 
 
+def load_run_limits(
+    results_dir: Path, results: Sequence[RunResult]
+) -> dict[str, tuple[LimitSample, ...]]:
+    """The window readings of every measured meter run, by run id; a missing file is an error."""
+    readings: dict[str, tuple[LimitSample, ...]] = {}
+    for result in results:
+        if result.error is not None or Variant(result.mechanism) not in METER_VARIANTS:
+            continue
+        path = limits_path(results_dir, result.run_id)
+        if not path.is_file():
+            raise BenchError(f"{path}: the readings of meter run {result.run_id} are missing")
+        readings[result.run_id] = tuple(session_samples(path))
+    return readings
+
+
 def result_from_json(data: dict[str, object], where: str) -> RunResult:
     """Reads a result file, validating the types; a file in the old schema is an error."""
     schema = data.get("schema")
@@ -1768,14 +1786,16 @@ def scenario(result: RunResult) -> str:
     return f"{result.task_id}/{result.protocol}"
 
 
-def render_bench_report(results: Sequence[RunResult]) -> str:
+def render_bench_report(
+    results: Sequence[RunResult], run_limits: Mapping[str, Sequence[LimitSample]]
+) -> str:
     """Cell summaries, scenario- and agent-level A/B comparisons, and the unmeasurable runs.
 
     The primary cost is at the provider level (Claude Code: USD, Codex: base input units with the
     price table) and includes the compaction requests; the 'transcript' column does not. The
     agent-level summary combines with equal weight only the scenarios in which both arms have the
     same number of measured runs; with fewer than two measurements in an arm, no confidence
-    interval is given.
+    interval is given. The meter arms' window readings (by run id) add the limit-use section.
     """
     measured = [result for result in results if result.error is None]
     errors = [result for result in results if result.error is not None]
@@ -1806,6 +1826,7 @@ def render_bench_report(results: Sequence[RunResult]) -> str:
         *checkpoint_comparisons(costed),
         "Codex price-sheet sensitivity (pooled ratio over cached x0.1/0.25 and output x4/6/8):",
         *codex_sensitivity(costed),
+        *limit_use_lines(measured, run_limits),
         *(f"  unmeasured {result.run_id}: {result.error}" for result in errors),
     ]
     return "\n".join(lines)
@@ -2129,6 +2150,93 @@ def codex_sensitivity(costed: Sequence[RunResult]) -> list[str]:
             f"{len(CODEX_SENSITIVITY)} price sheets"
         )
     return lines
+
+
+def limit_use_lines(
+    measured: Sequence[RunResult], run_limits: Mapping[str, Sequence[LimitSample]]
+) -> list[str]:
+    """The points the meter arms' runs moved the subscription's windows, per scenario and window.
+
+    A run's points are the window's percentage at its last reading minus its first, in one window
+    period; a run the window reset under is left out of that window. The windows report whole
+    percents, so each run is good to about one point. The governor arm is set against the meter
+    arm in points, in the spend between the same readings and in spend per point: if a list-price
+    dollar fills the window the same in both arms, the points follow the spend.
+    """
+    metered = [result for result in measured if result.run_id in run_limits]
+    if not metered:
+        return []
+    points_of = {
+        result.run_id: run_points(run_limits[result.run_id], result.run_id) for result in metered
+    }
+    lines = [
+        "Limit use of the meter arms (points a run moved the subscription's windows: the "
+        "percentage at its last reading minus its first, in one window period, whole percents):"
+    ]
+    for agent, label in sorted({(result.agent, scenario(result)) for result in metered}):
+        control = arm(metered, agent, label, Variant.METER.value)
+        treated = arm(metered, agent, label, Variant.METER_GOVERNOR.value)
+        kinds = sorted({p.kind for run in [*control, *treated] for p in points_of[run.run_id]})
+        for kind in kinds:
+            counted_control = kind_points_of(control, points_of, kind)
+            counted_treated = kind_points_of(treated, points_of, kind)
+            lines += [
+                f"  {agent:<7} {label:<32} {WINDOW_NAMES.get(kind, kind)}",
+                use_line(Variant.METER.value, len(control), counted_control),
+                use_line(Variant.METER_GOVERNOR.value, len(treated), counted_treated),
+                f"    {Variant.METER_GOVERNOR.value} vs {Variant.METER.value}: "
+                f"{use_comparison(counted_control, counted_treated)}",
+            ]
+    lines.append(
+        "  Use outside these runs (claude.ai, other sessions) also fills the windows: keep the "
+        "account otherwise idle while meter arms run."
+    )
+    return lines
+
+
+def kind_points_of(
+    runs: Sequence[RunResult], points_of: Mapping[str, Sequence[RunPoints]], kind: str
+) -> list[RunPoints]:
+    """The points of the runs that counted for one window kind."""
+    return [points for run in runs for points in points_of[run.run_id] if points.kind == kind]
+
+
+def use_line(mechanism: str, runs: int, counted: Sequence[RunPoints]) -> str:
+    """One arm's points, spend between its readings and spend per point for a window."""
+    if not counted:
+        return f"    {mechanism:<15} 0 of {runs} runs counted"
+    points = [run.points for run in counted]
+    spend = statistics.fmean(run.usd for run in counted)
+    per_point = (
+        f"${sum(run.usd for run in counted) / sum(points):,.2f} per point"
+        if statistics.fmean(points) >= RUN_MIN_POINTS
+        else "too coarse per run"
+    )
+    return (
+        f"    {mechanism:<15} {len(counted)} of {runs} runs  points {statistics.fmean(points):.1f}"
+        f" ({min(points):.0f}-{max(points):.0f})  spend ${spend:,.2f}  {per_point}"
+    )
+
+
+def use_comparison(control: Sequence[RunPoints], treated: Sequence[RunPoints]) -> str:
+    """Governor over meter in points, spend between the readings and spend per point."""
+    if not control or not treated:
+        return "none (an arm has no counted run)"
+    if min(statistics.fmean(run.points for run in arm_runs) for arm_runs in (control, treated)) < (
+        RUN_MIN_POINTS
+    ):
+        return f"none (under {RUN_MIN_POINTS:.0f} points per run: whole percents are too coarse)"
+    if any(run.points <= 0 or run.usd <= 0 for run in [*control, *treated]):
+        return "none (a run moved the window by less than a point or spent nothing)"
+    points = ratio_estimate([run.points for run in control], [run.points for run in treated])
+    spend = ratio_estimate([run.usd for run in control], [run.usd for run in treated])
+    per_point = ratio_estimate(
+        [run.usd / run.points for run in control], [run.usd / run.points for run in treated]
+    )
+    return (
+        f"points {ratio_text(points)}; spend {ratio_text(spend)}; "
+        f"spend per point {ratio_text(per_point)}"
+    )
 
 
 def render_calibration(results: Sequence[RunResult]) -> str:

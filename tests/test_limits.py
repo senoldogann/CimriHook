@@ -1,9 +1,19 @@
-"""The limit meter is a pure transformation; tested on two hand-computed sessions."""
+"""The limit meter is a pure transformation; tested on hand-computed sessions and runs."""
 
 import json
 from pathlib import Path
 
-from cimrihook.limits import read_samples, window_rates
+import pytest
+
+from cimrihook.errors import ConfigError
+from cimrihook.limits import (
+    LimitSample,
+    RunPoints,
+    WindowUse,
+    read_samples,
+    run_points,
+    window_rates,
+)
 
 
 def sample(t: float, usd: float, five: float, week: float) -> str:
@@ -33,3 +43,19 @@ def test_rates_join_sessions_within_a_window_period(tmp_path: Path) -> None:
     assert rates["five_hour"].usd_per_point() == 1.0
     assert rates["seven_day"].points == 1
     assert rates["seven_day"].usd_per_point() is None  # too few points to estimate
+
+
+def reading(t: float, usd: float, five: float, resets_at: str) -> LimitSample:
+    return LimitSample("run", t, usd, (WindowUse("five_hour", five, resets_at),))
+
+
+def test_run_points_are_last_minus_first_in_one_period() -> None:
+    steady = [reading(0, 1.0, 10, "A"), reading(60, 3.0, 12, "A"), reading(120, 5.0, 14, "A")]
+    assert run_points(steady, "steady") == [RunPoints("five_hour", 4, 4.0)]
+    # The window reset under the run: the readings of two periods are not one count.
+    assert run_points([*steady, reading(180, 7.0, 1, "B")], "reset") == []
+
+
+def test_run_points_refuse_readings_that_go_backwards() -> None:
+    with pytest.raises(ConfigError, match="backwards"):
+        run_points([reading(0, 1.0, 12, "A"), reading(60, 3.0, 10, "A")], "backwards")
