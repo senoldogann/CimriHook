@@ -33,6 +33,10 @@ Varyantlar (mekanizma ablasyonu):
 - boundary: pencere ve CimriHook mod'u görev sınırında sıkıştırmayla: bağlam BOUNDARY_TOKENS'ı
   geçtiyse yeni istemden önce sıkıştırılır; pencere görevin içindeki yedektir (yalnızca Claude
   Code).
+- meter ve meter-governor: baseline ve governor gibi davranır, ama CimriHook mod'u yalnızca
+  limit ölçeri olarak yüklenir: her turdan sonra aboneliğin 5 saatlik ve haftalık pencerelerinin
+  kullanım yüzdesi koşunun yanına `<koşu>.limits.jsonl` olarak yazılır (yalnızca Claude Code,
+  abonelikle). Pencere puanı cinsinden A/B için iki kol da meter olmalıdır.
 
 Ölçüm:
 - Birincil maliyet sağlayıcı düzeyindedir ve sıkıştırma ile yardımcı çağrıları içerir. Claude Code
@@ -203,6 +207,8 @@ class Variant(StrEnum):
     RTK_GOVERNOR = "rtk-governor"
     MASK = "mask"
     BOUNDARY = "boundary"
+    METER = "meter"
+    METER_GOVERNOR = "meter-governor"
 
 
 WINDOW_VARIANTS: Final = frozenset(
@@ -213,9 +219,17 @@ WINDOW_VARIANTS: Final = frozenset(
         Variant.RTK_GOVERNOR,
         Variant.MASK,
         Variant.BOUNDARY,
+        Variant.METER_GOVERNOR,
     }
 )
-MOD_VARIANTS: Final = frozenset({Variant.MASK, Variant.BOUNDARY})
+MOD_VARIANTS: Final = frozenset(
+    {Variant.MASK, Variant.BOUNDARY, Variant.METER, Variant.METER_GOVERNOR}
+)
+# Arms that load the mod only to record the subscription windows' use after every turn: they
+# behave like baseline and governor, and each run keeps its readings next to its result.
+METER_VARIANTS: Final = frozenset({Variant.METER, Variant.METER_GOVERNOR})
+LIMITS_SUFFIX: Final = ".limits.jsonl"  # per-run window readings, beside the run result
+METER_DIR: Final = "meter"  # CIMRIHOOK_HOME of a mod arm, inside the run directory
 BOUNDARY_TOKENS: Final = 100_000  # boundary arm: compact before a prompt above this context
 RTK_VARIANTS: Final = frozenset({Variant.RTK, Variant.RTK_GOVERNOR})
 RTK_HOOK_COMMAND: Final = "rtk hook claude"  # RTK 0.51'in Claude Code kurulumundaki komut
@@ -644,7 +658,17 @@ def execute_and_save(
     result_path(results_dir, result.run_id).write_text(
         json.dumps(asdict(result), indent=2), encoding="utf-8"
     )
+    if spec.variant in METER_VARIANTS:
+        lines = meter_lines(work_dir / result.run_id)
+        limits_path(results_dir, result.run_id).write_text(
+            "".join(f"{line}\n" for line in lines), encoding="utf-8"
+        )
     return result
+
+
+def limits_path(results_dir: Path, identifier: str) -> Path:
+    """File with the usage-window readings of a meter run."""
+    return results_dir / f"{identifier}{LIMITS_SUFFIX}"
 
 
 def result_path(results_dir: Path, identifier: str) -> Path:
@@ -752,7 +776,18 @@ def arm_problem(spec: RunSpec, run_dir: Path, compactions: int) -> str | None:
             return f"the brief hook succeeded {calls} times for {compactions} compactions"
     if spec.variant in CODEC_VARIANTS and codec_steps(run_dir / "ledger" / LEDGER_FILE) == 0:
         return "the codec hooks recorded no tool result in the run's ledger"
+    if spec.variant in METER_VARIANTS and not meter_lines(run_dir):
+        return "the mod recorded no usage-window reading in the run"
     return None
+
+
+def meter_lines(run_dir: Path) -> tuple[str, ...]:
+    """The mod's window readings of a run, oldest first; one JSON object per line."""
+    files = sorted((run_dir / METER_DIR / "limits").glob("*.jsonl"))
+    lines = [
+        line for file in files for line in file.read_text(encoding="utf-8").splitlines() if line
+    ]
+    return tuple(sorted(lines, key=lambda line: int(json.loads(line)["t"])))
 
 
 def codec_steps(ledger: Path) -> int:
@@ -1277,13 +1312,14 @@ def agent_env(spec: RunSpec, run_dir: Path, base: Mapping[str, str]) -> dict[str
         else {}
     )
     ledger = {"CIMRIHOOK_HOME": str(run_dir / "ledger")} if spec.variant in CODEC_VARIANTS else {}
+    meter = {"CIMRIHOOK_HOME": str(run_dir / METER_DIR)} if spec.variant in MOD_VARIANTS else {}
     mask = {"CIMRIHOOK_MOD_MASK": "1"} if spec.variant is Variant.MASK else {}
     boundary = (
         {"CIMRIHOOK_MOD_BOUNDARY_TOKENS": str(BOUNDARY_TOKENS)}
         if spec.variant is Variant.BOUNDARY
         else {}
     )
-    return allowed | window | ledger | mask | boundary
+    return allowed | window | ledger | meter | mask | boundary
 
 
 def plugin_args(spec: RunSpec, run_dir: Path) -> tuple[str, ...]:

@@ -11,6 +11,7 @@ from cimrihook.bench import (
     RunSpec,
     Task,
     Variant,
+    agent_env,
     arm_problem,
     claude_settings,
     codex_provider,
@@ -147,3 +148,21 @@ def test_task_definitions_cannot_inject_options_or_paths(tmp_path: Path) -> None
         load_task(path)
     for fragment in ("id", "ref", "repo", "package", "mutation path"):
         assert fragment in str(raised.value)
+
+
+def test_meter_arms_keep_their_readings_in_the_run_and_must_record_some(tmp_path: Path) -> None:
+    base = {"PATH": "/bin", "HOME": "/home/u"}
+    meter = spec(Agent.CLAUDE, Protocol.DEEPER, Variant.METER, 183_000)
+    governed = spec(Agent.CLAUDE, Protocol.DEEPER, Variant.METER_GOVERNOR, 183_000)
+    assert agent_env(meter, tmp_path, base)["CIMRIHOOK_HOME"] == str(tmp_path / "meter")
+    assert "CLAUDE_CODE_AUTO_COMPACT_WINDOW" not in agent_env(meter, tmp_path, base)
+    assert agent_env(governed, tmp_path, base)["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "183000"
+    assert "CIMRIHOOK_HOME" not in agent_env(
+        spec(Agent.CLAUDE, Protocol.DEEPER, Variant.GOVERNOR, 183_000), tmp_path, base
+    )
+    assert spec_problem(spec(Agent.CODEX, Protocol.SEQUENTIAL, Variant.METER, 60_000)) is not None
+    assert arm_problem(meter, tmp_path, 0) == "the mod recorded no usage-window reading in the run"
+    limits = tmp_path / "meter" / "limits"
+    limits.mkdir(parents=True)
+    (limits / "session.jsonl").write_text('{"t":1,"usd":0.1,"limits":[]}\n', encoding="utf-8")
+    assert arm_problem(meter, tmp_path, 0) is None

@@ -229,8 +229,8 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument(
         "--variants",
         default="baseline,governor",
-        help="baseline, governor, codec, combined, brief, rtk, rtk-governor, mask, boundary (all "
-        "but baseline and governor: claude only)",
+        help="baseline, governor, codec, combined, brief, rtk, rtk-governor, mask, boundary, "
+        "meter, meter-governor (all but baseline and governor: claude only)",
     )
     bench.add_argument("--reps", type=int, default=1)
     bench.add_argument("--claude-model", default=DEFAULT_CLAUDE_MODEL)
