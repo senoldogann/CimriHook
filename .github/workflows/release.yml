@@ -1,0 +1,42 @@
+# Publishes to PyPI when a version tag (v0.1.0) is pushed. PyPI trusted publishing needs no token:
+# register this repository and the workflow name `release` as a trusted publisher of the project on
+# PyPI, and create a GitHub environment named `pypi`.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - name: Check that the tag matches the package version
+        run: |
+          test "v$(uv version --short)" = "${GITHUB_REF_NAME}"
+          test "v$(uv run python -c 'import cimrihook; print(cimrihook.__version__)')" = "${GITHUB_REF_NAME}"
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run mypy
+      - run: uv run pytest -q
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

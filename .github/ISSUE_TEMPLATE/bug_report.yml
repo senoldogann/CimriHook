@@ -1,0 +1,23 @@
+name: Bug report
+description: Something does not work, or CimriHook did something to your settings you did not expect
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran, what you expected and what you got. Paste the error in full.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Output of `cimrihook --version`, and of `claude --version` or `codex --version`, and your OS.
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Settings involved
+      description: The relevant part of your settings file, with any secrets removed (`init --dry-run` already hides `env` and `headers` values).

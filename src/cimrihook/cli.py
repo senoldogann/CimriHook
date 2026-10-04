@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Final, NoReturn
 
+from cimrihook import __version__
 from cimrihook.bench import (
     Agent,
     Protocol,
@@ -99,6 +100,7 @@ class CliParser(argparse.ArgumentParser):
 def build_parser() -> argparse.ArgumentParser:
     """Argument parser with its subcommands."""
     parser = CliParser(prog="cimrihook", description="Context economics for AI coding agents.")
+    parser.add_argument("--version", action="version", version=f"cimrihook {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
     statusline = commands.add_parser(
         "statusline", help="print the Claude Code status line from its JSON input on stdin"

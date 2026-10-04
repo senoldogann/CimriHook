@@ -371,3 +371,6 @@ removed from CimriHook (the code is at the git tag `pre-trim`). They can no long
 uv sync
 uv run ruff check && uv run mypy && uv run pytest
 ```
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the conventions and how to share your own measurements;
+[SECURITY.md](SECURITY.md) lists what CimriHook reads and writes.

@@ -1,0 +1,39 @@
+name: Measurement
+description: Share what CimriHook measured on your own setup
+labels: [measurement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The README's numbers come from one account, one model and one kind of task. Numbers from
+        other setups are the most useful thing you can add. The output of `doctor` and `limits`
+        holds aggregates only (no paths or project names).
+  - type: textarea
+    id: limits
+    attributes:
+      label: "`cimrihook limits`"
+      description: The full output. One point of each usage window, in dollars at list prices, on your plan.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`cimrihook doctor`"
+      description: The first lines, up to and including "Bottom line".
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Plan, model and effort
+      description: For example "Max 5x, Opus 5.5 1M, medium".
+    validations:
+      required: true
+  - type: textarea
+    id: ab
+    attributes:
+      label: A/B result (optional)
+      description: The output of `cimrihook bench-report` for a result set you ran yourself.
+      render: text
