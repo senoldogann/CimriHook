@@ -1,12 +1,13 @@
-"""Codex CLI yapılandırması: otomatik sıkıştırma eşiği (~/.codex/config.toml).
+"""Codex CLI configuration: the auto-compaction threshold (~/.codex/config.toml).
 
-Codex hook'ları araç çıktısını değiştiremez ve OpenAI önbelleğinin ömrü belgelenmemiştir; Codex'te
-CimriHook'un kaldıracı sıkıştırma eşiğidir: `model_auto_compact_token_limit` (Codex bunu modelin
-penceresinin %90'ıyla sınırlar, toplam bağlama uygular). Python'un standart kütüphanesi TOML
-yazmaz: dosya metin olarak en küçük değişiklikle düzenlenir (yalnızca bu anahtarın satırı) ve sonuç
-tomllib ile yeniden okunup yalnızca bu anahtarın değiştiği doğrulanmadan yazılmaz. Önceki değer
-ayar dosyası başına kurulum kaydında tutulur; kaldırma, değer hâlâ CimriHook'unkiyse onu geri koyar.
-Fark çıktısı bağlam satırı içermez (yapılandırmada API anahtarları olabilir).
+Codex hooks cannot change tool output and the lifetime of OpenAI's cache is not documented, so
+on Codex CimriHook's lever is the compaction threshold: `model_auto_compact_token_limit` (Codex
+caps it at 90% of the model's window and applies it to the whole context). Python's standard
+library cannot write TOML: the file is edited as text with the smallest change (only the line
+of this key) and is not written until the result, read back with tomllib, shows that only this
+key changed. The previous value is kept in the install record per settings file; removal puts
+it back if the value is still CimriHook's. The diff output has no context lines (the
+configuration may hold API keys).
 """
 
 import difflib
@@ -38,7 +39,7 @@ type TomlTable = dict[str, object]
 
 @dataclass(frozen=True, slots=True)
 class CodexPlan:
-    """config.toml'da yapılacak değişiklik."""
+    """The change to make in config.toml."""
 
     path: Path
     before: str
@@ -48,7 +49,7 @@ class CodexPlan:
 
 
 def plan_codex_window(path: Path, window: int, home: Path) -> CodexPlan:
-    """Eşiği ayarlama planı; önceki CimriHook değeri varsa kullanıcının asıl değeri korunur."""
+    """Plan to set the threshold; the user's own value stays recorded if CimriHook set it before."""
     if window <= 0:
         raise ConfigError(f"--compact-window must be positive, got {window}")
     before = read_config(path)
@@ -63,7 +64,7 @@ def plan_codex_window(path: Path, window: int, home: Path) -> CodexPlan:
 
 
 def plan_codex_remove(path: Path, home: Path) -> CodexPlan:
-    """CimriHook'un yazdığı eşiği, değer hâlâ onunki ise önceki değerine döndürme planı."""
+    """Plan to restore the previous threshold, if the value is still the one CimriHook wrote."""
     before = read_config(path)
     current = top_level_integer(parse_toml(before, path), path)
     ours = next((c for c in load_record(home, path).settings if c.key == KEY), None)
@@ -75,7 +76,7 @@ def plan_codex_remove(path: Path, home: Path) -> CodexPlan:
 
 
 def read_config(path: Path) -> str:
-    """config.toml'un metni; dosya yoksa boş."""
+    """Text of config.toml; empty if the file does not exist."""
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
@@ -88,7 +89,7 @@ def parse_toml(text: str, path: Path) -> TomlTable:
 
 
 def top_level_integer(table: TomlTable, path: Path) -> int | None:
-    """Eşiğin dosyadaki değeri; yoksa None, tam sayı değilse hata."""
+    """The threshold's value in the file; None if absent, an error if it is not an integer."""
     value = table.get(KEY)
     if value is None:
         return None
@@ -98,7 +99,7 @@ def top_level_integer(table: TomlTable, path: Path) -> int | None:
 
 
 def checked_edit(text: str, value: int | None, path: Path) -> str:
-    """Eşiği ayarlar (None: siler) ve sonucun yalnızca bu anahtarda değiştiğini doğrular."""
+    """Sets the threshold (None: deletes it) and verifies that only this key changed."""
     before = parse_toml(text, path)
     edited = with_top_level_key(text, value)
     after = parse_toml(edited, path)
@@ -113,7 +114,7 @@ def checked_edit(text: str, value: int | None, path: Path) -> str:
 
 
 def with_top_level_key(text: str, value: int | None) -> str:
-    """Üst düzey anahtarın satırını ilk tablo başlığından önce yazar, değiştirir ya da siler."""
+    """Writes, replaces or deletes the line of a top-level key before the first table header."""
     lines = text.splitlines(keepends=True)
     first_table = next(
         (index for index, line in enumerate(lines) if TABLE_HEADER.match(line)), len(lines)
@@ -126,7 +127,7 @@ def with_top_level_key(text: str, value: int | None) -> str:
         return text
     insert_at = first_table
     while insert_at > 0 and not lines[insert_at - 1].strip():
-        insert_at -= 1  # anahtar, tablodan önceki boş satırların üstüne gelir
+        insert_at -= 1  # the key goes above the blank lines before the table
     head = lines[:insert_at]
     if head and not head[-1].endswith("\n"):
         head = [*head[:-1], head[-1] + "\n"]
@@ -134,7 +135,7 @@ def with_top_level_key(text: str, value: int | None) -> str:
 
 
 def render_codex_plan(plan: CodexPlan) -> str:
-    """Değişen satırlar (bağlam satırı olmadan) ve notlar."""
+    """Changed lines (without context lines) and notes."""
     diff = "\n".join(
         difflib.unified_diff(
             plan.before.splitlines(),
@@ -149,7 +150,7 @@ def render_codex_plan(plan: CodexPlan) -> str:
 
 
 def apply_codex_window(plan: CodexPlan, home: Path, now: float) -> str:
-    """Eşik planını uygular: önce kayıt, sonra yedek ve izinleri koruyan atomik yazım."""
+    """Applies the threshold plan: record first, then an atomic write with backup, same mode."""
     if plan.after == plan.before:
         return f"{render_codex_plan(plan)}\nalready set"
     save_record(home, plan.path, replace(plan.record, installed_at=now))
@@ -159,7 +160,7 @@ def apply_codex_window(plan: CodexPlan, home: Path, now: float) -> str:
 
 
 def apply_codex_remove(plan: CodexPlan, home: Path, now: float) -> str:
-    """Kaldırma planını uygular; kayıt yazımdan sonra temizlenir."""
+    """Applies the removal plan; the record is cleared after the write."""
     if plan.after == plan.before:
         return f"{render_codex_plan(plan)}\nnothing to remove"
     backup = write_config(plan.path, plan.after, now)
@@ -168,7 +169,7 @@ def apply_codex_remove(plan: CodexPlan, home: Path, now: float) -> str:
 
 
 def write_config(path: Path, text: str, now: float) -> Path | None:
-    """Metni yedekleyerek ve dosyanın izinlerini koruyarak atomik yazar."""
+    """Writes the text atomically, with a backup, keeping the file's permissions."""
     target = path.resolve()
     exists = target.exists()
     backup = backup_path(target, now) if exists else None

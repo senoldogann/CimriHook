@@ -1,7 +1,7 @@
-"""Claude Code ayar blokları: CimriHook bileşenleri ve bağlam yöneticisi.
+"""Claude Code settings blocks: the CimriHook components and the context governor.
 
-Her bileşen kendi bloğunu üretir; bloklar olay başına birleştirilir. Böylece bir bileşen diğerinin
-hook'unu ikinci kez kaydetmez ve ablasyon deneylerinde bileşenler ayrı ayrı açılabilir.
+Each component produces its own block and the blocks are merged per event. A component thus never
+registers another one's hook twice, and ablation experiments can switch components on separately.
 """
 
 import shlex
@@ -12,17 +12,17 @@ HOOK_TIMEOUT_SECONDS: Final = 10
 
 
 def command(python: str, subcommand: str) -> str:
-    """CimriHook alt komutunu verilen Python yorumlayıcısıyla çalıştıran kabuk komutu.
+    """Shell command that runs a CimriHook subcommand with the given Python interpreter.
 
-    Hook'lar ve durum satırı Claude Code'un izin istemlerinin dışında, oturumun çalışma dizininde
-    çalışır. `-I` yorumlayıcının o dizini (ve PYTHON* değişkenlerini) içe aktarma yoluna katmasını
-    engeller; yoksa projedeki bir `json.py` ya da `statistics.py` CimriHook'un yerine çalışırdı.
+    Hooks and the status line run outside Claude Code's permission prompts, in the session's working
+    directory. `-I` keeps the interpreter from adding that directory (and PYTHON* variables) to the
+    import path; without it a project's `json.py` or `statistics.py` would run in CimriHook's place.
     """
     return f"{shlex.quote(python)} -I -m cimrihook {subcommand}"
 
 
 def handler(python: str, subcommand: str) -> dict[str, object]:
-    """Komut tipindeki hook tanımı."""
+    """A command-type hook definition."""
     return {
         "type": "command",
         "command": command(python, subcommand),
@@ -31,38 +31,38 @@ def handler(python: str, subcommand: str) -> dict[str, object]:
 
 
 def guard_settings(python: str) -> dict[str, object]:
-    """Soğuk istem koruması: önbelleği soğumuş büyük oturuma istemden önce bir kez sorar."""
+    """Cold-prompt guard: asks once before a prompt into a large session whose cache went cold."""
     return {"hooks": {"UserPromptSubmit": [{"hooks": [handler(python, "guard")]}]}}
 
 
 def statusline_settings(python: str) -> dict[str, object]:
-    """Durum satırı: bağlam, önbellek sıcaklığı, sonraki isteğin maliyeti ve kullanım limitleri."""
+    """Status line: context, cache warmth, the next request's cost and the usage limits."""
     return {"statusLine": {"type": "command", "command": command(python, "statusline")}}
 
 
 def chained_statusline_command(ours: str, previous: str) -> str:
-    """Kullanıcının önceki durum satırı komutunu önce çalıştıran CimriHook durum satırı komutu."""
+    """CimriHook status line command that first runs the user's previous status line command."""
     return f"{ours} --after {shlex.quote(previous)}"
 
 
 def governor_settings(window: int) -> dict[str, object]:
-    """Bağlam yöneticisi: Claude Code'un kendi otomatik sıkıştırma penceresi ayarı.
+    """Context governor: Claude Code's own auto-compaction window setting.
 
-    Maliyetin büyük kısmı her istekte yeniden okunan bağlamdan geldiği için pencereyi küçültmek
-    en büyük kaldıraçtır; uygun pencere `cimrihook doctor` ile kullanıcının verisinden seçilir.
-    Claude Code 2.1.288 `autoCompactWindow` değerini (100000-1000000) modelin penceresiyle sınırlar
-    ve sıkıştırmayı pencere − 33000 bağlamda tetikler. Ortam değişkeninin aksine /autocompact ve
-    model başına ayarlar (modelSettings) bu değeri geçersiz kılabilir.
+    Most of the cost comes from the context re-read on every request, so shrinking the window is
+    the biggest lever; `cimrihook doctor` picks a suitable window from the user's own data. Claude
+    Code 2.1.288 caps `autoCompactWindow` (100000-1000000) at the model's window and triggers
+    compaction at the window − 33000 of context. Unlike the environment variable, /autocompact and
+    per-model settings (modelSettings) can override this value.
     """
     return {"autoCompactWindow": window}
 
 
 def cache_ttl_settings(main: str | None, subagent: str | None) -> dict[str, object]:
-    """Önbellek ömürleri: ana konuşma (promptCacheTtl) ve alt ajanlar (subagentPromptCacheTtl).
+    """Cache lifetimes: main conversation (promptCacheTtl) and subagents (subagentPromptCacheTtl).
 
-    Claude Code 2.1.242 ve sonrası; değer "5m" ya da "1h". 1 saatlik yazım 2×, 5 dakikalık 1.25×
-    fiyatlıdır, ama boşluk ömrü aşarsa sonraki istek bütün bağlamı yeniden yazar; hangisinin ucuz
-    olduğunu `cimrihook doctor` kullanıcının kendi duraklamalarından hesaplar.
+    Claude Code 2.1.242 and later; the value is "5m" or "1h". A 1-hour write costs 2x the input
+    price and a 5-minute write 1.25x, but if the pause outlasts the lifetime the next request writes
+    the whole context again; `cimrihook doctor` works out which is cheaper from the user's pauses.
     """
     return {
         **({} if main is None else {"promptCacheTtl": main}),
@@ -71,23 +71,24 @@ def cache_ttl_settings(main: str | None, subagent: str | None) -> dict[str, obje
 
 
 def mod_settings(plugin_dir: str) -> dict[str, object]:
-    """CimriHook mod'u: Claude Code eklenti klasörlerine (CLAUDE_CODE_PLUGIN_DIRS) eklenir.
+    """CimriHook mod: added to the Claude Code plugin folders (CLAUDE_CODE_PLUGIN_DIRS).
 
-    Kurulum, kullanıcının bu değişkende zaten olan klasörlerini korur ve bunu sona ekler.
+    The installation keeps the folders the user already has in this variable and adds the mod last.
     """
     return {"env": {"CLAUDE_CODE_PLUGIN_DIRS": plugin_dir}}
 
 
 def governor_env(window: int) -> dict[str, object]:
-    """Bağlam yöneticisi, ortam değişkeniyle: CLAUDE_CODE_AUTO_COMPACT_WINDOW her ayarı ezer.
+    """Context governor through the environment variable CLAUDE_CODE_AUTO_COMPACT_WINDOW.
 
-    A/B düzeneği bunu kullanır: kolun penceresi kullanıcı ya da proje ayarlarından etkilenmez.
+    It overrides every setting, so the A/B harness uses it: an arm's window is not affected by user
+    or project settings.
     """
     return {"env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": str(window)}}
 
 
 def merge_settings(blocks: Sequence[dict[str, object]]) -> dict[str, object]:
-    """Ayar bloklarını birleştirir: hook'lar olay başına eklenir, env anahtar başına birleşir."""
+    """Merges settings blocks: hooks are appended per event, env entries merged per key."""
     hooks: dict[str, list[object]] = {}
     env: dict[str, object] = {}
     rest: dict[str, object] = {}

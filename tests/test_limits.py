@@ -1,4 +1,4 @@
-"""Limit ölçerin kuru saf bir dönüşümdür; elle hesaplanmış iki oturumla test."""
+"""The limit meter is a pure transformation; tested on two hand-computed sessions."""
 
 import json
 from pathlib import Path
@@ -20,7 +20,7 @@ def sample(t: float, usd: float, five: float, week: float) -> str:
 
 
 def test_rates_join_sessions_within_a_window_period(tmp_path: Path) -> None:
-    # İki oturum aynı 5 saatlik dönemde: biri $3, öbürü $1 harcar; pencere 10'dan 14'e çıkar.
+    # Two sessions in one 5-hour period: one spends $3, the other $1; the window goes 10 -> 14.
     (tmp_path / "a.jsonl").write_text(
         "\n".join([sample(0, 1.0, 10, 30), sample(60, 4.0, 13, 31)]) + "\n", encoding="utf-8"
     )

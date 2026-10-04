@@ -1,4 +1,4 @@
-"""Codex config.toml düzenlemesi: yalnızca eşiğin satırı değişir, kaldırma eskisini geri koyar."""
+"""Codex config.toml editing: only the threshold's line changes, removal restores the old one."""
 
 import tomllib
 from pathlib import Path
@@ -47,7 +47,7 @@ def test_init_and_remove_restore_the_users_own_value(tmp_path: Path) -> None:
     home = tmp_path / "home"
     report = apply_codex_window(plan_codex_window(path, 100_000, home), home, 5.0)
     assert "+model_auto_compact_token_limit = 100000" in report
-    assert "OLLAMA_SECRET" not in report  # bağlam satırı yok
+    assert "OLLAMA_SECRET" not in report  # no context line
     assert tomllib.loads(path.read_text())["model_auto_compact_token_limit"] == 100_000
     assert path.stat().st_mode & 0o777 == 0o600
     apply_codex_window(plan_codex_window(path, 120_000, home), home, 6.0)  # ikinci ayar

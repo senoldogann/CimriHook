@@ -1,4 +1,4 @@
-"""Uçtan uca: gerçek CLI süreci, gerçek transcript dosyası ve SQLite defteriyle korumalar."""
+"""End to end: the guards with a real CLI process, a real transcript file and a SQLite ledger."""
 
 import json
 import os
@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 def response(idle_seconds: float, context: int) -> dict[str, object]:
-    """`idle_seconds` önce gelmiş, 1 saatlik önbellekle yazılmış bir API yanıtı satırı."""
+    """An API response line that arrived `idle_seconds` ago, written with a 1-hour cache."""
     stamp = datetime.fromtimestamp(time.time() - idle_seconds, UTC)
     usage = {
         "input_tokens": 0,
@@ -27,19 +27,19 @@ def response(idle_seconds: float, context: int) -> dict[str, object]:
 
 
 def write_lines(tmp: Path, entries: list[dict[str, object]]) -> Path:
-    """Satırları bir oturum transcript'ine yazar."""
+    """Writes the lines to a session transcript."""
     path = tmp / "session.jsonl"
     path.write_text("".join(json.dumps(entry) + "\n" for entry in entries), encoding="utf-8")
     return path
 
 
 def transcript(tmp: Path, idle_seconds: float, context: int) -> Path:
-    """Son yanıtı `idle_seconds` önce gelmiş, 1 saatlik önbellekle yazılmış bir oturum."""
+    """A session whose last response arrived `idle_seconds` ago, written with a 1-hour cache."""
     return write_lines(tmp, [response(idle_seconds, context)])
 
 
 def run(command: str, payload: dict[str, object], home: Path, disable: str) -> str:
-    """CimriHook alt komutunu ayrı süreçte çalıştırır ve stdout'unu döndürür."""
+    """Runs a CimriHook subcommand in a separate process and returns its stdout."""
     completed = subprocess.run(
         [sys.executable, "-m", "cimrihook", command],
         input=json.dumps(payload),
@@ -53,7 +53,7 @@ def run(command: str, payload: dict[str, object], home: Path, disable: str) -> s
 
 
 def prompt(path: Path, text: str) -> dict[str, object]:
-    """UserPromptSubmit yükü."""
+    """UserPromptSubmit payload."""
     return {
         "session_id": "s",
         "transcript_path": str(path),
@@ -68,7 +68,7 @@ def test_cold_large_session_is_stopped_once_then_passes(tmp_path: Path) -> None:
     home = tmp_path / "home"
     decision = json.loads(run("guard", prompt(path, "next step please"), home, ""))
     assert decision["decision"] == "block"
-    # 300000 x 2.0 (1 saatlik yazım) x $4/MTok = $2.40
+    # 300000 x 2.0 (1-hour write) x $4/MTok = $2.40
     assert "re-cache the whole 300k-token conversation (about $2.40" in decision["reason"]
     assert "/compact" in decision["reason"]
     assert run("guard", prompt(path, "next step please"), home, "") == ""
@@ -116,5 +116,5 @@ def test_bad_arguments_fail_open_instead_of_blocking(tmp_path: Path) -> None:
         check=False,
         env={**os.environ, "CIMRIHOOK_HOME": str(tmp_path / "home")},
     )
-    assert completed.returncode == 1  # 2 olsaydı Claude Code istemi durdururdu
+    assert completed.returncode == 1  # if it were 2, Claude Code would block the prompt
     assert "unrecognized arguments" in completed.stderr

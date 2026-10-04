@@ -65,8 +65,8 @@ DEFAULT_SIMULATE_DAYS: Final = 30
 DEFAULT_DOCTOR_DAYS: Final = 7
 DEFAULT_SETTINGS_PATH: Final = "~/.claude/settings.json"
 DEFAULT_CODEX_CONFIG_PATH: Final = "~/.codex/config.toml"
-# Sıkıştırmadan sonraki ilk isteğin bağlamı yeniden eklenen dosyaları zaten içerir; gerçek
-# oturumlarda bunun dışında yeniden okuma medyanı sıfırdır.
+# The context of the first request after a compaction already includes the re-attached files; in
+# real sessions the median re-read beyond that is zero.
 DEFAULT_REFETCH_TOKENS: Final = MEASURED_REFETCH_TOKENS
 DEFAULT_REFETCH_REQUESTS: Final = MEASURED_REFETCH_REQUESTS
 SIMULATORS: Final = {"claude": simulate_claude, "codex": simulate_codex}
@@ -85,11 +85,11 @@ PRIVATE_UMASK: Final = 0o077
 
 
 class CliParser(argparse.ArgumentParser):
-    """Hatalı argümanda argparse'ın 2 koduyla çıkması yerine ConfigError yükseltir.
+    """Raises ConfigError on a bad argument instead of exiting with argparse's code 2.
 
-    Komutlar hook olarak çalışır; Claude Code'da 2 çıkış kodu istemi ya da sıkıştırmayı engeller.
-    Ayar dosyasındaki komut ile kurulu sürüm uyuşmazsa (ör. bilinmeyen bir argüman) bu, her istemi
-    durdururdu. Alt komut ayrıştırıcıları bu sınıfı devralır.
+    The commands run as hooks, and in Claude Code exit code 2 blocks the prompt or the compaction.
+    If the command in the settings file and the installed version disagree (for example an unknown
+    argument), this would stop every prompt. The subcommand parsers inherit this class.
     """
 
     def error(self, message: str) -> NoReturn:
@@ -97,7 +97,7 @@ class CliParser(argparse.ArgumentParser):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Alt komutlarıyla argüman ayrıştırıcı."""
+    """Argument parser with its subcommands."""
     parser = CliParser(prog="cimrihook", description="Context economics for AI coding agents.")
     commands = parser.add_subparsers(dest="command", required=True)
     statusline = commands.add_parser(
@@ -286,12 +286,12 @@ def selected_blocks(args: argparse.Namespace, home: Path) -> list[dict[str, obje
 
 
 def optional_int(value: object) -> int | None:
-    """argparse'ın verilmemiş (None) ya da tam sayı değeri."""
+    """An argparse value that is either not given (None) or an integer."""
     return None if value is None else int(str(value))
 
 
 def split_csv(raw: str) -> tuple[str, ...]:
-    """Virgülle ayrılmış değerler."""
+    """Comma-separated values."""
     return tuple(part.strip() for part in raw.split(",") if part.strip())
 
 
@@ -326,7 +326,7 @@ def parse_variants(raw: str) -> tuple[Variant, ...]:
 
 
 def bench_run(args: argparse.Namespace) -> None:
-    """A/B matrisini kurar ve eksik çalıştırmaları yürütür."""
+    """Builds the A/B matrix and runs the missing runs."""
     name = str(args.name)
     all_tasks = load_tasks(Path(str(args.tasks_dir)))
     tasks = all_tasks if args.tasks is None else select_tasks(all_tasks, split_csv(str(args.tasks)))
@@ -351,9 +351,9 @@ def bench_run(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    """CLI giriş noktası; CimriHook hataları tek satırlık mesaj ve çıkış kodu 1 ile biter.
+    """CLI entry point; CimriHook errors end with a one-line message and exit code 1.
 
-    Oluşturulan dosyalar (defter, kurulum kaydı, yedekler) yalnızca kullanıcıya açıktır.
+    Files it creates (ledger, install record, backups) are open to the user only.
     """
     os.umask(PRIVATE_UMASK)
     try:

@@ -1,4 +1,4 @@
-"""Simülatörün maliyet muhasebesi saf bir dönüşümdür; elle hesaplanmış küçük bir oturumla test."""
+"""Simulator cost accounting is a pure transformation; tested on a small hand-computed session."""
 
 from cimrihook.simulate import (
     OBSERVED,
@@ -22,7 +22,8 @@ MODEL = CostModel(
     refetch_tokens=0,
     refetch_requests=0,
 )
-# İstek 1: 100 token ilk kez yazılır (soğuk). İstek 2: 100 okunur, 20 yazılır (bağlam 120).
+# Request 1: 100 tokens are written for the first time (cold). Request 2: 100 are read, 20
+# written (context 120).
 TRACE = SessionTrace(
     requests=(Usage(0, 100, 0, 0, 0), Usage(0, 20, 0, 100, 0)),
     model="test",
@@ -40,13 +41,14 @@ def test_observed_replay_charges_the_logged_reads_and_writes() -> None:
 
 
 def test_compaction_rewrites_only_the_part_that_is_not_still_cached() -> None:
-    # İstek 2'den önce 110'u aşan bağlam sıkıştırılır: özetleme 120 x 0.1 okur ve 10 x 5 üretir;
-    # yeni bağlamın (60) önbellekte kalan 40'ı okunur, kalan 20'si yazılır: 200 + 62 + 40 + 4.
+    # Before request 2 a context above 110 is compacted: the summarisation reads 120 x 0.1 and
+    # produces 10 x 5; of the new context (60) the 40 that stays cached is read and the remaining
+    # 20 is written: 200 + 62 + 40 + 4.
     assert simulate_trace(TRACE, Policy("p", 110, None), MODEL, PRICES) == (306.0, 1, 160)
 
 
 def test_a_warm_request_that_adds_much_new_content_is_not_cold() -> None:
-    # Önceki bağlam 42.9k'nın tamamı okundu, üstüne 67k yeni içerik yazıldı: önbellek sıcak.
+    # The whole previous 42.9k context was read and 67k of new content written: the cache is warm.
     grown = Usage(uncached=0, write_5m=0, write_1h=67_125, read=42_908, output=100)
     assert not is_cold(grown, 42_910)
     expired = Usage(uncached=0, write_5m=0, write_1h=110_000, read=20_000, output=100)
@@ -54,7 +56,7 @@ def test_a_warm_request_that_adds_much_new_content_is_not_cold() -> None:
 
 
 def test_model_prices_follow_the_official_table() -> None:
-    """Önek eşleşmesi sıraya bağlıdır: Opus 5 ve Fable 5 sonraki sürümlerden farklı fiyatlıdır."""
+    """Prefix matching depends on order: Opus 5 and Fable 5 are priced unlike later versions."""
     assert usd_per_token("claude-opus-5-5[1m]") == 4.0 / 1e6
     assert usd_per_token("claude-opus-5") == 5.0 / 1e6
     assert usd_per_token("claude-opus-4-8") == 5.0 / 1e6

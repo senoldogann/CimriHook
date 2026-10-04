@@ -1,4 +1,4 @@
-"""Maliyet anatomisi elle hesaplanmış küçük bir transcript üzerinde (saf dönüşüm)."""
+"""Cost anatomy on a small hand-computed transcript (a pure transformation)."""
 
 import json
 from datetime import UTC, datetime
@@ -15,7 +15,7 @@ T0 = 1_791_000_000.0
 
 
 def assistant(message_id: str, model: str, seconds: float, read: int, written: int) -> str:
-    """1 saatlik önbellek yazımıyla, 100 çıktı tokenlı asistan satırı."""
+    """An assistant line with a 1-hour cache write and 100 output tokens."""
     usage = {
         "input_tokens": 0,
         "cache_creation_input_tokens": written,
@@ -32,7 +32,7 @@ def assistant(message_id: str, model: str, seconds: float, read: int, written: i
 
 
 def seconds_to_iso(epoch: float) -> str:
-    """Epoch saniyeyi transcript'teki ISO biçimine çevirir."""
+    """Converts epoch seconds to the ISO format used in the transcript."""
     return datetime.fromtimestamp(epoch, UTC).isoformat().replace("+00:00", "Z")
 
 
@@ -53,8 +53,8 @@ def test_anatomy_prices_bands_and_explains_a_cold_rewrite(tmp_path: Path) -> Non
     path = tmp_path / "session.jsonl"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     anatomy = build_anatomy([scan_transcript(path, False)], 7)
-    # Opus 5.x: $4/MTok taban; okuma 0.05, 1 saatlik yazım 2.0, çıktı 5.
-    # Taban birimler: 60500 + 6000 + 31000 + 300500 = 398000 -> $1.592.
+    # Opus 5.x: $4/MTok base; read 0.05, 1-hour write 2.0, output 5.
+    # Base units: 60500 + 6000 + 31000 + 300500 = 398000 -> $1.592.
     assert anatomy.requests == 4
     assert anatomy.total_usd == pytest.approx(1.592)
     assert sum(share.usd for share in anatomy.bands) == pytest.approx(anatomy.total_usd)
@@ -77,7 +77,7 @@ def test_a_forked_transcript_and_old_requests_are_not_counted_again(tmp_path: Pa
         + "\n",
         encoding="utf-8",
     )
-    fork = tmp_path / "b.jsonl"  # çatal: geçmişi kopyalar, sonra kendi isteğiyle sürer
+    fork = tmp_path / "b.jsonl"  # fork: copies the history, then continues with its own request
     fork.write_text(
         original.read_text(encoding="utf-8")
         + assistant("m2", "claude-opus-5-5", 60, 32_000, 1_000)
@@ -96,7 +96,7 @@ def test_an_empty_log_directory_is_an_error_not_a_zero_report(tmp_path: Path) ->
 
 
 def test_cache_lifetime_replay_prices_pauses_with_both_lifetimes(tmp_path: Path) -> None:
-    # Ana oturum, 1 saatlik önbellek: 100k bağlam, sonra 10 dakika ara ve 2k yeni girdi.
+    # Main session, 1-hour cache: 100k context, then a 10-minute gap and 2k of new input.
     lines = [
         assistant("m1", "claude-opus-5-5", 0, 0, 100_000),
         assistant("m2", "claude-opus-5-5", 600, 100_100, 2_000),
@@ -104,9 +104,9 @@ def test_cache_lifetime_replay_prices_pauses_with_both_lifetimes(tmp_path: Path)
     path = tmp_path / "session.jsonl"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     main, _ = replay_lifetimes([scan_transcript(path, False)])
-    # 1h: ilk istek 100k x 2 = 200,000; ikincisi 100.1k okur (x0.05) ve 2k yazar (x2): 209,005
-    # taban. 5m: 10 dakikalık ara önbelleği soğutur, ikinci istek 102.1k'yı x1.25 yeniden yazar:
-    # 125,000 + 127,625 = 252,625 taban. Opus 5.x: $4/MTok.
+    # 1h: the first request 100k x 2 = 200,000; the second reads 100.1k (x0.05) and writes 2k (x2):
+    # 209,005 base. 5m: the 10-minute gap cools the cache, the second request rewrites 102.1k at
+    # x1.25: 125,000 + 127,625 = 252,625 base. Opus 5.x: $4/MTok.
     assert main.current == "1h"
     assert main.one_hour_usd == pytest.approx(209_005 * 4e-6)
     assert main.five_minutes_usd == pytest.approx(252_625 * 4e-6)

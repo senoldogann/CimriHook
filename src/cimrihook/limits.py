@@ -1,18 +1,19 @@
-"""Limit ölçer: aboneliğin 5 saatlik ve haftalık pencerelerinin liste fiyatıyla kuru.
+"""Limit meter: the rate of the subscription's 5-hour and weekly windows in list-price dollars.
 
-Pro ve Max aboneliklerinde fatura yoktur; kullanım 5 saatlik ve haftalık pencerelerin yüzdesi
-olarak dolar. Anthropic bir token türünün (önbellek okuma, yazma, çıktı) pencerede ne kadar
-saydığını yayımlamaz, ama Claude Code'un kendi arayüzü model ya da efor değiştirmenin "her şeyi
-yeniden okuduğunu ve kullanımına eklendiğini" söyler: pencereyi dolduran, CimriHook'un liste
-fiyatıyla saydığı token akışlarıdır.
+Pro and Max subscriptions have no bill; usage fills a 5-hour and a weekly window, shown as a
+percentage. Anthropic does not publish how much a token type (cache read, write, output) counts
+in a window, but Claude Code's own interface says that switching the model or the effort
+"re-reads everything so far, which adds to your usage": what fills the window are the token
+flows CimriHook counts at list prices.
 
-CimriHook mod'u her ölçümde (her turdan sonra ve bir pencere bir puan ilerlediğinde) oturumun o
-ana kadarki liste fiyatı harcamasını ve pencerelerin yüzdesini `limits/<oturum>.jsonl` dosyasına
-ekler. Burada tüm oturumların kayıtları birleştirilir: her pencere döneminde (aynı sıfırlanma
-zamanı) gözlenen yüzde artışı, oturumların aynı dönemdeki harcama artışlarının toplamıyla
-karşılaştırılır ve "pencerenin bir puanı kaç dolarlık kullanım" kuru çıkar. claude.ai sohbetleri,
-mod'u olmayan oturumlar ve A/B koşuları da pencereyi doldurur ama kayda geçmez; böyle kullanım
-varken kur bir puanın dolar karşılığını olduğundan düşük gösterir.
+On every measurement (after every turn, and when a window advances by a point) the CimriHook mod
+appends the session's list-price spend so far and the windows' percentages to
+`limits/<session>.jsonl`. Here the records of all sessions are combined: in each window period
+(the same reset time), the observed rise in percentage is compared with the sum of the spend
+increases of the sessions in that period, which yields the rate "one point of the window is this
+many dollars of usage". claude.ai chats, sessions without the mod and A/B runs also fill the
+window but are not recorded; with such use the rate shows a point as worth fewer dollars than it
+is.
 """
 
 import json
@@ -25,50 +26,50 @@ from typing import Final, TypeGuard
 from cimrihook.errors import ConfigError
 
 LIMITS_DIR: Final = "limits"
-MIN_POINTS: Final = 3.0  # bir kurdan söz etmek için gözlenmesi gereken toplam puan
+MIN_POINTS: Final = 3.0  # total points that must be observed before a rate is stated
 WINDOW_NAMES: Final = {"five_hour": "5-hour window", "seven_day": "weekly window"}
 
 
 @dataclass(frozen=True, slots=True)
 class WindowUse:
-    """Bir ölçümde bir pencerenin kullanılan yüzdesi."""
+    """The used percentage of one window in one measurement."""
 
-    kind: str  # five_hour, seven_day ya da bir ağ geçidinin spend_limit'i
+    kind: str  # five_hour, seven_day or a gateway's spend_limit
     percent: float
-    resets_at: str  # dönemi ayırır; aynı sıfırlanma zamanı aynı dönemdir
+    resets_at: str  # separates the periods; the same reset time is the same period
 
 
 @dataclass(frozen=True, slots=True)
 class LimitSample:
-    """Mod'un bir oturumda yaptığı tek ölçüm."""
+    """One measurement the mod makes in a session."""
 
     session: str
     time: float  # epoch saniye
-    usd: float  # oturumun o ana kadarki liste fiyatı harcaması
+    usd: float  # the session's list-price spend up to that moment
     windows: tuple[WindowUse, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class WindowRate:
-    """Bir pencere türünün gözlenen dönemlerdeki puan ve harcama toplamı."""
+    """Points and spend summed over the observed periods of one window kind."""
 
     kind: str
-    periods: int  # en az bir puan ilerlediği gözlenen dönem
+    periods: int  # periods in which at least one point of progress was observed
     points: float
     usd: float
 
     def usd_per_point(self) -> float | None:
-        """Pencerenin bir puanına düşen liste fiyatı harcama; yeterli puan yoksa None."""
+        """List-price spend per point of the window; None if there are not enough points."""
         return self.usd / self.points if self.points >= MIN_POINTS else None
 
 
 def limits_dir(home: Path) -> Path:
-    """Mod'un ölçüm dosyalarının dizini."""
+    """Directory of the mod's measurement files."""
     return home / LIMITS_DIR
 
 
 def read_samples(directory: Path) -> list[LimitSample]:
-    """Tüm oturumların ölçümleri, zamana göre sıralı."""
+    """The measurements of all sessions, ordered by time."""
     if not directory.is_dir():
         raise ConfigError(
             f"no limit samples in {directory}: the CimriHook mod writes them on a subscription "
@@ -81,7 +82,7 @@ def read_samples(directory: Path) -> list[LimitSample]:
 
 
 def session_samples(path: Path) -> list[LimitSample]:
-    """Bir oturum dosyasının ölçümleri; bozuk satır dosya ve satır numarasıyla hata verir."""
+    """Measurements of one session file; a corrupt line is an error naming file and line."""
     return [
         parse_sample(path.stem, line, f"{path}:{number}")
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
@@ -90,7 +91,7 @@ def session_samples(path: Path) -> list[LimitSample]:
 
 
 def parse_sample(session: str, line: str, where: str) -> LimitSample:
-    """Mod'un yazdığı tek satır: `{"t": ms, "usd": ..., "limits": [{kind, percentUsed, ...}]}`."""
+    """One line the mod writes: `{"t": ms, "usd": ..., "limits": [{kind, percentUsed, ...}]}`."""
     try:
         raw: object = json.loads(line)
     except ValueError as error:
@@ -109,7 +110,7 @@ def parse_sample(session: str, line: str, where: str) -> LimitSample:
 
 
 def parse_window(window: object, where: str) -> WindowUse:
-    """Bir pencerenin kullanımı: tür, yüzde ve sıfırlanma zamanı."""
+    """Use of one window: kind, percentage and reset time."""
     if not isinstance(window, dict):
         raise ConfigError(f"{where}: a window must be a JSON object")
     kind, percent, resets_at = window.get("kind"), window.get("percentUsed"), window.get("resetsAt")
@@ -119,15 +120,16 @@ def parse_window(window: object, where: str) -> WindowUse:
 
 
 def is_number(value: object) -> TypeGuard[int | float]:
-    """JSON sayısı mı (bool hariç)?"""
+    """Is the value a JSON number (bool excluded)?"""
     return isinstance(value, int | float) and not isinstance(value, bool)
 
 
 def window_rates(samples: Sequence[LimitSample]) -> list[WindowRate]:
-    """Her pencere türü için gözlenen puan artışı ve aynı dönemlerdeki harcama artışı.
+    """Observed rise in points per window kind and the spend rise in the same periods.
 
-    Bir oturumun art arda iki ölçümü arasındaki harcama, sonraki ölçümün dönemine yazılır. Bir
-    dönemin puanı, o dönemde gözlenen en yüksek ve en düşük yüzdenin farkıdır.
+    The spend between two consecutive measurements of a session goes to the later measurement's
+    period. A period's points are the difference between the highest and the lowest percentage
+    observed in it.
     """
     percents: dict[tuple[str, str], list[float]] = defaultdict(list)
     spend: dict[tuple[str, str], float] = defaultdict(float)
@@ -153,7 +155,7 @@ def window_rates(samples: Sequence[LimitSample]) -> list[WindowRate]:
 
 
 def render_limits(samples: Sequence[LimitSample], rates: Sequence[WindowRate]) -> str:
-    """`cimrihook limits` çıktısı."""
+    """Output of `cimrihook limits`."""
     sessions = len({sample.session for sample in samples})
     lines = [
         f"CimriHook limits: {len(samples):,} measurements from {sessions:,} sessions "

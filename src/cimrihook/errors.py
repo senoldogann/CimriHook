@@ -1,25 +1,25 @@
-"""CimriHook'a özgü hata tipleri."""
+"""CimriHook's own error types."""
 
 
 class CimriHookError(Exception):
-    """Tüm CimriHook hatalarının tabanı."""
+    """Base of all CimriHook errors."""
 
 
 class HookPayloadError(CimriHookError):
-    """Claude Code hook yükü ya da araç sonucu beklenen şemaya uymuyor."""
+    """A Claude Code hook payload or a tool result does not match the expected schema."""
 
 
 class ConfigError(CimriHookError):
-    """Ortam değişkeni yapılandırması geçersiz."""
+    """The environment variable configuration is invalid."""
 
 
 class BenchError(CimriHookError):
-    """Değerlendirme düzeneği kurulamadı ya da bir çalıştırma ölçülemedi."""
+    """The evaluation harness could not be set up or a run could not be measured."""
 
 
 class TranscriptError(CimriHookError):
-    """Transcript okunamadı ya da kaydı beklenen biçimde değil."""
+    """A transcript could not be read or its record is not in the expected format."""
 
 
 class LedgerError(CimriHookError):
-    """Defter veritabanına erişilemedi (kilit, izin ya da bozuk dosya)."""
+    """The ledger database could not be accessed (lock, permissions or a corrupt file)."""

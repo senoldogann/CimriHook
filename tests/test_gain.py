@@ -1,4 +1,4 @@
-"""Kazanç raporu: kurulumdan önceki ve sonraki istekler, gerçek dosyalarla."""
+"""Gain report: requests before and after the install, with real files."""
 
 import json
 from datetime import UTC, datetime
@@ -15,7 +15,7 @@ T0 = 1_791_000_000.0
 
 
 def assistant(message_id: str, seconds: float, read: int, written: int) -> str:
-    """T0'dan `seconds` sonra gelmiş, 1 saatlik önbellekle yazılmış bir Opus 5.5 yanıtı."""
+    """An Opus 5.5 response that came `seconds` after T0, written with a 1-hour cache."""
     usage = {
         "input_tokens": 0,
         "cache_creation_input_tokens": written,
@@ -31,7 +31,7 @@ def assistant(message_id: str, seconds: float, read: int, written: int) -> str:
 def test_gain_splits_requests_at_the_install_time(tmp_path: Path) -> None:
     projects = tmp_path / "projects" / "p"
     projects.mkdir(parents=True)
-    # Kurulumdan önce 300k bağlamlı iki istek, sonra 100k bağlamlı iki istek (Opus 5.x).
+    # Two requests with a 300k context before the install, then two with a 100k context (Opus 5.x).
     lines = [
         assistant("b1", -7_000, 299_000, 1_000),
         assistant("b2", -6_000, 299_000, 1_000),
@@ -85,10 +85,10 @@ def test_receipt_reprices_the_same_requests_without_the_automatic_compaction(
     settings = tmp_path / "settings.json"
     save_record(home, settings, InstallRecord((), (), T0))
     receipt = measure_gain(tmp_path / "projects", home, settings, T0 + 7_200).receipt
-    # Opus 5.x taban birimleri: a1 17,450; a2 (sıkıştırmadan sonra) 81,000; a3 7,000.
-    # Sıkıştırma çağrısı 300k x 0.05 + özet x 5. Karşı-olgusalda a2 bütün bağlamı (50k + silinen
-    # 250k) okur: 15,500; a3 silinen 250k'yı da okur: 19,500. Kısa oturumda sıkıştırma kendini
-    # ödemez: makbuz negatif tasarruf gösterir.
+    # Opus 5.x base units: a1 17,450; a2 (after the compaction) 81,000; a3 7,000. The compaction
+    # call is 300k x 0.05 + summary x 5. In the counterfactual a2 reads the whole context (50k +
+    # deleted 250k): 15,500; a3 also reads the deleted 250k: 19,500. In a short session the
+    # compaction does not pay for itself: the receipt shows a negative saving.
     assert (receipt.compactions, receipt.sessions) == (1, 1)
     assert receipt.requests_usd == pytest.approx(105_450 * 4e-6)
     calls = 300_000 * 0.05 + estimate_tokens(summary_text) * 5.0

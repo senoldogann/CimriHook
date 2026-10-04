@@ -1,12 +1,12 @@
-"""Küçük örneklemler için A/B istatistikleri: log ölçeğinde oranlar ve oran farkları.
+"""A/B statistics for small samples: ratios and differences of rates on the log scale.
 
-Maliyetler çarpımsal davrandığı için karşılaştırmalar log ölçeğinde yapılır ve geometrik ortalama
-oranı olarak raporlanır. Örneklem küçükken sahte dar aralık üretmemek için yeniden örnekleme
-(bootstrap) yerine t dağılımı kullanılır; Welch'in kesirli serbestlik derecesi için yüzdelik tam
-hesaplanır (tablo yuvarlaması küçük örneklemde aralığı birkaç kat genişletir). Bir kolda ikiden az
-ölçüm ya da hiç değişkenlik yoksa aralık verilmez. Başarı oranları için Wilson aralıkları ve
-Newcombe'un fark aralığı kullanılır; ikisi de hiç başarısızlık olmayan küçük örneklemlerde de
-anlamlı sınır verir.
+Costs behave multiplicatively, so comparisons are made on the log scale and reported as a ratio
+of geometric means. To avoid a falsely narrow interval on a small sample, the t distribution is
+used instead of resampling (bootstrap); the quantile for Welch's fractional degrees of freedom
+is computed exactly (rounding to a table entry widens the interval several times on a small
+sample). No interval is given when an arm has fewer than two measurements or no variation at
+all. For success rates, Wilson intervals and Newcombe's difference interval are used; both give
+a meaningful bound even for small samples with no failures at all.
 """
 
 import math
@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Final
 
 Z_975: Final = 1.959964
-T_QUANTILE_CEILING: Final = 1_000.0  # serbestlik derecesi 1'de yüzdelik 12.706
+T_QUANTILE_CEILING: Final = 1_000.0  # quantile at 1 degree of freedom is 12.706
 BISECTION_STEPS: Final = 200
 FRACTION_TERMS: Final = 300
 FRACTION_TOLERANCE: Final = 1e-14
@@ -25,7 +25,7 @@ TINY: Final = 1e-300
 
 @dataclass(frozen=True, slots=True)
 class RatioEstimate:
-    """Geometrik ortalama oranı ve %95 güven aralığı (aralık yoksa sınırlar None)."""
+    """Ratio of geometric means with a 95% confidence interval (None bounds without one)."""
 
     ratio: float
     low: float | None
@@ -34,7 +34,7 @@ class RatioEstimate:
 
 @dataclass(frozen=True, slots=True)
 class DifferenceEstimate:
-    """İki oranın farkı (tedavi − baseline) ve %95 güven aralığı."""
+    """Difference of two rates (treatment − baseline) with a 95% confidence interval."""
 
     difference: float
     low: float
@@ -42,8 +42,8 @@ class DifferenceEstimate:
 
 
 def t_975(degrees_of_freedom: float) -> float:
-    """t dağılımının %97.5 yüzdeliği, kesirli serbestlik derecesi için de (üst kuyruğun ikiye
-    bölmeyle tersi)."""
+    """The 97.5% quantile of the t distribution, also for fractional degrees of freedom (the inverse
+    of the upper tail, found by bisection)."""
     if degrees_of_freedom < 1:
         raise ValueError(f"degrees of freedom must be >= 1, got {degrees_of_freedom}")
     low, high = 0.0, T_QUANTILE_CEILING
@@ -57,13 +57,13 @@ def t_975(degrees_of_freedom: float) -> float:
 
 
 def t_upper_tail(t: float, degrees_of_freedom: float) -> float:
-    """P(T > t), t >= 0: düzenlenmiş eksik beta fonksiyonuyla."""
+    """P(T > t) for t >= 0, through the regularized incomplete beta function."""
     x = degrees_of_freedom / (degrees_of_freedom + t * t)
     return 0.5 * regularized_beta(x, degrees_of_freedom / 2, 0.5)
 
 
 def regularized_beta(x: float, a: float, b: float) -> float:
-    """Düzenlenmiş eksik beta fonksiyonu I_x(a, b); sürekli kesir (Lentz), simetriyle hızlı."""
+    """Regularized incomplete beta function I_x(a, b): continued fraction (Lentz), by symmetry."""
     if x <= 0:
         return 0.0
     if x >= 1:
@@ -77,7 +77,7 @@ def regularized_beta(x: float, a: float, b: float) -> float:
 
 
 def beta_fraction(x: float, a: float, b: float) -> float:
-    """Eksik beta fonksiyonunun sürekli kesri; yakınsamazsa hata."""
+    """Continued fraction of the incomplete beta function; an error if it does not converge."""
     c = 1.0
     d = guarded(1 - (a + b) * x / (a + 1)) ** -1
     result = d
@@ -97,24 +97,24 @@ def beta_fraction(x: float, a: float, b: float) -> float:
 
 
 def guarded(value: float) -> float:
-    """Sürekli kesirde sıfıra bölmeyi önleyen alt sınır."""
+    """Lower bound that keeps the continued fraction from dividing by zero."""
     return value if abs(value) > TINY else TINY
 
 
 def log_values(values: Sequence[float]) -> tuple[float, ...]:
-    """Pozitif değerlerin doğal logaritması."""
+    """Natural logarithms of positive values."""
     if any(value <= 0 for value in values):
         raise ValueError(f"log-scale statistics need positive values, got {list(values)}")
     return tuple(math.log(value) for value in values)
 
 
 def geometric_mean(values: Sequence[float]) -> float:
-    """Pozitif değerlerin geometrik ortalaması."""
+    """Geometric mean of positive values."""
     return math.exp(statistics.fmean(log_values(values)))
 
 
 def ratio_estimate(base: Sequence[float], treated: Sequence[float]) -> RatioEstimate:
-    """Tedavi/baseline geometrik ortalama oranı; aralık log ölçeğinde Welch t aralığıdır."""
+    """Treatment/baseline ratio of geometric means; Welch t interval on the log scale."""
     log_base = log_values(base)
     log_treated = log_values(treated)
     difference = statistics.fmean(log_treated) - statistics.fmean(log_base)
@@ -124,7 +124,7 @@ def ratio_estimate(base: Sequence[float], treated: Sequence[float]) -> RatioEsti
     treated_term = statistics.variance(log_treated) / len(log_treated)
     variance = base_term + treated_term
     if variance == 0:
-        return RatioEstimate(math.exp(difference), None, None)  # değişkenlik yok: aralık anlamsız
+        return RatioEstimate(math.exp(difference), None, None)  # no variation: no interval
     degrees = variance**2 / (
         base_term**2 / (len(log_base) - 1) + treated_term**2 / (len(log_treated) - 1)
     )
@@ -135,9 +135,10 @@ def ratio_estimate(base: Sequence[float], treated: Sequence[float]) -> RatioEsti
 
 
 def pooled_ratio(log_ratios: Sequence[float]) -> RatioEstimate:
-    """Senaryo log-oranlarının eşit ağırlıklı ortalaması; aralık senaryolar arası t aralığıdır.
+    """Equal-weight mean of the scenario log ratios; the interval is a t interval across scenarios.
 
-    Senaryoların başka senaryolara genellenmesini sorar; iki senaryoyla t(1) yüzünden çok geniştir.
+    Asks whether the result generalises to other scenarios; with two scenarios it is very wide
+    because of t(1).
     """
     mean = statistics.fmean(log_ratios)
     if len(log_ratios) < 2:
@@ -147,7 +148,7 @@ def pooled_ratio(log_ratios: Sequence[float]) -> RatioEstimate:
 
 
 def wilson_interval(successes: int, trials: int) -> tuple[float, float]:
-    """Bir başarı oranının %95 Wilson aralığı."""
+    """95% Wilson interval of a success rate."""
     if trials <= 0 or not 0 <= successes <= trials:
         raise ValueError(f"need 0 <= successes <= trials and trials > 0, got {successes}/{trials}")
     rate = successes / trials
@@ -161,7 +162,7 @@ def wilson_interval(successes: int, trials: int) -> tuple[float, float]:
 def rate_difference(
     treated_successes: int, treated_trials: int, base_successes: int, base_trials: int
 ) -> DifferenceEstimate:
-    """Başarı oranı farkı (tedavi − baseline) ve Newcombe'un hibrit skor aralığı."""
+    """Difference of success rates (treatment − baseline) with Newcombe's hybrid score interval."""
     treated_rate = treated_successes / treated_trials
     base_rate = base_successes / base_trials
     treated_low, treated_high = wilson_interval(treated_successes, treated_trials)
@@ -175,10 +176,11 @@ def rate_difference(
 
 
 def fixed_pooled_ratio(arms: Sequence[tuple[Sequence[float], Sequence[float]]]) -> RatioEstimate:
-    """Senaryoların eşit ağırlıklı ortalama log-oranı; aralık yalnızca bu senaryolar içindir.
+    """Equal-weight mean log ratio of the scenarios; the interval covers only these scenarios.
 
-    Varyans, senaryo içi Welch varyanslarının eşit ağırlıklı toplamıdır; serbestlik derecesi
-    Satterthwaite yaklaşımıyla. Bir kolda ikiden az ölçüm ya da hiç değişkenlik yoksa aralık yok.
+    The variance is the equal-weight sum of the within-scenario Welch variances, with degrees of
+    freedom by the Satterthwaite approximation. No interval if an arm has fewer than two
+    measurements or no variation at all.
     """
     differences = [
         statistics.fmean(log_values(treated)) - statistics.fmean(log_values(base))

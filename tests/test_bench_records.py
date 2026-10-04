@@ -1,4 +1,4 @@
-"""Codex rollout kayıtlarının ayrıştırılması ve çalıştırma matrisinin doğrulanması."""
+"""Parsing of Codex rollout records and validation of the run matrix."""
 
 import json
 from pathlib import Path
@@ -25,7 +25,7 @@ type Line = dict[str, object]
 
 
 def usage_record(response_id: str, input_tokens: int, cached: int, output: int) -> Line:
-    """Codex 0.160 token_usage_record satırı."""
+    """A Codex 0.160 token_usage_record line."""
     usage = {
         "input_tokens": input_tokens,
         "cached_input_tokens": cached,
@@ -38,12 +38,12 @@ def usage_record(response_id: str, input_tokens: int, cached: int, output: int) 
 
 
 def task_started() -> Line:
-    """Yeni bir görevin (adımın) başlangıcı."""
+    """The start of a new task (step)."""
     return {"type": "event_msg", "payload": {"type": "task_started", "turn_id": "turn"}}
 
 
 def write_rollout(path: Path, lines: list[Line]) -> Path:
-    """Satırları JSONL rollout dosyası olarak yazar."""
+    """Writes the lines as a JSONL rollout file."""
     path.write_text("".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
     return path
 
@@ -66,7 +66,7 @@ def test_compaction_request_is_part_of_the_provider_cost(tmp_path: Path) -> None
     provider = codex_provider(records, 2)
     assert records.cli_version == "0.160.0"
     assert [len(step) for step in records.steps] == [3, 1]
-    # Adım 1: 1060 + 420 + sıkıştırma isteği 820; adım 2: 530 (önbelleksiz 1, okuma 0.1, çıktı 6).
+    # Step 1: 1060 + 420 + compaction request 820; step 2: 530 (uncached 1, read 0.1, output 6).
     assert provider.cost_by_step == pytest.approx((2300.0, 2830.0))
     assert provider.cache_read == 2200
 
@@ -86,7 +86,7 @@ def test_step_without_model_requests_is_a_measurement_error(tmp_path: Path) -> N
 
 
 def spec(agent: Agent, protocol: Protocol, variant: Variant, window: int) -> RunSpec:
-    """Doğrulama için asgari çalıştırma tanımı."""
+    """Minimal run definition for validation."""
     task = Task("t", "repo", "ref", (), (), 0, "prompt", ())
     return RunSpec(task, protocol, agent, variant, "model", "medium", window, 1)
 

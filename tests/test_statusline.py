@@ -1,4 +1,4 @@
-"""Durum satırı: saf metin üretimi ve gerçek CLI süreciyle uçtan uca çalıştırma."""
+"""Status line: pure text generation and an end-to-end run with a real CLI process."""
 
 import json
 import os
@@ -16,7 +16,7 @@ NOW = 1_791_000_000.0
 
 
 def status(cache: PromptCache | None, context: int | None) -> StatusInput:
-    """Opus 5.5 oturumu, iki kullanım limiti penceresiyle."""
+    """An Opus 5.5 session with two usage limit windows."""
     return StatusInput(
         session_id="s",
         model="claude-opus-5-5[1m]",
@@ -28,9 +28,9 @@ def status(cache: PromptCache | None, context: int | None) -> StatusInput:
 
 
 def test_warm_cache_prices_the_next_request_as_a_read() -> None:
-    # 412000 x 0.05 (Opus 5.x okuma) x $4/MTok = $0.08; ömrün bitmesine 50 dakika var.
-    # Şimdi sıkıştırmak: 412k x 0.05 + 7k x 5 + 56k x 2 = 167,600 taban; her istek
-    # (412k - 56k) x 0.05 = 17,800 taban kazandırır: 10 istekte geri döner.
+    # 412000 x 0.05 (Opus 5.x read) x $4/MTok = $0.08; the lifetime ends in 50 minutes.
+    # Compacting now: 412k x 0.05 + 7k x 5 + 56k x 2 = 167,600 base; every request saves
+    # (412k - 56k) x 0.05 = 17,800 base: it pays back in 10 requests.
     cache = PromptCache(True, 3_600.0, NOW + 3_000, 412_000)
     line = render_status(status(cache, 412_000), NOW)
     assert line == (
@@ -40,7 +40,7 @@ def test_warm_cache_prices_the_next_request_as_a_read() -> None:
 
 
 def test_cold_cache_prices_the_next_request_as_a_rewrite() -> None:
-    # 5 dakikalık ömür dolmuş: Claude Code'un tahmini 412000 token x 1.25 x $4/MTok = $2.06.
+    # The 5-minute lifetime is over: Claude Code estimates 412000 tokens x 1.25 x $4/MTok = $2.06.
     cache = PromptCache(False, 300.0, NOW - 60, 412_000)
     line = render_status(status(cache, 412_000), NOW)
     assert line == "412k ctx · cache cold · next $2.06 · 5h 42% · 7d 18% · $4.12"
@@ -56,7 +56,7 @@ def test_previous_lines_are_kept_and_ours_ends_the_last_one() -> None:
 
 
 def run_cli(args: list[str], payload: Mapping[str, object], home: Path) -> str:
-    """Durum satırı komutunu ayrı süreçte çalıştırır; çıkış kodu her durumda 0 olmalı."""
+    """Runs the status line command in a separate process; the exit code must always be 0."""
     completed = subprocess.run(
         [sys.executable, "-m", "cimrihook", "statusline", *args],
         input=json.dumps(payload),
@@ -87,7 +87,7 @@ def test_cli_prints_the_line_and_records_the_limits_privately(tmp_path: Path) ->
     line = run_cli([], payload, home)
     assert line.startswith("100k ctx · cache warm ")
     assert line.endswith(" · 5h 7%")
-    assert run_cli([], payload, home) == line  # aynı gözlem ikinci kez yazılmaz
+    assert run_cli([], payload, home) == line  # the same observation is not written twice
     ledger = home / "ledger.sqlite3"
     with sqlite3.connect(ledger) as db:
         rows = db.execute("SELECT limit_window, used_percentage FROM quota_samples").fetchall()

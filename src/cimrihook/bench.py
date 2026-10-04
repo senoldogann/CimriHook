@@ -1,50 +1,54 @@
-"""Gerçek aboneliklerle A/B değerlendirme düzeneği: aynı görev ve ajan, CimriHook mekanizmaları
-açık ve kapalı.
+"""A/B evaluation harness on real subscriptions: the same task and agent, with the CimriHook
+mechanisms on and off.
 
-Her çalıştırma yalıtılmış bir çalışma alanında yapılır: görev deposu sabit bir sürümden kopyalanır,
-testler için ayrı bir sanal ortam kurulur ve başlangıç durumu git ile mühürlenir. Ajan (Claude
-Code ya da Codex CLI) kullanıcının oturum açmış aboneliğiyle etkileşimsiz modda, devralınmamış bir
-ortamla çalışır: yalnızca izin listesindeki ortam değişkenleri geçer, Claude Code'a kullanıcı
-ayarları ve MCP sunucuları, Codex'e kullanıcının config.toml'u yüklenmez. Başarı: her adımdan sonra
-test paketinin geçmesi ve hiçbir test dosyasına dokunulmamış olması.
+Every run happens in an isolated workspace: the task repository is copied from a pinned version,
+a separate virtual environment is set up for the tests, and the starting state is sealed with git.
+The agent (Claude Code or Codex CLI) runs non-interactively with the user's logged-in subscription
+and a clean environment: only allow-listed environment variables pass, Claude Code gets no user
+settings or MCP servers, Codex no user config.toml. Success: the test suite passes after every
+step and no test file was touched.
 
-Protokoller:
-- single: tüm hatalar baştan enjekte edilir; ajan tek bir istekte hepsini düzeltir.
-- sequential: hatalar aynı oturumda birer birer gelir; ajan her birini konuşmanın devamında
-  düzeltir. Gerçek kullanımdaki uzun, birikimli oturumları taklit eder.
-- deep: sequential'dan önce ajan hata yokken kütüphanenin tüm kaynak dosyalarını okur (yalnızca
-  Claude Code). Bağlam baştan büyür ve okunan kodun çoğu sonraki adımlar için bayatlar; gerçek
-  kullanımdaki yüksek bağlamlı (200k üstü) oturumları taklit eder.
-- deeper: deep gibi, ama ısınmada test dosyaları da okunur; oturum 400k'nın üstüne çıkar.
+Protocols:
+- single: all bugs are injected up front; the agent fixes all of them in one request.
+- sequential: the bugs arrive one by one in the same session; the agent fixes each one in the
+  continuation of the conversation. It mimics the long, accumulating sessions of real use.
+- deep: before sequential, the agent reads all the library's source files while there is no bug
+  (Claude Code only). The context starts large and most of the code that was read goes stale for
+  the later steps; it mimics the high-context (above 200k) sessions of real use.
+- deeper: like deep, but the warm-up also reads the test files; the session goes above 400k.
 
-Varyantlar (mekanizma ablasyonu):
-- baseline: ajanın varsayılan davranışı.
-- governor: yalnızca sıkıştırma penceresi (Claude Code: CLAUDE_CODE_AUTO_COMPACT_WINDOW, en az
+Variants (mechanism ablation):
+- baseline: the agent's default behaviour.
+- governor: only the compaction window (Claude Code: CLAUDE_CODE_AUTO_COMPACT_WINDOW, at least
   100000; Codex: model_auto_compact_token_limit).
-- rtk ve rtk-governor: RTK'nın Bash komut çıktısı sıkıştırması (PreToolUse hook'u, `rtk hook
-  claude`), tek başına ve pencereyle birlikte (yalnızca Claude Code): RTK var ya da yok, pencere
-  var ya da yok.
-- mask: pencere ve CimriHook mod'u (`--plugin-dir`), önce maskeleme açık: otomatik sıkıştırmada
-  LLM özeti yerine eski araç sonuçları yer tutucuyla değişir (yalnızca Claude Code).
-- boundary: pencere ve CimriHook mod'u görev sınırında sıkıştırmayla: bağlam BOUNDARY_TOKENS'ı
-  geçtiyse yeni istemden önce sıkıştırılır; pencere görevin içindeki yedektir (yalnızca Claude
-  Code).
-- codec, combined ve brief: emekliye ayrıldı (araç sonucu yeniden kodlama ve sıkıştırma özeti
-  talimatı ürünün parçası değil; kodları `pre-trim` etiketinde). Bu kolların kayıtlı sonuçları
-  okunur ve raporlanır, yeni çalıştırma planlanamaz.
-- meter ve meter-governor: baseline ve governor gibi davranır, ama CimriHook mod'u yalnızca
-  limit ölçeri olarak yüklenir: her turdan sonra aboneliğin 5 saatlik ve haftalık pencerelerinin
-  kullanım yüzdesi koşunun yanına `<koşu>.limits.jsonl` olarak yazılır (yalnızca Claude Code,
-  abonelikle). Pencere puanı cinsinden A/B için iki kol da meter olmalıdır.
+- rtk and rtk-governor: RTK's Bash command output compression (PreToolUse hook, `rtk hook
+  claude`), alone and together with the window (Claude Code only): RTK on or off, window on or
+  off.
+- mask: the window and the CimriHook mod (`--plugin-dir`) with mask-first compaction: on
+  automatic compaction old tool results are replaced with a placeholder instead of an LLM summary
+  (Claude Code only).
+- boundary: the window and the CimriHook mod with compaction at a task boundary: if the context
+  exceeds BOUNDARY_TOKENS it is compacted before the new prompt; the window is the safety net
+  inside the task (Claude Code only).
+- codec, combined and brief: retired (tool result recoding and the compaction summary
+  instruction are not part of the product; their code is at the `pre-trim` tag). The recorded
+  results of these arms are read and reported; new runs cannot be planned.
+- meter and meter-governor: behave like baseline and governor, but the CimriHook mod is loaded
+  only as a limit meter: after every turn the use percentage of the subscription's 5-hour and
+  weekly windows is written next to the run as `<run>.limits.jsonl` (Claude Code only, with a
+  subscription). For an A/B in window points both arms must be meter.
 
-Ölçüm:
-- Birincil maliyet sağlayıcı düzeyindedir ve sıkıştırma ile yardımcı çağrıları içerir. Claude Code
-  için her adımın sonuç kaydındaki kümülatif total_cost_usd (USD), Codex için rollout'taki yanıt
-  başına token_usage_record kayıtları, açık bir fiyat tablosuyla taban girdi fiyatı cinsinden.
-- İkincil maliyet (cost_base) yalnızca oturum kayıtlarındaki istekleri (Claude transcript'i, Codex
-  token_count olayları) simülatörle aynı ayrıştırıcılarla toplar; sıkıştırma çağrısını içermez.
-- Raporda kollar senaryo bazında log maliyetlerin geometrik ortalamasıyla karşılaştırılır; ajan
-  düzeyindeki özet yalnızca iki kolu eşit sayıda ölçülmüş senaryoları eşit ağırlıkla birleştirir.
+Measurement:
+- The primary cost is at the provider level and includes compaction and helper calls. For Claude
+  Code it is the cumulative total_cost_usd (USD) in each step's result record, for Codex the
+  per-response token_usage_record entries in the rollout, in base input price units with an
+  explicit price table.
+- The secondary cost (cost_base) sums only the requests in the session records (Claude
+  transcript, Codex token_count events) with the same parsers as the simulator; it does not
+  include the compaction call.
+- The report compares the arms per scenario with the geometric mean of the costs; the summary at
+  the agent level combines with equal weight only the scenarios where both arms have the same
+  number of measured runs.
 """
 
 import itertools
@@ -115,9 +119,9 @@ GIT_IDENTITY: Final = (
     "-c",
     "core.hooksPath=/dev/null",
 )
-# Ajan süreçlerine geçen ortam değişkenleri. Geri kalanı devralınmaz: benchmark bir Claude Code
-# oturumundan başlatıldığında o oturumun CLAUDE_CODE_*, ANTHROPIC_* gibi değişkenleri ajanın
-# modelini, effort seviyesini, API adresini ve davranışını değiştirir.
+# Environment variables passed to agent processes. The rest is not inherited: when the benchmark
+# is started from a Claude Code session, that session's CLAUDE_CODE_*, ANTHROPIC_* and similar
+# variables change the agent's model, effort level, API address and behaviour.
 ENV_ALLOWLIST: Final = (
     "PATH",
     "HOME",
@@ -130,22 +134,23 @@ ENV_ALLOWLIST: Final = (
     "LC_CTYPE",
 )
 REQUIRED_ENV: Final = ("PATH", "HOME")
-TEST_TAIL_CHARS: Final = 1_500  # hata iletisine eklenen test çıktısı
-SAFE_NAME: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")  # görev kimliği ve sürüm
+TEST_TAIL_CHARS: Final = 1_500  # test output appended to the error message
+SAFE_NAME: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")  # task id and version
 SAFE_PACKAGE: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\[\],<>=!~-]*")
 USD: Final = "usd"
 BASE_INPUT_TOKENS: Final = "base_input_tokens"
 CLAUDE_PRICE_SHEET: Final = "Claude Code total_cost_usd (includes compaction and auxiliary calls)"
 CHECKPOINT_STEPS: Final = (5, 10, 20, 40)
-NONINFERIORITY_MARGIN: Final = 0.05  # çalıştırma başarısında kabul edilen en büyük düşüş
-# Karar çalıştırma düzeyindedir: bir çalıştırmanın adımları birbirine bağlıdır (takılan ajan sonraki
-# adımları da kaçırır), adımları bağımsız saymak aralığı yapay olarak daraltır. Hiç başarısızlık
-# yokken bile -5 puanı dışlamak kol başına yaklaşık 75 çalıştırma ister; daha azıyla karar çoğu
-# zaman "gösterilemedi" olur. Bu sayının altında karar hiç verilmez.
+NONINFERIORITY_MARGIN: Final = 0.05  # largest drop accepted in run success
+# The decision is at the run level: the steps of a run depend on each other (a stuck agent misses
+# the later steps too), and counting the steps as independent narrows the interval artificially.
+# Excluding a -5 point drop takes about 75 runs per arm even with no failures at all; with fewer,
+# the decision is mostly "could not be shown". Below this number no decision is made.
 MIN_RUNS_FOR_VERDICT: Final = 5
-# Simülatörün kabul edilen tahmin hatası (oran puanı): tahmin ölçülen oranın bu kadar yakınında.
+# Accepted simulator estimation error (ratio points): the estimate lies this close to the
+# measured ratio.
 CALIBRATION_TOLERANCE: Final = 0.05
-# Codex fiyat tablosu duyarlılığı: önbellekli girdi ve çıktı çarpanlarının makul aralığı.
+# Codex price table sensitivity: the plausible range of the cached input and output multipliers.
 CODEX_SENSITIVITY: Final = tuple(
     replace(OPENAI, read=read, output=output) for read in (0.1, 0.25) for output in (4.0, 6.0, 8.0)
 )
@@ -176,14 +181,14 @@ NEXT_BUG_PROMPT: Final = (
 
 
 class Agent(StrEnum):
-    """Değerlendirilen ajan."""
+    """The agent under evaluation."""
 
     CLAUDE = "claude"
     CODEX = "codex"
 
 
 class Variant(StrEnum):
-    """A/B kolu: açık olan CimriHook mekanizmaları."""
+    """A/B arm: the CimriHook mechanisms that are on."""
 
     BASELINE = "baseline"
     GOVERNOR = "governor"
@@ -224,7 +229,8 @@ RTK_HOOK_COMMAND: Final = "rtk hook claude"  # RTK 0.51'in Claude Code kurulumun
 # results from earlier sets are still loaded and reported; new runs cannot be planned.
 RETIRED_VARIANTS: Final = frozenset({Variant.CODEC, Variant.COMBINED, Variant.BRIEF})
 CODEX_VARIANTS: Final = frozenset({Variant.BASELINE, Variant.GOVERNOR})
-# Önceki şemanın tek tedavi kolu: Claude Code'da pencere ve codec, Codex'te yalnızca pencere.
+# The previous schema's single treatment arm: window and codec in Claude Code, only the window in
+# Codex.
 LEGACY_VARIANT: Final = "cimrihook"
 ISOLATION: Final[dict[Agent, str]] = {
     Agent.CLAUDE: "allowlisted environment; --setting-sources project; --strict-mcp-config",
@@ -237,7 +243,7 @@ LEGACY_ISOLATION: Final[dict[Agent, str]] = {
 
 
 class Protocol(StrEnum):
-    """Görevin ajana veriliş biçimi."""
+    """How the task is given to the agent."""
 
     SINGLE = "single"
     SEQUENTIAL = "sequential"
@@ -247,7 +253,7 @@ class Protocol(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Mutation:
-    """Depoya enjekte edilen tek satırlık hata."""
+    """The one-line bug injected into the repository."""
 
     path: str
     find: str
@@ -256,7 +262,7 @@ class Mutation:
 
 @dataclass(frozen=True, slots=True)
 class Task:
-    """Görev tanımı (bench/tasks/*.json)."""
+    """Task definition (bench/tasks/*.json)."""
 
     id: str
     repo: str
@@ -270,7 +276,7 @@ class Task:
 
 @dataclass(frozen=True, slots=True)
 class RunSpec:
-    """Tek bir çalıştırmanın tanımı."""
+    """Definition of a single run."""
 
     task: Task
     protocol: Protocol
@@ -284,15 +290,15 @@ class RunSpec:
 
 @dataclass(frozen=True, slots=True)
 class SuiteRun:
-    """Test paketinin bir çalıştırması."""
+    """One run of the test suite."""
 
     passed: bool
-    tail: str  # çıktının sonu, hata iletileri için
+    tail: str  # end of the output, for error messages
 
 
 @dataclass(frozen=True, slots=True)
 class ProcessOutcome:
-    """Ajan sürecinin çıkışı."""
+    """Exit of the agent process."""
 
     exit_code: int
     timed_out: bool
@@ -301,7 +307,7 @@ class ProcessOutcome:
 
 @dataclass(frozen=True, slots=True)
 class ReportedUsage:
-    """Claude Code'un sonuç kaydındaki oturum toplamları (tüm modeller, sürdürmelerde kümülatif)."""
+    """Session totals in Claude Code's result record (all models, cumulative across resumes)."""
 
     cost_usd: float
     uncached: int
@@ -312,49 +318,49 @@ class ReportedUsage:
 
 @dataclass(frozen=True, slots=True)
 class AgentRun:
-    """Tek bir ajan çağrısının sonucu."""
+    """Result of a single agent call."""
 
     session_id: str
     exit_code: int
     timed_out: bool
-    reported: ReportedUsage | None  # yalnızca Claude Code raporlar; süre aşımında yoktur
+    reported: ReportedUsage | None  # reported by Claude Code only; absent on timeout
 
 
 @dataclass(frozen=True, slots=True)
 class SessionOutcome:
-    """Bir çalıştırmadaki tüm ajan çağrılarının özeti."""
+    """Summary of all agent calls in a run."""
 
     session_id: str
-    exit_code: int  # son çağrının çıkış kodu
-    timed_out: bool  # herhangi bir çağrı süreyi aştı mı
-    reported: tuple[ReportedUsage | None, ...]  # adım başına Claude Code raporu
+    exit_code: int  # exit code of the last call
+    timed_out: bool  # did any call exceed the time limit
+    reported: tuple[ReportedUsage | None, ...]  # Claude Code report per step
     duration_seconds: float
-    step_passed: tuple[bool, ...]  # her adımdan sonra test paketi geçti mi
-    passed: bool  # sonda test paketi geçiyor mu
+    step_passed: tuple[bool, ...]  # did the test suite pass after every step
+    passed: bool  # does the test suite pass at the end
 
 
 @dataclass(frozen=True, slots=True)
 class Measurement:
-    """Oturum kayıtlarındaki isteklerden ölçülen token kullanımı (sıkıştırma çağrısı hariç)."""
+    """Token usage measured from the requests in the session records (compaction call excluded)."""
 
     requests: int
     compactions: int
-    compaction_pre_tokens: tuple[int, ...]  # sıkıştırmaları tetikleyen bağlam boyutları
+    compaction_pre_tokens: tuple[int, ...]  # context sizes that triggered the compactions
     max_context: int
     mean_context: float
     uncached: int
     cache_write: int
     cache_read: int
     output: int
-    cost_base: float  # taban girdi fiyatı cinsinden, sağlayıcının fiyat oranlarıyla
+    cost_base: float  # in base input price units, with the provider's price ratios
 
 
 @dataclass(frozen=True, slots=True)
 class ProviderMeasurement:
-    """Sağlayıcı düzeyinde ölçüm: sıkıştırma ve yardımcı çağrılar dahil birincil maliyet."""
+    """Provider-level measurement: the primary cost including compaction and helper calls."""
 
-    cost_by_step: tuple[float, ...]  # adım sonlarındaki kümülatif maliyet; son eleman toplamdır
-    unit: str  # USD ya da BASE_INPUT_TOKENS
+    cost_by_step: tuple[float, ...]  # cumulative cost at each step end; the last is the total
+    unit: str  # USD or BASE_INPUT_TOKENS
     price_sheet: str
     uncached: int
     cache_write: int
@@ -364,7 +370,7 @@ class ProviderMeasurement:
 
 @dataclass(frozen=True, slots=True)
 class CodexRecords:
-    """Codex rollout'undaki yanıt başına kullanım kayıtları, görev (adım) sırasıyla."""
+    """Per-response usage records in the Codex rollout, in task (step) order."""
 
     steps: tuple[tuple[Usage, ...], ...]
     cli_version: str
@@ -372,23 +378,23 @@ class CodexRecords:
 
 @dataclass(frozen=True, slots=True)
 class AgentLogs:
-    """Bir çalıştırmanın ajan kayıtlarından okunan ölçümler."""
+    """Measurements read from a run's agent records."""
 
     measurement: Measurement
-    provider: ProviderMeasurement | None  # bir adımın sağlayıcı toplamı yoksa None
+    provider: ProviderMeasurement | None  # None if a step has no provider total
     version: str
 
 
 @dataclass(frozen=True, slots=True)
 class RunIdentity:
-    """Bir çalıştırmanın ne olduğu: görev, ajan, kol ve koşullar."""
+    """What a run is: the task, agent, arm and conditions."""
 
     run_id: str
     task_id: str
     protocol: str
     agent: Agent
-    variant: str  # çalıştırıldığı adıyla kol
-    mechanism: Variant  # gerçekte açık olan mekanizma
+    variant: str  # the arm as it was run
+    mechanism: Variant  # the mechanism actually on
     model: str
     effort: str
     window: int
@@ -398,7 +404,7 @@ class RunIdentity:
 
 @dataclass(frozen=True, slots=True)
 class RunBehaviour:
-    """Ajanın çalıştırmadaki davranışı ve görev sonucu."""
+    """The agent's behaviour in the run and the task result."""
 
     session_id: str
     success: bool
@@ -413,27 +419,27 @@ class RunBehaviour:
 
 @dataclass(frozen=True, slots=True)
 class RunResult:
-    """Bir çalıştırmanın kalıcı sonucu (bench/results/<ad>/<run_id>.json)."""
+    """The persistent result of a run (bench/results/<name>/<run_id>.json)."""
 
     schema: int
     run_id: str
     task_id: str
     protocol: str
     agent: str
-    variant: str  # çalıştırıldığı adıyla kol (eski şemada "cimrihook")
-    mechanism: str  # gerçekte açık olan mekanizma: baseline, governor, codec ya da combined
+    variant: str  # the arm as it was run ("cimrihook" in the old schema)
+    mechanism: str  # the mechanism actually on: baseline, governor, codec or combined
     model: str
     effort: str
-    window: int  # istenen sıkıştırma penceresi
-    effective_window: int | None  # ajanın uyguladığı pencere; kol pencere ayarlamıyorsa None
-    isolation: str  # ajan sürecinin ortamı ve yüklenen yapılandırma
+    window: int  # the requested compaction window
+    effective_window: int | None  # the window the agent applied; None if the arm sets no window
+    isolation: str  # the agent process's environment and the configuration loaded
     agent_version: str
     repetition: int
     session_id: str
     success: bool
     steps: int
     steps_passed: int
-    step_passed: tuple[bool, ...]  # adım başına sonuç; eski şemada bilinmiyorsa boş
+    step_passed: tuple[bool, ...]  # result per step; empty if unknown in the old schema
     tests_touched: bool
     agent_exit: int
     timed_out: bool
@@ -449,11 +455,11 @@ class RunResult:
     cache_read: int
     output: int
     cost_base: float
-    error: str | None  # ölçülemeyen çalıştırmanın nedeni
+    error: str | None  # why the run could not be measured
 
 
 def load_tasks(tasks_dir: Path) -> tuple[Task, ...]:
-    """Görev tanımlarını yükler."""
+    """Loads the task definitions."""
     paths = sorted(tasks_dir.glob("*.json"))
     if not paths:
         raise BenchError(f"no task definitions (*.json) in {tasks_dir}")
@@ -461,7 +467,7 @@ def load_tasks(tasks_dir: Path) -> tuple[Task, ...]:
 
 
 def select_tasks(tasks: Sequence[Task], task_ids: Sequence[str]) -> tuple[Task, ...]:
-    """Yalnızca istenen görevler; bilinmeyen kimlik hatadır."""
+    """Only the requested tasks; an unknown id is an error."""
     known = {task.id for task in tasks}
     unknown = sorted(set(task_ids) - known)
     if unknown:
@@ -470,10 +476,10 @@ def select_tasks(tasks: Sequence[Task], task_ids: Sequence[str]) -> tuple[Task, 
 
 
 def load_task(path: Path) -> Task:
-    """Tek görev tanımını doğrulayarak okur.
+    """Reads a single task definition, validating it.
 
-    Görev tanımı komut satırlarına ve yollara girer (git clone, uv pip install, çalıştırma dizini);
-    seçenek gibi ya da dizin dışına çıkan değerler hatadır.
+    The task definition goes into command lines and paths (git clone, uv pip install, the working
+    directory); values that look like options or escape the directory are errors.
     """
     where = str(path)
     data = json_object(json.loads(path.read_text(encoding="utf-8")), where)
@@ -485,7 +491,7 @@ def load_task(path: Path) -> Task:
 
 
 def task_problems(task: Task) -> list[str]:
-    """Görev tanımındaki güvensiz değerler."""
+    """Unsafe values in a task definition."""
     return [
         *([] if SAFE_NAME.fullmatch(task.id) else [f"id {task.id!r} is not a plain name"]),
         *([] if SAFE_NAME.fullmatch(task.ref) else [f"ref {task.ref!r} is not a plain name"]),
@@ -504,7 +510,7 @@ def task_problems(task: Task) -> list[str]:
 
 
 def parse_task(data: dict[str, object], where: str) -> Task:
-    """Görev alanlarını tipleriyle okur."""
+    """Reads the task fields with their types."""
     return Task(
         id=text_field(data, "id", where),
         repo=text_field(data, "repo", where),
@@ -535,9 +541,10 @@ def plan_runs(
     effort: str,
     window: int,
 ) -> tuple[RunSpec, ...]:
-    """Çalıştırma matrisi; aynı görev ve ajanın kolları art arda sıralanır.
+    """The run matrix; the arms of the same task and agent are ordered one after another.
 
-    Ajanın uygulayamayacağı kollar ve pencereler hatadır; sessizce farklı bir koşul ölçülmez.
+    Arms and windows the agent cannot apply are errors; a different condition is never measured
+    silently.
     """
     specs = tuple(
         RunSpec(
@@ -563,7 +570,7 @@ def plan_runs(
 
 
 def spec_problem(spec: RunSpec) -> str | None:
-    """Ajanın bu kolu ya da pencereyi uygulayamamasının nedeni; uygulayabiliyorsa None."""
+    """Why the agent cannot apply this arm or window; None if it can."""
     if spec.variant in RETIRED_VARIANTS:
         return (
             f"variant {spec.variant.value!r} is retired: its mechanism was removed from CimriHook "
@@ -592,10 +599,10 @@ def spec_problem(spec: RunSpec) -> str | None:
 
 
 def effective_window(agent: Agent, mechanism: Variant, window: int) -> int | None:
-    """Ajanın gerçekte uyguladığı sıkıştırma penceresi; kol pencere ayarlamıyorsa None.
+    """The compaction window the agent actually applies; None if the arm sets no window.
 
-    Claude Code 2.1.288 CLAUDE_CODE_AUTO_COMPACT_WINDOW'u en az 100000'e yükseltir ve otomatik
-    sıkıştırmayı pencere − 20000 (çıktı payı) − 13000 token bağlamda tetikler.
+    Claude Code 2.1.288 raises CLAUDE_CODE_AUTO_COMPACT_WINDOW to at least 100000 and triggers
+    automatic compaction at a context of window − 20000 (output reserve) − 13000 tokens.
     """
     if mechanism not in WINDOW_VARIANTS:
         return None
@@ -605,7 +612,7 @@ def effective_window(agent: Agent, mechanism: Variant, window: int) -> int | Non
 
 
 def run_id(spec: RunSpec) -> str:
-    """Çalıştırmanın kararlı kimliği."""
+    """The stable id of a run."""
     return (
         f"{spec.task.id}.{spec.protocol.value}.{spec.agent.value}.{spec.variant.value}"
         f".r{spec.repetition}"
@@ -615,7 +622,7 @@ def run_id(spec: RunSpec) -> str:
 def run_plan(
     specs: Sequence[RunSpec], results_dir: Path, work_dir: Path, concurrency: int, timeout: int
 ) -> tuple[RunResult, ...]:
-    """Sonucu olmayan çalıştırmaları paralel yürütür; her sonuç bitince diske yazılır."""
+    """Runs the runs without a result in parallel; each result is written to disk as it finishes."""
     results_dir.mkdir(parents=True, exist_ok=True)
     pending = [spec for spec in specs if needs_run(result_path(results_dir, run_id(spec)), spec)]
     repos = {
@@ -645,8 +652,8 @@ def run_plan(
 def execute_and_save(
     spec: RunSpec, repo_dir: Path, work_dir: Path, timeout: int, results_dir: Path
 ) -> RunResult:
-    """Çalıştırmayı yürütür ve sonucunu hemen yazar: başka bir çalıştırmanın beklenmedik hatası
-    bitmiş sonuçları kaybettirmez."""
+    """Runs a run and writes its result immediately: an unexpected failure of another run does not
+    lose the finished results."""
     result = execute_run(spec, repo_dir, work_dir, timeout)
     result_path(results_dir, result.run_id).write_text(
         json.dumps(asdict(result), indent=2), encoding="utf-8"
@@ -665,15 +672,16 @@ def limits_path(results_dir: Path, identifier: str) -> Path:
 
 
 def result_path(results_dir: Path, identifier: str) -> Path:
-    """Çalıştırma sonucunun dosyası."""
+    """The file of a run's result."""
     return results_dir / f"{identifier}.json"
 
 
 def needs_run(path: Path, spec: RunSpec) -> bool:
-    """Sonucu yok ya da ölçülemeden bitmiş (ör. kullanım limiti) çalıştırmalar yeniden denenir.
+    """Runs without a result, or that ended without being measured (for example a usage limit), are
+    retried.
 
-    Var olan sonuç kolu etkileyen başka koşullarla (model, effort, pencere) ölçülmüşse aynı sette
-    karıştırılmaz: hata.
+    If an existing result was measured under other conditions that affect the arm (model, effort,
+    window), it is not mixed into the same set: an error.
     """
     if not path.exists():
         return True
@@ -690,7 +698,7 @@ def needs_run(path: Path, spec: RunSpec) -> bool:
 
 
 def progress_fields(result: RunResult) -> dict[str, object]:
-    """İlerleme satırının yapılandırılmış alanları."""
+    """Structured fields of the progress line."""
     provider = result.provider
     return {
         "event": "run_finished",
@@ -710,11 +718,11 @@ def progress_fields(result: RunResult) -> dict[str, object]:
 
 
 def execute_run(spec: RunSpec, repo_dir: Path, work_dir: Path, timeout: int) -> RunResult:
-    """Görevi protokolüne göre çalıştırır; testleri ve token kullanımını ölçer."""
+    """Runs the task according to its protocol; measures the tests and the token use."""
     identifier = run_id(spec)
     run_dir = work_dir / identifier
     if run_dir.exists():
-        shutil.rmtree(run_dir)  # yarıda kalmış önceki denemenin artığı
+        shutil.rmtree(run_dir)  # leftover of an earlier attempt that was cut short
     workspace = run_dir / "workspace"
     try:
         if spec.protocol is Protocol.SINGLE:
@@ -777,7 +785,7 @@ def meter_lines(run_dir: Path) -> tuple[str, ...]:
 
 
 def measured_result(identity: RunIdentity, behaviour: RunBehaviour, logs: AgentLogs) -> RunResult:
-    """Çalıştırmanın kimliği, ajan davranışı ve kayıtlardan ölçümler tek sonuç kaydında."""
+    """Run identity, agent behaviour and measurements from the records in one result record."""
     measurement = logs.measurement
     return RunResult(
         schema=RESULT_SCHEMA,
@@ -821,7 +829,7 @@ def measured_result(identity: RunIdentity, behaviour: RunBehaviour, logs: AgentL
 def run_single(
     spec: RunSpec, repo_dir: Path, workspace: Path, run_dir: Path, timeout: int
 ) -> SessionOutcome:
-    """Tüm hatalar baştan enjekte edilir; ajan tek istekte düzeltir."""
+    """All bugs are injected up front; the agent fixes them in a single request."""
     prepare_workspace(spec.task, repo_dir, workspace)
     for mutation in spec.task.mutations:
         apply_mutation(workspace, mutation)
@@ -849,11 +857,11 @@ def run_single(
 def run_sequential(
     spec: RunSpec, repo_dir: Path, workspace: Path, run_dir: Path, timeout: int
 ) -> SessionOutcome:
-    """Hatalar aynı oturumda birer birer gelir; bağlam gerçek kullanımdaki gibi birikir.
+    """The bugs arrive one by one in the same session; the context accumulates as in real use.
 
-    deep protokolünde oturum, ilk hatadan önce kütüphanenin okunduğu ısınma çağrısıyla başlar.
-    Isınma bir adım sayılmaz; maliyeti Claude Code'un kümülatif raporu sayesinde ilk adımın
-    toplamına girer.
+    In the deep protocol the session starts with a warm-up call that reads the library before the
+    first bug. The warm-up does not count as a step; its cost goes into the total of the first
+    step thanks to Claude Code's cumulative report.
     """
     prepare_workspace(spec.task, repo_dir, workspace)
     before = run_suite(spec.task, workspace)
@@ -877,7 +885,7 @@ def run_sequential(
             raise BenchError(
                 f"{spec.task.id}: step {step} mutation is inert after earlier fixes\n{mutated.tail}"
             )
-        seal(workspace)  # yeni hata git geçmişinde görünmesin
+        seal(workspace)  # so that the new bug does not show up in the git history
         prompt = FIRST_BUG_PROMPT if step == 1 else NEXT_BUG_PROMPT
         first = opening if opening is not None else (calls[0] if calls else None)
         calls.append(
@@ -898,8 +906,8 @@ def run_sequential(
 
 
 def warm_up(spec: RunSpec, workspace: Path, run_dir: Path, timeout: int) -> AgentRun:
-    """deep protokolünün ısınma çağrısı: ajan hata yokken kütüphaneyi okur, hiçbir dosyayı
-    değiştirmez. Süre aşımında maliyeti kaydedilemediği için çalıştırma ölçülemez."""
+    """The warm-up call of the deep protocol: the agent reads the library while there is no bug and
+    changes no file. On a timeout the cost cannot be recorded, so the run cannot be measured."""
     seal(workspace)
     call = start_agent(spec, WARMUP_PROMPTS[spec.protocol.value], workspace, run_dir, timeout, 0)
     if call.timed_out:
@@ -911,7 +919,7 @@ def warm_up(spec: RunSpec, workspace: Path, run_dir: Path, timeout: int) -> Agen
 
 
 def failed_result(spec: RunSpec, identifier: str, message: str) -> RunResult:
-    """Ölçülemeyen çalıştırmanın kaydı; istatistiklerden çıkarılır, raporda görünür."""
+    """Record of an unmeasurable run; left out of the statistics, shown in the report."""
     return unmeasured_result(
         RunIdentity(
             run_id=identifier,
@@ -931,7 +939,7 @@ def failed_result(spec: RunSpec, identifier: str, message: str) -> RunResult:
 
 
 def unmeasured_result(identity: RunIdentity, message: str) -> RunResult:
-    """Ölçüm alanları boş, nedeni error alanında olan sonuç kaydı."""
+    """A result record with empty measurement fields, the reason being in the error field."""
     return RunResult(
         schema=RESULT_SCHEMA,
         run_id=identity.run_id,
@@ -972,7 +980,7 @@ def unmeasured_result(identity: RunIdentity, message: str) -> RunResult:
 
 
 def ensure_repo(repo: str, ref: str, work_dir: Path) -> Path:
-    """Görev deposunu sabit sürümde bir kez klonlar; çalıştırmalar bu kopyadan çoğaltılır."""
+    """Clones the task repository once at a pinned version; runs are replicated from this copy."""
     cache_dir = work_dir / "repos"
     target = cache_dir / f"{Path(repo).stem}@{ref}"
     if not target.exists():
@@ -985,7 +993,7 @@ def ensure_repo(repo: str, ref: str, work_dir: Path) -> Path:
 
 
 def prepare_workspace(task: Task, repo_dir: Path, workspace: Path) -> None:
-    """Depoyu (git geçmişi olmadan) kopyalar ve test ortamını kurar."""
+    """Copies the repository (without git history) and sets up the test environment."""
     shutil.copytree(repo_dir, workspace, ignore=shutil.ignore_patterns(".git"))
     python = workspace / ".venv" / "bin" / "python"
     run_checked(("uv", "venv", str(workspace / ".venv"), "--python", "3.12", "-q"), workspace)
@@ -993,7 +1001,7 @@ def prepare_workspace(task: Task, repo_dir: Path, workspace: Path) -> None:
 
 
 def apply_mutation(workspace: Path, mutation: Mutation) -> None:
-    """Tek bir hatayı, çapası dosyada tam bir kez geçiyorsa uygular."""
+    """Applies a single bug if its anchor occurs exactly once in the file."""
     path = workspace / mutation.path
     source = path.read_text(encoding="utf-8")
     count = source.count(mutation.find)
@@ -1003,10 +1011,10 @@ def apply_mutation(workspace: Path, mutation: Mutation) -> None:
 
 
 def seal(workspace: Path) -> None:
-    """Çalışma alanının o anki durumunu tek commit'lik yeni bir git geçmişi olarak mühürler.
+    """Seals the workspace's current state as a fresh single-commit git history.
 
-    Geçmiş her mühürde sıfırlanır; enjekte edilen hata ne `git diff` ne `git log` ile görünür,
-    ajan ise git'i kendi değişikliklerini görmek için normal biçimde kullanabilir.
+    The history is reset at every seal; the injected bug shows up in neither `git diff` nor
+    `git log`, while the agent can still use git normally to see its own changes.
     """
     git_dir = workspace / ".git"
     if git_dir.exists():
@@ -1020,13 +1028,13 @@ def seal(workspace: Path) -> None:
 
 
 def tests_pass(task: Task, workspace: Path) -> bool:
-    """Test paketi geçiyor mu?"""
+    """Does the test suite pass?"""
     return run_suite(task, workspace).passed
 
 
 def run_suite(task: Task, workspace: Path) -> SuiteRun:
-    """Test paketini ajanınkiyle aynı izin listesindeki ortamla çalıştırır (testler ajanın
-    değiştirdiği kodu çalıştırır). Süre aşımı (ör. sonsuz döngü) geçmemek demektir."""
+    """Runs the test suite in the same allow-listed environment as the agent (the tests run the code
+    the agent changed). A timeout (for example an infinite loop) counts as not passing."""
     try:
         completed = subprocess.run(
             list(task.test_command),
@@ -1044,13 +1052,14 @@ def run_suite(task: Task, workspace: Path) -> SuiteRun:
 
 
 def tool_env(base: Mapping[str, str]) -> dict[str, str]:
-    """Test, git ve uv süreçlerinin ortamı: yalnızca izin listesindeki değişkenler. Bu süreçler
-    ajanın yazdığı kodu ve git yapılandırmasını çalıştırır; oturumun gizli değişkenlerini görmez."""
+    """The environment of the test, git and uv processes: only the allow-listed variables. These
+    processes run the agent's code and git configuration; they do not see the session's secret
+    variables."""
     return {key: base[key] for key in ENV_ALLOWLIST if key in base}
 
 
 def touched_test_files(workspace: Path, repo_dir: Path) -> tuple[str, ...]:
-    """El değmemiş depo kopyasına göre değişen, eklenen ya da silinen test dosyaları."""
+    """Test files changed, added or deleted relative to the untouched repository copy."""
     original = test_files(repo_dir)
     current = test_files(workspace)
     changed = {path for path in original.keys() & current.keys() if original[path] != current[path]}
@@ -1058,12 +1067,12 @@ def touched_test_files(workspace: Path, repo_dir: Path) -> tuple[str, ...]:
 
 
 def test_files(root: Path) -> dict[str, bytes]:
-    """Kök altındaki test dosyalarının içerikleri (git, sanal ortam ve önbellekler hariç)."""
+    """Contents of the test files under the root (git, virtual environment and caches excluded)."""
     return {path: (root / path).read_bytes() for path in walk_files(root) if is_test_path(path)}
 
 
 def walk_files(root: Path) -> tuple[str, ...]:
-    """Kök altındaki dosyaların göreli yolları; yönetim dizinleri atlanır."""
+    """Relative paths of the files under the root; management directories are skipped."""
     files: list[str] = []
     for directory, subdirs, names in os.walk(root):
         subdirs[:] = [name for name in subdirs if name not in IGNORED_DIRS]
@@ -1072,7 +1081,7 @@ def walk_files(root: Path) -> tuple[str, ...]:
 
 
 def is_test_path(path: str) -> bool:
-    """Test dosyası mı (tests/ dizini, test_*.py, *_test.py, conftest.py)?"""
+    """Is it a test file (tests/ directory, test_*.py, *_test.py, conftest.py)?"""
     parts = Path(path).parts
     name = parts[-1]
     return (
@@ -1084,7 +1093,7 @@ def is_test_path(path: str) -> bool:
 
 
 def run_checked(command: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    """Komutu çalıştırır; başarısızsa bağlamıyla birlikte hata yükseltir."""
+    """Runs the command; raises an error with its context if it fails."""
     completed = subprocess.run(
         list(command),
         cwd=cwd,
@@ -1104,7 +1113,7 @@ def run_checked(command: Sequence[str], cwd: Path) -> subprocess.CompletedProces
 def start_agent(
     spec: RunSpec, prompt: str, workspace: Path, run_dir: Path, timeout: int, step: int
 ) -> AgentRun:
-    """Yeni bir ajan oturumu başlatır."""
+    """Starts a new agent session."""
     if spec.agent is Agent.CLAUDE:
         session_id = str(uuid.uuid4())
         session_args = ("--session-id", session_id)
@@ -1126,7 +1135,7 @@ def resume_agent(
     timeout: int,
     step: int,
 ) -> AgentRun:
-    """Var olan oturumu yeni istekle sürdürür; bağlam önceki adımlardan birikir."""
+    """Resumes the existing session with a new request; context accumulates from earlier steps."""
     if spec.agent is Agent.CLAUDE:
         session_args = ("--resume", session_id)
         return claude_call(
@@ -1146,7 +1155,7 @@ def codex_call(
     timeout: int,
     step: int,
 ) -> ProcessOutcome:
-    """Codex'i çalıştırır; sağlayıcı kaynaklı başarısız tur (ör. kullanım limiti) hatadır."""
+    """Runs Codex; a turn that failed provider-side (for example a usage limit) is an error."""
     process = run_process(command, workspace, env, timeout, run_dir, step)
     failure = codex_turn_failure(process.stdout)
     if failure is not None:
@@ -1155,12 +1164,12 @@ def codex_call(
 
 
 def codex_turn_failure(stdout: str) -> str | None:
-    """Codex olay akışındaki turn.failed iletisi; yoksa None."""
+    """The turn.failed message in the Codex event stream; None if absent."""
     for line in stdout.splitlines():
         try:
             event: object = json.loads(line)
         except json.JSONDecodeError:
-            continue  # JSON olmayan uyarı satırı
+            continue  # non-JSON warning line
         if isinstance(event, dict) and event.get("type") == "turn.failed":
             error = event.get("error")
             message = error.get("message") if isinstance(error, dict) else None
@@ -1178,8 +1187,8 @@ def claude_call(
     timeout: int,
     step: int,
 ) -> AgentRun:
-    """Claude Code'u kullanıcının oturumuyla; kullanıcı ayarları, eklentileri ve MCP sunucuları
-    (claude.ai bağlayıcıları dahil) olmadan başlatır."""
+    """Starts Claude Code with the user's login but without user settings, plugins and MCP servers
+    (claude.ai connectors included)."""
     command = (
         "claude",
         "-p",
@@ -1215,7 +1224,7 @@ def claude_call(
 
 
 def claude_failure(stdout: str, timed_out: bool) -> str | None:
-    """Sağlayıcı kaynaklı hata (kullanım limiti, API hatası); süre ve tur sınırı davranıştır."""
+    """Provider-side error (usage limit, API error); the time and turn limits are behaviour."""
     if timed_out:
         return None
     try:
@@ -1233,7 +1242,7 @@ def claude_failure(stdout: str, timed_out: bool) -> str | None:
 
 
 def claude_settings(spec: RunSpec) -> dict[str, object]:
-    """Varyantın Claude Code ayarları: RTK kollarında RTK hook'u, pencere kollarında pencere."""
+    """The variant's Claude Code settings: RTK's hook in the RTK arms, the window in window arms."""
     return merge_settings(
         [
             *([rtk_settings()] if spec.variant in RTK_VARIANTS else []),
@@ -1243,7 +1252,7 @@ def claude_settings(spec: RunSpec) -> dict[str, object]:
 
 
 def rtk_settings() -> dict[str, object]:
-    """RTK'nın Claude Code hook'u: Bash komutlarını sıkıştıran sürümleriyle yeniden yazar."""
+    """RTK's Claude Code hook: rewrites Bash commands to their compressing versions."""
     return {
         "hooks": {
             "PreToolUse": [
@@ -1257,10 +1266,10 @@ def rtk_settings() -> dict[str, object]:
 
 
 def agent_env(spec: RunSpec, run_dir: Path, base: Mapping[str, str]) -> dict[str, str]:
-    """Ajan sürecinin ortamı: izin listesindeki değişkenler ve kolun kendi ayarları.
+    """The agent process's environment: the allow-listed variables and the arm's own settings.
 
-    Claude Code'da pencere, ayarlardaki env bloğuna ek olarak doğrudan ortam değişkeniyle de
-    verilir; mod kollarında CimriHook'un ev dizini çalıştırmanın kendi dizinindedir.
+    In Claude Code the window is given directly as an environment variable in addition to the env
+    block in the settings; in the mod arms CimriHook's home is the run's own directory.
     """
     missing = [key for key in REQUIRED_ENV if key not in base]
     if missing:
@@ -1284,17 +1293,17 @@ def agent_env(spec: RunSpec, run_dir: Path, base: Mapping[str, str]) -> dict[str
 
 
 def plugin_args(spec: RunSpec, run_dir: Path) -> tuple[str, ...]:
-    """Mod kollarında CimriHook mod'unu çalıştırmanın kendi dizininden yükleyen seçenek."""
+    """The option that loads the CimriHook mod from the run's own directory in the mod arms."""
     if spec.variant not in MOD_VARIANTS:
         return ()
     return ("--plugin-dir", str(write_mod(run_dir / "mod" / MOD_NAME)))
 
 
 def claude_reported_usage(stdout: str) -> ReportedUsage | None:
-    """Claude Code'un sonuç kaydındaki oturum toplamları; sonuç yoksa (ör. süre aşımı) None.
+    """Session totals in Claude Code's result record; None without one (for example a timeout).
 
-    total_cost_usd ve modelUsage, oturum sürdürüldüğünde önceki çağrıların toplamını da içerir;
-    sıkıştırma ve yardımcı model çağrıları dahildir.
+    total_cost_usd and modelUsage also contain the totals of earlier calls when the session is
+    resumed; compaction and helper model calls are included.
     """
     try:
         decoded: object = json.loads(stdout)
@@ -1319,7 +1328,7 @@ def claude_reported_usage(stdout: str) -> ReportedUsage | None:
 
 
 def codex_options(spec: RunSpec, workspace: Path) -> tuple[str, ...]:
-    """Varyantın Codex seçenekleri; kullanıcı config.toml'u yüklenmez, pencere kolu eşik verir."""
+    """The variant's Codex options; no user config.toml, and window arms set the threshold."""
     window = (
         ("-c", f"model_auto_compact_token_limit={spec.window}")
         if spec.variant in WINDOW_VARIANTS
@@ -1344,12 +1353,12 @@ def codex_options(spec: RunSpec, workspace: Path) -> tuple[str, ...]:
 
 
 def codex_thread_id(stdout: str) -> str:
-    """Codex JSON olay akışındaki oturum (thread) kimliği."""
+    """The session (thread) id in the Codex JSON event stream."""
     for line in stdout.splitlines():
         try:
             event: object = json.loads(line)
         except json.JSONDecodeError:
-            continue  # JSON olmayan uyarı satırı
+            continue  # non-JSON warning line
         if isinstance(event, dict) and event.get("type") == "thread.started":
             thread_id = event.get("thread_id")
             if isinstance(thread_id, str):
@@ -1365,7 +1374,7 @@ def run_process(
     run_dir: Path,
     step: int,
 ) -> ProcessOutcome:
-    """Süreci kendi süreç grubunda çalıştırır; süre aşımında tüm grubu sonlandırır."""
+    """Runs the process in its own process group; on a timeout the whole group is terminated."""
     with subprocess.Popen(
         list(command),
         cwd=cwd,
@@ -1394,7 +1403,7 @@ def read_agent_logs(
     reported: Sequence[ReportedUsage | None],
     steps: int,
 ) -> AgentLogs:
-    """Ajanın oturum kayıtlarından ölçümler; model isteği yoksa çalıştırma ölçülemez."""
+    """Measurements from the agent's records; no model requests means an unmeasurable run."""
     if agent is Agent.CLAUDE:
         transcript = claude_transcript(session_id)
         logs = AgentLogs(
@@ -1424,7 +1433,7 @@ def claude_transcript(session_id: str) -> Path:
 
 
 def claude_traces(transcript: Path, session_id: str) -> tuple[SessionTrace, ...]:
-    """Ana transcript ve alt ajan transcript'leri."""
+    """The main transcript and the subagent transcripts."""
     subagents = sorted(
         path
         for path in transcript.parent.glob(f"{session_id}/subagents/**/*.jsonl")
@@ -1434,7 +1443,7 @@ def claude_traces(transcript: Path, session_id: str) -> tuple[SessionTrace, ...]
 
 
 def claude_version(transcript: Path) -> str:
-    """Transcript'i yazan Claude Code sürümü."""
+    """The Claude Code version that wrote the transcript."""
     with transcript.open("rb") as handle:
         for raw_line in handle:
             entry = parse_line(raw_line)
@@ -1445,10 +1454,10 @@ def claude_version(transcript: Path) -> str:
 
 
 def claude_provider(reported: Sequence[ReportedUsage | None]) -> ProviderMeasurement | None:
-    """Claude Code'un adım başına kümülatif raporlarından birincil maliyet.
+    """The primary cost from Claude Code's cumulative per-step reports.
 
-    Bir adım rapor vermediyse (süre aşımıyla sonlandırılan süreç maliyetini kaydedemez) sonraki
-    toplamlar da o adımı içermez; bu durumda maliyet bilinmez ve None döner.
+    If a step gave no report (a process ended by a timeout cannot record its cost), the later
+    totals do not include that step either; the cost is then unknown and None is returned.
     """
     complete = [usage for usage in reported if usage is not None]
     if not complete or len(complete) != len(reported):
@@ -1466,7 +1475,7 @@ def claude_provider(reported: Sequence[ReportedUsage | None]) -> ProviderMeasure
 
 
 def codex_rollout(thread_id: str) -> Path:
-    """Codex rollout kaydı."""
+    """The Codex rollout record."""
     paths = sorted(CODEX_SESSIONS.rglob(f"rollout-*{thread_id}.jsonl"))
     if len(paths) != 1:
         raise BenchError(f"expected one Codex rollout for {thread_id}, found {len(paths)}")
@@ -1474,10 +1483,11 @@ def codex_rollout(thread_id: str) -> Path:
 
 
 def load_codex_records(path: Path) -> CodexRecords:
-    """Rollout'taki token_usage_record kayıtları, görevlere (task_started) göre gruplanmış.
+    """The token_usage_record entries in the rollout, grouped by task (task_started).
 
-    Bu kayıtlar sıkıştırma isteğini de içerir; token_count olayları içermez. Aynı yanıt kimliği
-    birden çok kez yazıldıysa son kullanım geçerlidir ve ilk göründüğü görevde sayılır.
+    These records include the compaction request, not the token_count events. If the same
+    response id was written more than once, the last usage counts and it is counted in the task
+    where it first appeared.
     """
     task_count = 0
     records: dict[str, tuple[int, Usage]] = {}
@@ -1514,12 +1524,12 @@ def load_codex_records(path: Path) -> CodexRecords:
 
 
 def record_usage(payload: dict[str, object], where: str) -> Usage:
-    """token_usage_record kullanımı; input_tokens önbellekten okunan ve yazılan girdiyi içerir."""
+    """A token_usage_record usage; input_tokens includes the cache reads and writes."""
     usage = json_object(payload.get("usage"), f"{where}.usage")
     total_input = int_field(usage, "input_tokens", where)
     cached = int_field(usage, "cached_input_tokens", where)
     written = usage.get("cache_write_input_tokens")
-    write = written if isinstance(written, int) else 0  # eski sürümler yazım alanını raporlamaz
+    write = written if isinstance(written, int) else 0  # older versions do not report writes
     return Usage(
         uncached=total_input - cached - write,
         write_5m=write,
@@ -1530,7 +1540,7 @@ def record_usage(payload: dict[str, object], where: str) -> Usage:
 
 
 def codex_provider(records: CodexRecords, steps: int) -> ProviderMeasurement:
-    """Yanıt başına kayıtlardan birincil maliyet; model isteği olmayan adım kota hatasıdır."""
+    """Primary cost from per-response records; a step without model requests is a quota error."""
     if len(records.steps) != steps:
         raise BenchError(f"codex rollout has {len(records.steps)} turns, the run had {steps} steps")
     empty = [index for index, usages in enumerate(records.steps, start=1) if not usages]
@@ -1555,7 +1565,7 @@ def codex_provider(records: CodexRecords, steps: int) -> ProviderMeasurement:
 
 
 def price_sheet_text(sheet: PriceSheet) -> str:
-    """Fiyat tablosunun sonuçlara yazılan tanımı (taban girdi fiyatı = 1)."""
+    """The price table definition written to the results (base input price = 1)."""
     return (
         f"{sheet.name}: uncached {sheet.uncached}, cached {sheet.read}, write {sheet.write_5m}, "
         f"output {sheet.output} x base input"
@@ -1563,7 +1573,7 @@ def price_sheet_text(sheet: PriceSheet) -> str:
 
 
 def measure(traces: Sequence[SessionTrace]) -> Measurement:
-    """İstek dizilerinden toplam kullanım ve her oturumun kendi modelinin fiyatlarıyla maliyet."""
+    """Total usage from the request sequences and the cost with each session's own model prices."""
     requests = [usage for trace in traces for usage in trace.requests]
     contexts = [context_of(usage) for usage in requests]
     return Measurement(
@@ -1585,7 +1595,7 @@ def measure(traces: Sequence[SessionTrace]) -> Measurement:
 
 
 def load_results(results_dir: Path) -> tuple[RunResult, ...]:
-    """Bir sonuç kümesindeki tüm çalıştırma sonuçları."""
+    """All run results in a result set."""
     paths = sorted(results_dir.glob("*.json"))
     if not paths:
         raise BenchError(f"no run results in {results_dir}")
@@ -1598,7 +1608,7 @@ def load_results(results_dir: Path) -> tuple[RunResult, ...]:
 
 
 def result_from_json(data: dict[str, object], where: str) -> RunResult:
-    """Sonuç dosyasını tipleri doğrulayarak okur; eski şemadaki dosya hatadır."""
+    """Reads a result file, validating the types; a file in the old schema is an error."""
     schema = data.get("schema")
     if schema != RESULT_SCHEMA:
         raise BenchError(
@@ -1645,7 +1655,7 @@ def result_from_json(data: dict[str, object], where: str) -> RunResult:
 
 
 def provider_from_json(data: dict[str, object], where: str) -> ProviderMeasurement | None:
-    """Sonuç dosyasındaki sağlayıcı ölçümü; maliyet bilinmiyorsa None."""
+    """The provider measurement in a result file; None if the cost is unknown."""
     if data.get("provider") is None:
         return None
     provider = json_object(data["provider"], f"{where}.provider")
@@ -1661,12 +1671,13 @@ def provider_from_json(data: dict[str, object], where: str) -> ProviderMeasureme
 
 
 def remeasure_results(results_dir: Path, runs_dir: Path) -> tuple[RunResult, ...]:
-    """Kayıtlı sonuçları ajanların kayıtlarından güncel şemayla yeniden ölçüp dosyalara yazar.
+    """Re-measures recorded results from the agents' records with the current schema and saves them.
 
-    Ajanlar yeniden çalışmaz: çalıştırma anına ait alanlar (başarı, adımlar, süre, ortam) korunur,
-    ölçümler Claude transcript'lerinden, Claude'un adım başına sonuç kayıtlarından
-    (runs_dir/<run_id>/agent.<adım>.stdout) ve Codex rollout'larından yeniden hesaplanır. Eski
-    şemanın tek tedavi kolu ("cimrihook") gerçekte açık olan mekanizmayla adlandırılır.
+    The agents do not run again: the fields of the run itself (success, steps, duration,
+    environment) are kept, and the measurements are recomputed from the Claude transcripts,
+    Claude's per-step result records (runs_dir/<run_id>/agent.<step>.stdout) and the Codex
+    rollouts. The old schema's single treatment arm ("cimrihook") is named after the mechanism
+    that was actually on.
     """
     paths = sorted(results_dir.glob("*.json"))
     if not paths:
@@ -1683,7 +1694,7 @@ def remeasure_results(results_dir: Path, runs_dir: Path) -> tuple[RunResult, ...
 
 
 def remeasured_result(data: dict[str, object], runs_dir: Path) -> RunResult:
-    """Tek sonuç kaydının yeniden ölçülmüş hali."""
+    """A single result record, re-measured."""
     where = text_field(data, "run_id", "result")
     legacy = data.get("schema") is None
     agent = Agent(text_field(data, "agent", where))
@@ -1730,7 +1741,7 @@ def remeasured_result(data: dict[str, object], runs_dir: Path) -> RunResult:
 
 
 def legacy_mechanism(agent: Agent, variant: str) -> Variant:
-    """Eski şemadaki kolun gerçekte açık olan mekanizması."""
+    """The mechanism that was actually on for an arm in the old schema."""
     if variant == Variant.BASELINE.value:
         return Variant.BASELINE
     if variant != LEGACY_VARIANT:
@@ -1739,12 +1750,12 @@ def legacy_mechanism(agent: Agent, variant: str) -> Variant:
 
 
 def legacy_step_passed(steps: int, steps_passed: int) -> tuple[bool, ...]:
-    """Eski şema yalnızca sayıyı tutar; tüm adımlar geçtiyse sıra bellidir, değilse bilinmez."""
+    """The old schema keeps only the count; the order is known if all steps passed, else unknown."""
     return (True,) * steps if steps_passed == steps else ()
 
 
 def claude_reported_files(run_dir: Path, steps: int) -> tuple[ReportedUsage | None, ...]:
-    """Çalıştırma dizinindeki adım çıktılarından Claude Code'un kümülatif raporları."""
+    """Claude Code's cumulative reports from the step outputs in the run directory."""
     paths = [run_dir / f"agent.{step}.stdout" for step in range(1, steps + 1)]
     missing = [str(path) for path in paths if not path.exists()]
     if missing:
@@ -1753,17 +1764,18 @@ def claude_reported_files(run_dir: Path, steps: int) -> tuple[ReportedUsage | No
 
 
 def scenario(result: RunResult) -> str:
-    """Raporlarda görev ve protokolün birlikte adı."""
+    """The task and protocol together as named in the reports."""
     return f"{result.task_id}/{result.protocol}"
 
 
 def render_bench_report(results: Sequence[RunResult]) -> str:
-    """Hücre özetleri, senaryo ve ajan düzeyinde A/B karşılaştırmaları, ölçülemeyen çalıştırmalar.
+    """Cell summaries, scenario- and agent-level A/B comparisons, and the unmeasurable runs.
 
-    Birincil maliyet sağlayıcı düzeyindedir (Claude Code: USD, Codex: fiyat tablosuyla taban girdi
-    birimi) ve sıkıştırma isteklerini içerir; 'transcript' sütunu içermez. Ajan düzeyindeki özet
-    yalnızca iki kolu eşit sayıda ölçülmüş senaryoları eşit ağırlıkla birleştirir; bir kolda
-    ikiden az ölçüm varsa güven aralığı verilmez.
+    The primary cost is at the provider level (Claude Code: USD, Codex: base input units with the
+    price table) and includes the compaction requests; the 'transcript' column does not. The
+    agent-level summary combines with equal weight only the scenarios in which both arms have the
+    same number of measured runs; with fewer than two measurements in an arm, no confidence
+    interval is given.
     """
     measured = [result for result in results if result.error is None]
     errors = [result for result in results if result.error is not None]
@@ -1800,7 +1812,7 @@ def render_bench_report(results: Sequence[RunResult]) -> str:
 
 
 def version_lines(measured: Sequence[RunResult]) -> list[str]:
-    """Ölçülmüş çalıştırmalardaki ajan sürümleri; bir ajanın birden çok sürümü karışmışsa uyarı."""
+    """Agent versions in the measured runs; a warning if one agent has several versions mixed."""
     versions = Counter((result.agent, result.agent_version or "unknown") for result in measured)
     agents = Counter(agent for agent, _ in versions)
     return [
@@ -1811,24 +1823,24 @@ def version_lines(measured: Sequence[RunResult]) -> list[str]:
 
 
 def provider_of(result: RunResult) -> ProviderMeasurement:
-    """Sağlayıcı maliyeti olan çalıştırmanın ölçümü."""
+    """Measurement of a run that has a provider cost."""
     if result.provider is None:
         raise BenchError(f"{result.run_id} has no provider cost")
     return result.provider
 
 
 def final_cost(result: RunResult) -> float:
-    """Çalıştırmanın birincil (sağlayıcı düzeyindeki) toplam maliyeti."""
+    """The primary (provider-level) total cost of a run."""
     return provider_of(result).cost_by_step[-1]
 
 
 def mechanism_rank(mechanism: str) -> int:
-    """Raporda kolların sırası: baseline, governor, codec, combined."""
+    """Order of the arms in the report: baseline, governor, codec, combined."""
     return list(Variant).index(Variant(mechanism))
 
 
 def group_cells(results: Sequence[RunResult]) -> list[list[RunResult]]:
-    """(ajan, senaryo, mekanizma) hücreleri, raporun sırasıyla."""
+    """The (agent, scenario, mechanism) cells, in the report's order."""
     keys = sorted(
         {(result.agent, scenario(result), result.mechanism) for result in results},
         key=lambda key: (key[0], key[1], mechanism_rank(key[2])),
@@ -1840,7 +1852,7 @@ def group_cells(results: Sequence[RunResult]) -> list[list[RunResult]]:
 
 
 def cell_line(cell: Sequence[RunResult]) -> str:
-    """Bir (ajan, senaryo, mekanizma) hücresinin satırı."""
+    """The row of an (agent, scenario, mechanism) cell."""
     first = cell[0]
     costed = [result for result in cell if result.provider is not None]
     cost = (
@@ -1866,14 +1878,14 @@ def cell_line(cell: Sequence[RunResult]) -> str:
 
 
 def format_cost(value: float, result: RunResult) -> str:
-    """Maliyet, çalıştırmanın birimiyle (USD ya da taban girdi birimi)."""
+    """Cost in the run's unit (USD or base input unit)."""
     if provider_of(result).unit == USD:
         return f"${value:,.3f}"
     return f"{value:,.0f}"
 
 
 def arm(results: Sequence[RunResult], agent: str, label: str, mechanism: str) -> list[RunResult]:
-    """Bir senaryonun bir koluna ait çalıştırmalar."""
+    """The runs of one arm of a scenario."""
     return [
         result
         for result in results
@@ -1882,39 +1894,39 @@ def arm(results: Sequence[RunResult], agent: str, label: str, mechanism: str) ->
 
 
 def treatments() -> tuple[str, ...]:
-    """Baseline dışındaki kollar, raporun sırasıyla."""
+    """The arms other than baseline, in the report's order."""
     return tuple(variant.value for variant in Variant if variant is not Variant.BASELINE)
 
 
 def interval_text(estimate: RatioEstimate) -> str:
-    """Aralığın sınırları; aralık yoksa 'none'."""
+    """The bounds of the interval; 'none' if there is no interval."""
     if estimate.low is None or estimate.high is None:
         return "none"
     return f"{estimate.low:.3f}-{estimate.high:.3f}"
 
 
 def ratio_text(estimate: RatioEstimate) -> str:
-    """Oran ve aralığı."""
+    """The ratio and its interval."""
     return f"x{estimate.ratio:.3f} [{interval_text(estimate)}]"
 
 
 def costed_runs(results: Sequence[RunResult]) -> list[RunResult]:
-    """Sağlayıcı maliyeti kaydedilmiş çalıştırmalar."""
+    """Runs with a recorded provider cost."""
     return [result for result in results if result.provider is not None]
 
 
 def run_success_difference(
     base: Sequence[RunResult], treated: Sequence[RunResult]
 ) -> DifferenceEstimate:
-    """Çalıştırma başarısı farkı (tedavi − baseline) ve Newcombe aralığı."""
+    """Run success difference (treatment − baseline) and its Newcombe interval."""
     return rate_difference(
         sum(r.success for r in treated), len(treated), sum(r.success for r in base), len(base)
     )
 
 
 def success_text(base: Sequence[RunResult], treated: Sequence[RunResult]) -> str:
-    """Çalıştırma başarısı (her adım geçti, test dosyasına dokunulmadı), farkının aralığı ve
-    yalnızca betimleyici adım başarısı."""
+    """Run success (every step passed, no test file touched), the interval of its difference, and
+    step success, which is only descriptive."""
     difference = run_success_difference(base, treated)
     return (
         f"runs ok {sum(r.success for r in treated)}/{len(treated)} vs "
@@ -1926,11 +1938,11 @@ def success_text(base: Sequence[RunResult], treated: Sequence[RunResult]) -> str
 
 
 def scenario_comparisons(measured: Sequence[RunResult]) -> list[str]:
-    """Senaryo bazında her kolun baseline'a göre maliyet oranı ve başarısı.
+    """The cost ratio of each arm to baseline and its success, per scenario.
 
-    Maliyet yalnızca sağlayıcı maliyeti olan çalıştırmalardan, başarı ölçülmüş tüm
-    çalıştırmalardan hesaplanır: maliyeti kaydedilemeyen (ör. süre aşımı) çalıştırma başarı
-    karşılaştırmasından düşmez.
+    The cost is computed only from runs with a provider cost, the success from all measured
+    runs: a run whose cost could not be recorded (for example a timeout) is not dropped from the
+    success comparison.
     """
     lines: list[str] = []
     for agent, label in sorted({(result.agent, scenario(result)) for result in measured}):
@@ -1965,7 +1977,7 @@ type ArmPair = tuple[list[RunResult], list[RunResult]]
 def scenario_pairs(
     costed: Sequence[RunResult], agent: str, mechanism: str
 ) -> tuple[list[ArmPair], list[str]]:
-    """İki kolu ölçülmüş senaryolar: eşit n'li çiftler ve n'i farklı olduğu için dışarıdakiler."""
+    """Scenarios with both arms measured: pairs with equal n, and those left out for unequal n."""
     labels = sorted({scenario(r) for r in costed if r.agent == agent and r.mechanism == mechanism})
     pairs = [
         (
@@ -1981,9 +1993,10 @@ def scenario_pairs(
 
 
 def noninferiority(base_runs: int, treated_runs: int, difference_low: float) -> str:
-    """Çalıştırma başarısı için non-inferiority kararı (en fazla NONINFERIORITY_MARGIN düşüş).
+    """Non-inferiority decision for run success (a drop of at most NONINFERIORITY_MARGIN).
 
-    Gösterilememesi kalitenin düştüğü anlamına gelmez; aralık marjı dışlayacak kadar dar değildir.
+    Failing to show it does not mean the quality dropped; the interval is not narrow enough to
+    exclude the margin.
     """
     if min(base_runs, treated_runs) < MIN_RUNS_FOR_VERDICT:
         return f"undecided (fewer than {MIN_RUNS_FOR_VERDICT} runs per arm)"
@@ -1993,8 +2006,8 @@ def noninferiority(base_runs: int, treated_runs: int, difference_low: float) -> 
 
 
 def agent_comparisons(measured: Sequence[RunResult]) -> list[str]:
-    """Ajan ve mekanizma düzeyinde: dengeli senaryoların eşit ağırlıklı maliyet oranı ve iki kolu
-    da ölçülmüş senaryoların tüm çalıştırmalarıyla başarı ve non-inferiority."""
+    """Per agent and mechanism: the equal-weight cost ratio of the balanced scenarios, and the
+    success and non-inferiority over all runs of the scenarios with both arms measured."""
     lines: list[str] = []
     for agent in sorted({result.agent for result in measured}):
         for mechanism in treatments():
@@ -2032,7 +2045,7 @@ def agent_comparisons(measured: Sequence[RunResult]) -> list[str]:
 
 
 def pooled_text(balanced: Sequence[ArmPair]) -> str:
-    """Dengeli senaryoların eşit ağırlıklı maliyet oranı ve iki aralığı."""
+    """Equal-weight cost ratio of the balanced scenarios and its two intervals."""
     if not balanced:
         return "none (no balanced costed scenario)"
     costs = [
@@ -2050,7 +2063,7 @@ def pooled_text(balanced: Sequence[ArmPair]) -> str:
 
 
 def checkpoint_comparisons(costed: Sequence[RunResult]) -> list[str]:
-    """Aynı çalıştırmaların adım kontrol noktalarındaki kümülatif maliyet oranları."""
+    """Cumulative cost ratios of the same runs at the steps' checkpoints."""
     lines: list[str] = []
     for agent, label in sorted({(result.agent, scenario(result)) for result in costed}):
         base = arm(costed, agent, label, Variant.BASELINE.value)
@@ -2080,7 +2093,7 @@ def checkpoint_comparisons(costed: Sequence[RunResult]) -> list[str]:
 
 
 def sheet_cost(result: RunResult, sheet: PriceSheet) -> float:
-    """Sağlayıcı token toplamlarının verilen fiyat tablosuyla maliyeti."""
+    """The cost of the provider's token totals with the given price table."""
     provider = provider_of(result)
     return (
         provider.uncached * sheet.uncached
@@ -2091,7 +2104,7 @@ def sheet_cost(result: RunResult, sheet: PriceSheet) -> float:
 
 
 def codex_sensitivity(costed: Sequence[RunResult]) -> list[str]:
-    """Codex oranının fiyat tablosu varsayımlarına duyarlılığı (dengeli senaryolar)."""
+    """Sensitivity of the Codex ratio to the price table assumptions (balanced scenarios)."""
     lines: list[str] = []
     for mechanism in treatments():
         balanced, _ = scenario_pairs(costed, Agent.CODEX.value, mechanism)
@@ -2119,13 +2132,14 @@ def codex_sensitivity(costed: Sequence[RunResult]) -> list[str]:
 
 
 def render_calibration(results: Sequence[RunResult]) -> str:
-    """Simülatörün politika tahminini A/B sonucuyla sınar.
+    """Tests the simulator's policy estimate against the A/B result.
 
-    Baseline çalıştırmalarının kayıtları, tedavi kolunda gerçekten gözlenen tetik noktasıyla
-    yeniden oynatılır; sıkıştırmanın bedeli (sonraki bağlam, önbellekte kalan kısmı, özet)
-    tedavi kolunun kayıtlarından ölçülür. Böylece yalnızca simülatörün kendi varsayımları
-    (ajan davranışı değişmez, maliyet muhasebesi) sınanır. Tahmin ve ölçüm geometrik ortalama
-    oranlarıdır; ölçüm sağlayıcı düzeyindeki birincil maliyettir.
+    The records of the baseline runs are replayed with the trigger point actually observed in the
+    treatment arm; the cost of a compaction (the later context, the part that stays cached, the
+    summary) is measured from the treatment arm's records. This leaves only the simulator's own
+    assumptions (the agent's behaviour does not change, the cost accounting) to be tested. The
+    estimate and the measurement are geometric mean ratios; the measurement is the provider-level
+    primary cost.
     """
     costed = [result for result in results if result.error is None and result.provider is not None]
     lines = [
@@ -2158,7 +2172,7 @@ def calibration_line(
     base: Sequence[RunResult],
     treated: Sequence[RunResult],
 ) -> str:
-    """Bir senaryonun tahmin ve ölçüm satırı."""
+    """The estimate and measurement row of a scenario."""
     prefix = f"  {agent:<7} {label:<32} {mechanism:<9}"
     treated_traces = [trace for result in treated for trace in run_traces(result)]
     pre = [tokens for trace in treated_traces for tokens in trace.pre_compact_tokens]
@@ -2169,7 +2183,7 @@ def calibration_line(
         return f"{prefix} no compaction observed in the treatment runs; nothing to calibrate"
     base_traces = [run_traces(result) for result in base]
     model = CostModel(
-        # Codex önbelleğe yazımı ayrıca fiyatlamaz: yeni girdi önbelleksiz girdi fiyatındadır.
+        # Codex does not price cache writes separately: new input is at the uncached input price.
         write_weight=OPENAI.uncached
         if agent == Agent.CODEX.value
         else average_write_weight(
@@ -2200,14 +2214,14 @@ def calibration_line(
 
 
 def run_traces(result: RunResult) -> tuple[SessionTrace, ...]:
-    """Çalıştırmanın ajan kayıtlarındaki bağlam pencereleri."""
+    """The context windows in a run's agent records."""
     if result.agent == Agent.CLAUDE.value:
         return claude_traces(claude_transcript(result.session_id), result.session_id)
     return (load_codex_trace(codex_rollout(result.session_id)),)
 
 
 def simulated_cost(traces: Sequence[SessionTrace], policy: Policy, model: CostModel) -> float:
-    """Kayıtların bir politikayla yeniden oynatılmış maliyeti (her oturum kendi fiyatlarıyla)."""
+    """The cost of the records replayed with a policy (each session with its own prices)."""
     return sum(simulate_trace(trace, policy, model, trace.prices)[0] for trace in traces)
 
 
@@ -2219,7 +2233,7 @@ def json_object(value: object, where: str) -> dict[str, object]:
 
 
 def text_field(data: dict[str, object], key: str, where: str) -> str:
-    """Zorunlu metin alanı."""
+    """Required text field."""
     value = data.get(key)
     if not isinstance(value, str):
         raise BenchError(f"{where}: field {key!r} must be a string")
@@ -2227,14 +2241,14 @@ def text_field(data: dict[str, object], key: str, where: str) -> str:
 
 
 def optional_text_field(data: dict[str, object], key: str, where: str) -> str | None:
-    """Boş olabilen metin alanı."""
+    """Optional text field; None if absent or null."""
     if data.get(key) is None:
         return None
     return text_field(data, key, where)
 
 
 def int_field(data: dict[str, object], key: str, where: str) -> int:
-    """Zorunlu tam sayı alanı."""
+    """Required integer field."""
     value = data.get(key)
     if isinstance(value, bool) or not isinstance(value, int):
         raise BenchError(f"{where}: field {key!r} must be an integer")
@@ -2242,7 +2256,7 @@ def int_field(data: dict[str, object], key: str, where: str) -> int:
 
 
 def float_field(data: dict[str, object], key: str, where: str) -> float:
-    """Zorunlu sayı alanı."""
+    """Required number field."""
     value = data.get(key)
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise BenchError(f"{where}: field {key!r} must be a number")
@@ -2250,14 +2264,14 @@ def float_field(data: dict[str, object], key: str, where: str) -> float:
 
 
 def optional_int_field(data: dict[str, object], key: str, where: str) -> int | None:
-    """Boş olabilen tam sayı alanı."""
+    """Optional integer field; None if absent or null."""
     if data.get(key) is None:
         return None
     return int_field(data, key, where)
 
 
 def int_list(data: dict[str, object], key: str, where: str) -> tuple[int, ...]:
-    """Tam sayı listesi alanı."""
+    """Integer list field."""
     value = data.get(key)
     if not isinstance(value, list) or not all(
         isinstance(item, int) and not isinstance(item, bool) for item in value
@@ -2267,7 +2281,7 @@ def int_list(data: dict[str, object], key: str, where: str) -> tuple[int, ...]:
 
 
 def float_list(data: dict[str, object], key: str, where: str) -> tuple[float, ...]:
-    """Sayı listesi alanı."""
+    """Number list field."""
     value = data.get(key)
     if not isinstance(value, list) or not all(
         isinstance(item, int | float) and not isinstance(item, bool) for item in value
@@ -2277,7 +2291,7 @@ def float_list(data: dict[str, object], key: str, where: str) -> tuple[float, ..
 
 
 def bool_list(data: dict[str, object], key: str, where: str) -> tuple[bool, ...]:
-    """Mantıksal değer listesi alanı."""
+    """Boolean list field."""
     value = data.get(key)
     if not isinstance(value, list) or not all(isinstance(item, bool) for item in value):
         raise BenchError(f"{where}: field {key!r} must be a list of booleans")
@@ -2285,7 +2299,7 @@ def bool_list(data: dict[str, object], key: str, where: str) -> tuple[bool, ...]
 
 
 def bool_field(data: dict[str, object], key: str, where: str) -> bool:
-    """Zorunlu mantıksal alan."""
+    """Required boolean field."""
     value = data.get(key)
     if not isinstance(value, bool):
         raise BenchError(f"{where}: field {key!r} must be a boolean")
@@ -2293,7 +2307,7 @@ def bool_field(data: dict[str, object], key: str, where: str) -> bool:
 
 
 def text_list(data: dict[str, object], key: str, where: str) -> tuple[str, ...]:
-    """Metin listesi alanı."""
+    """Text list field."""
     value = data.get(key)
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise BenchError(f"{where}: field {key!r} must be a list of strings")
@@ -2301,7 +2315,7 @@ def text_list(data: dict[str, object], key: str, where: str) -> tuple[str, ...]:
 
 
 def object_list(data: dict[str, object], key: str, where: str) -> tuple[dict[str, object], ...]:
-    """Nesne listesi alanı."""
+    """Object list field."""
     value = data.get(key)
     if not isinstance(value, list):
         raise BenchError(f"{where}: field {key!r} must be a list of objects")

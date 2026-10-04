@@ -1,5 +1,5 @@
-"""Kurulum: kullanıcı ayarlarına ekleme, durum satırı zincirleme, yedek ve yalnızca eklenenleri
-geri alma."""
+"""Install: adding to the user's settings, status line chaining, backup, and undoing only what
+was added."""
 
 import json
 import os
@@ -79,7 +79,7 @@ def test_reinstall_from_another_interpreter_replaces_our_hooks() -> None:
     assert "/opt/cimrihook" not in json.dumps(second)
     env = second["env"]
     assert isinstance(env, dict) and env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "400000"
-    assert "autoCompactWindow" not in second  # bu kurulum pencere seçmedi
+    assert "autoCompactWindow" not in second  # this install selected no window
 
 
 def test_diff_hides_values_of_variables_cimrihook_does_not_manage(tmp_path: Path) -> None:
@@ -103,8 +103,8 @@ def test_init_backs_up_and_remove_restores_the_original(tmp_path: Path) -> None:
     installed = json.loads(path.read_text())
     assert installed["autoCompactWindow"] == 183_000
     assert "-I -m cimrihook guard" in json.dumps(installed["hooks"]["UserPromptSubmit"])
-    # Aynı saniyede ikinci kurulum farklı pencereyle: ilk yedek korunur, kaldırma yine
-    # kullanıcının asıl değerlerini ve durum satırını geri yükler.
+    # A second install in the same second with a different window: the first backup is kept, and
+    # removal still restores the user's original values and the status line.
     apply_init(plan_init(path, [*BLOCKS[:2], governor_settings(233_000)], home), home, 2.0)
     assert (tmp_path / "settings.json.cimrihook-backup-2-1").exists()
     apply_remove(plan_remove(path, home), home, 4.0)

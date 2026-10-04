@@ -1,9 +1,9 @@
-"""Transcript taraması: gerçek API istekleri, sıkıştırmalar, tekilleştirme ve zaman penceresi.
+"""Transcript scan: real API requests, compactions, deduplication and the time window.
 
-Claude Code aynı mesaj kimliğini birden çok satıra yazar; zaman ilk satırdan, kullanım son
-satırdan alınır. Yerel sentetik mesajlar API'ye gitmediği için sayılmaz. Çatallanmış ya da
-sürdürülmüş oturumlar önceki dosyanın geçmişini kopyalar; kopyalar yalnızca ilk görüldükleri dosyada
-sayılır. doctor, gain ve önbellek ömrü danışmanı bu taramayı paylaşır.
+Claude Code writes the same message id on several lines; the time comes from the first line and
+the usage from the last. Local synthetic messages never reach the API and are not counted. Forked
+or resumed sessions copy the history of the earlier file; copies count only in the file where
+they were first seen. doctor, gain and the cache lifetime advisor share this scan.
 """
 
 from collections.abc import Sequence
@@ -22,41 +22,42 @@ from cimrihook.transcripts import Usage, entry_time, estimate_tokens, message_us
 
 @dataclass(frozen=True, slots=True)
 class Request:
-    """Tek gerçek API isteği ve oturum içindeki yeri."""
+    """One real API request and its place in the session."""
 
     message_id: str
-    timestamp: float | None  # epoch saniye; satırda zaman yoksa None
+    timestamp: float | None  # epoch seconds; None if the line has no time
     model: str
     usage: Usage
     subagent: bool
     first: bool  # transcript'teki ilk istek
-    after_compaction: bool  # sıkıştırmadan sonraki ilk istek
-    model_switch: bool  # bir önceki istekten farklı model
-    gap_seconds: float | None  # bir önceki istekten bu yana geçen süre
+    after_compaction: bool  # first request after a compaction
+    model_switch: bool  # a different model than the previous request
+    gap_seconds: float | None  # time since the previous request
 
 
 @dataclass(frozen=True, slots=True)
 class Compaction:
-    """Transcript'teki bir sıkıştırma sınırı."""
+    """A compaction boundary in the transcript."""
 
     timestamp: float | None
-    trigger: int  # sıkıştırmayı tetikleyen bağlam
-    automatic: bool  # Claude Code'un kendi tetiklediği (elle /compact değil)
-    summary_tokens: int  # özetin tahmini token sayısı (özet metninden); özet yoksa 0
+    trigger: int  # context that triggered the compaction
+    automatic: bool  # triggered by Claude Code itself (not a manual /compact)
+    summary_tokens: int  # estimated tokens of the summary (from its text); 0 if there is none
 
 
 @dataclass(frozen=True, slots=True)
 class TranscriptScan:
-    """Bir transcript'teki istekler ve sıkıştırmalar."""
+    """Requests and compactions of one transcript."""
 
     requests: tuple[Request, ...]
     compactions: tuple[Compaction, ...]
 
 
 def scan_transcript(path: Path, subagent: bool) -> TranscriptScan:
-    """Transcript'teki gerçek API istekleri (yerel sentetik mesajlar hariç) ve sıkıştırmalar.
+    """Real API requests of a transcript (local synthetic messages excluded) and its compactions.
 
-    Aynı mesaj kimliği birden çok satıra yazılır; zaman ilk satırdan, kullanım son satırdan alınır.
+    The same message id is written on several lines; the time comes from the first line and the
+    usage from the last.
     """
     order: list[str] = []
     times: dict[str, float | None] = {}
@@ -123,12 +124,12 @@ def scan_transcript(path: Path, subagent: bool) -> TranscriptScan:
 
 
 def gap(previous: float | None, current: float | None) -> float | None:
-    """İki istek arasındaki süre; zamanlardan biri yoksa None."""
+    """Time between two requests; None if either time is missing."""
     return None if previous is None or current is None else current - previous
 
 
 def token_costs(request: Request, base: float) -> tuple[float, float, float, float]:
-    """İsteğin USD maliyeti token türüne göre: (önbellek okuma, yazma, önbelleksiz, çıktı)."""
+    """USD cost of a request by token type: (cache read, write, uncached, output)."""
     prices = claude_prices(request.model)
     usage = request.usage
     return (
@@ -140,8 +141,8 @@ def token_costs(request: Request, base: float) -> tuple[float, float, float, flo
 
 
 def unique_scans(scans: Sequence[TranscriptScan]) -> list[TranscriptScan]:
-    """Çatallanmış ya da sürdürülmüş oturumların önceki dosyadan kopyaladığı istekler (aynı mesaj
-    kimliği) ve sıkıştırmalar (aynı zaman ve boyut) yalnızca ilk görüldükleri dosyada kalır."""
+    """Requests (same message id) and compactions (same time and size) that forked or resumed
+    sessions copied from the earlier file stay only in the file where they were first seen."""
     seen_requests: set[str] = set()
     seen_compactions: set[Compaction] = set()
     unique: list[TranscriptScan] = []
@@ -155,8 +156,9 @@ def unique_scans(scans: Sequence[TranscriptScan]) -> list[TranscriptScan]:
 
 
 def recent_requests(scans: Sequence[TranscriptScan], cutoff: float) -> list[TranscriptScan]:
-    """Pencere dışındaki istekler ve sıkıştırmalar atılır: pencerede değişmiş bir transcript eski
-    istekler de taşır. Zamanı olmayan kayıt dosyası pencerede değiştiği için pencerede sayılır."""
+    """Requests and compactions outside the window are dropped: a transcript modified in the window
+    also carries older ones. One without a time counts as inside the window, because its file was
+    modified in it."""
     return [
         replace(
             scan,

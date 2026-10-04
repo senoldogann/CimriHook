@@ -1,11 +1,11 @@
-"""Maliyet anatomisi: kullanıcının kendi Claude Code kayıtlarında paranın nereye gittiği.
+"""Cost anatomy: where the money goes in the user's own Claude Code records.
 
-Her API isteği o ana kadarki konuşmayı yeniden okuduğundan bir oturumun maliyeti uzunluğuyla
-karesel büyür. Rapor kayıtlardaki her gerçek isteği kendi kullanım verisiyle API liste fiyatından
-fiyatlar ve maliyeti bu büyümenin göründüğü eksenlere ayırır: isteğin bağlam boyutu, token türü,
-büyük önbellek yeniden yazımları ve olası nedenleri, statik önek, ana oturum ile alt ajanlar,
-sıkıştırmalar. Önerilen sıkıştırma penceresinin etkisi simülatörden gelir ve A/B ile
-doğrulanmamış bir tahmin olarak etiketlenir.
+Every API request re-reads the conversation so far, so the cost of a session grows with the square
+of its length. The report prices every real request in the records at API list prices from its own
+usage data and splits the cost along the axes where this growth shows: the request's context
+size, the token type, large cache rewrites and their likely causes, the static prefix, main
+session against subagents, compactions. The effect of the recommended compaction window comes
+from the simulator and is labelled as an estimate that no A/B run has confirmed.
 """
 
 import os
@@ -58,8 +58,8 @@ from cimrihook.transcripts import (
 
 BANDS: Final = ((100_000, "up to 100k"), (200_000, "100k-200k"), (400_000, "200k-400k"))
 TOP_BAND: Final = "over 400k"
-REWRITE_TOKENS: Final = 100_000  # tek istekte bundan fazla girdi yazan istek büyük yeniden yazımdır
-# Eklentisiz, MCP'siz ve kullanıcı ayarsız Claude Code 2.1.288'in ilk istek bağlamı (A/B bench).
+REWRITE_TOKENS: Final = 100_000  # a request writing more input than this is a large rewrite
+# First-request context of Claude Code 2.1.288 without plugins, MCP or user settings (A/B bench).
 BARE_PREFIX_TOKENS: Final = 16_600
 SESSION_START: Final = "session start"
 AFTER_COMPACTION: Final = "after compaction"
@@ -79,7 +79,7 @@ REWRITE_CAUSES: Final = (
 
 @dataclass(frozen=True, slots=True)
 class Share:
-    """Bir kalemin adı, sayısı (istek ya da token) ve USD maliyeti."""
+    """A line item's name, count (requests or tokens) and USD cost."""
 
     label: str
     count: int
@@ -98,23 +98,23 @@ class Anatomy:
     total_usd: float
     main_usd: float
     subagent_usd: float
-    bands: tuple[Share, ...]  # isteğin bağlam boyutuna göre
-    token_types: tuple[Share, ...]  # sayı: token
-    rewrites: tuple[Share, ...]  # büyük yeniden yazımlar, nedene göre; maliyet: yazılan kısım
-    prefix_main: int | None  # oturumların ilk isteğindeki bağlamın medyanı
+    bands: tuple[Share, ...]  # by the request's context size
+    token_types: tuple[Share, ...]  # count: tokens
+    rewrites: tuple[Share, ...]  # large rewrites, by cause; cost: the part written
+    prefix_main: int | None  # median context of the first request of the sessions
     prefix_subagent: int | None
     compactions: int
     compaction_trigger: int | None  # medyan
-    after_compaction_context: int | None  # sıkıştırmadan sonraki ilk isteğin bağlamı, medyan
+    after_compaction_context: int | None  # context of the first request after a compaction, median
 
 
 def band(context: int) -> str:
-    """İsteğin bağlam boyutunun bandı."""
+    """Band of a request's context size."""
     return next((label for limit, label in BANDS if context <= limit), TOP_BAND)
 
 
 def rewrite_cause(request: Request) -> str | None:
-    """Büyük bir önbellek yeniden yazımının olası nedeni; büyük yeniden yazım değilse None."""
+    """Likely cause of a large cache rewrite; None if it is not a large rewrite."""
     if written_of(request.usage) <= REWRITE_TOKENS:
         return None
     if request.first:
@@ -207,7 +207,7 @@ def build_anatomy(scans: Sequence[TranscriptScan], days: int) -> Anatomy:
 
 
 def median_or_none(values: Sequence[int]) -> int | None:
-    """Değerlerin medyanı; değer yoksa None."""
+    """Median of the values; None if there are none."""
     return int(statistics.median(values)) if values else None
 
 
@@ -216,21 +216,20 @@ class Diagnosis:
     """doctor raporunun verisi."""
 
     anatomy: Anatomy
-    simulation: SimulationResult | None  # kayıtlarda gerçek sıkıştırma yoksa ölçülemez
+    simulation: SimulationResult | None  # unmeasurable if the records hold no real compaction
     guard_check: str
-    bench_transcripts: int  # dışarıda bırakılan CimriHook A/B çalıştırma transcript'leri
-    setup: str  # ayar dosyasındaki pencere, koruma ve durum satırı
-    lifetimes: tuple[LifetimeReplay, LifetimeReplay]  # ana oturumlar ve alt ajanlar
+    bench_transcripts: int  # CimriHook A/B run transcripts that were left out
+    setup: str  # window, guard and status line in the settings file
+    lifetimes: tuple[LifetimeReplay, LifetimeReplay]  # main sessions and subagents
 
 
 def diagnose_claude(projects_dir: Path, settings_path: Path, days: int, now: float) -> Diagnosis:
-    """Son `days` gündeki istekler üzerinde maliyet anatomisi, pencere politikalarının
-    simülasyonu ve soğuk istem korumasının öz denetimi.
+    """Cost anatomy of the last `days` days, a simulation of window policies and a guard self-check.
 
-    Anatomi yalnızca penceredeki istekleri sayar; çatallanmış ya da sürdürülmüş oturumların
-    kopyaladığı istekler ve sıkıştırmalar bir kez sayılır. Simülasyon pencerede etkin oturumları
-    bütün olarak yeniden oynatır. Kayıtlarda hiç gerçek sıkıştırma yoksa sıkıştırmanın bedeli
-    ölçülemez; simülasyon yapılmaz ve rapor bunu söyler.
+    The anatomy counts only requests in the window; requests and compactions that forked or resumed
+    sessions copied are counted once. The simulation replays the sessions active in the window as a
+    whole. If the records hold no real compaction, the cost of a compaction cannot be measured: no
+    simulation is made and the report says so.
     """
     files = recent_transcripts(projects_dir, days, now)
     scans = recent_requests(
@@ -258,7 +257,7 @@ def diagnose_claude(projects_dir: Path, settings_path: Path, days: int, now: flo
 
 
 def setup_line(settings_path: Path) -> str:
-    """Ayar dosyasında CimriHook'un neyi etkin: sıkıştırma penceresi, koruma, durum satırı."""
+    """What CimriHook has enabled in the settings file: compaction window, guard, status line."""
     settings = load_settings(settings_path)
     override = env_of(settings).get(WINDOW_ENV)
     window = settings.get("autoCompactWindow")
@@ -299,8 +298,8 @@ def hook_commands(entry: object) -> list[str]:
 
 
 def guard_check(files: Sequence[Path]) -> str:
-    """Soğuk istem korumasının en yeni ana oturumun önbellek durumunu okuyabildiği: Claude Code
-    kayıt biçimini değiştirirse koruma ya hata verir ya da sessizce devre dışı kalır."""
+    """Whether the cold-prompt guard can read the cache state of the newest main session: if Claude
+    Code changes the record format, the guard either errors or is silently disabled."""
     mains = [path for path in files if "subagents" not in path.parts]
     if not mains:
         return "Guard check: no main session transcript in these days"
@@ -322,12 +321,12 @@ def guard_check(files: Sequence[Path]) -> str:
 
 
 def percent(part: float, whole: float) -> str:
-    """Yüzde metni."""
+    """Percentage text."""
     return f"{100 * part / whole:.0f}%" if whole > 0 else "-"
 
 
 def tokens_text(tokens: int | None) -> str:
-    """Token sayısının kısa metni (ör. 34.6k, 1.25M, 7.31B)."""
+    """Short text of a token count (for example 34.6k, 1.25M, 7.31B)."""
     if tokens is None:
         return "-"
     if tokens < 1_000_000:
@@ -397,7 +396,7 @@ def render_doctor(diagnosis: Diagnosis) -> str:
 
 
 def bottom_line(anatomy: Anatomy, simulation: SimulationResult | None) -> str:
-    """Raporun tek sayısı: harcamanın ne kadarı önlenebilirdi (tahmin) ve nasıl."""
+    """The report's one number: how much of the spend was avoidable (an estimate) and how."""
     idle = next(share for share in anatomy.rewrites if share.label == IDLE_HOUR)
     found = None if simulation is None else recommended_window(simulation)
     chosen = None if found is None else found[0]
@@ -417,7 +416,7 @@ def bottom_line(anatomy: Anatomy, simulation: SimulationResult | None) -> str:
 
 
 def lifetime_line(replay: LifetimeReplay) -> str:
-    """Bir grubun iki ömürle maliyeti ve yeniden oynatmanın hata payı."""
+    """A group's cost under both lifetimes and the replay's error margin."""
     error = replay.replay_error()
     now = replay.current or "no cache writes"
     base = replay.replayed(replay.current) if replay.current is not None else 0.0
@@ -435,7 +434,7 @@ def lifetime_line(replay: LifetimeReplay) -> str:
 
 
 def lifetime_recommendations(lifetimes: Sequence[LifetimeReplay]) -> list[str]:
-    """Önbellek ömrü önerileri: yalnızca diğer ömür hata payından fazla ucuzsa."""
+    """Cache lifetime recommendations: only if the other lifetime is cheaper beyond the error."""
     lines: list[str] = []
     for replay in lifetimes:
         better = recommended_lifetime(replay)
@@ -451,7 +450,7 @@ def lifetime_recommendations(lifetimes: Sequence[LifetimeReplay]) -> list[str]:
 
 
 def recommendations(anatomy: Anatomy, simulation: SimulationResult | None) -> list[str]:
-    """Önerilen değişiklikler ve tahmini etkileri; tahminler doğrulanmamış olarak etiketlenir."""
+    """Recommended changes and their estimated effects; estimates are labelled as unconfirmed."""
     idle = next(share for share in anatomy.rewrites if share.label == IDLE_HOUR)
     lines = ["What would change it (estimates):"]
     if simulation is None:

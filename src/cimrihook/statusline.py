@@ -1,16 +1,16 @@
-"""Durum satırı: oturumun bağlam ekonomisi ve kullanım limiti, her güncellemede tek satır.
+"""Status line: the session's context economics and usage limit, one line per update.
 
-Claude Code durum satırı komutuna oturumun durumunu JSON olarak verir: modeli, bağlamdaki token
-sayısını (son isteğin girdi, önbellek okuma ve yazma toplamı), oturum maliyetini, abonelikte 5
-saatlik ve 7 günlük kullanım limitlerini ve kendi önbellek izlemesini (prompt_cache: sıcak mı,
-ömrü, ne zaman soğuyacağı, soğursa kaç token yeniden yazılacak). Claude Code satırı önbelleğin
-soğuduğu anda da yeniden çalıştırır. Bir sonraki isteğin tahmini maliyeti önbellek sıcaksa bağlamın
-okunması, soğuksa yeniden yazılmasıdır. Kullanım limiti gözlemleri, planın token türlerini nasıl
-saydığını öğrenmek için deftere yazılır.
+Claude Code gives the status line command the session's state as JSON: the model, the number of
+tokens in the context (the last request's input, cache read and cache write together), the
+session cost, the 5-hour and 7-day usage limits on a subscription, and its own cache tracking
+(prompt_cache: whether it is warm, its lifetime, when it goes cold, how many tokens would be
+rewritten then). Claude Code also re-runs the line the moment the cache goes cold. The estimated
+cost of the next request is a read of the context if the cache is warm and a rewrite if it is
+cold. Usage limit observations are written to the ledger to learn how the plan counts token types.
 
-Kullanıcının önceki durum satırı komutu varsa önce o çalışır ve çıktısının tüm satırları korunur.
-Claude Code sıfır olmayan çıkışta satırı tamamen sildiği için CimriHook'un kendi hatası satırın
-içinde gösterilir; böylece ne kullanıcının satırı kaybolur ne de hata görünmez kalır.
+If the user had a previous status line command, it runs first and every line of its output is
+kept. Claude Code blanks the line entirely on a non-zero exit, so CimriHook's own error is shown
+inside the line: the user's line is not lost and the error does not go unseen.
 """
 
 import contextlib
@@ -30,66 +30,67 @@ from cimrihook.model import QuotaSample
 from cimrihook.simulate import claude_prices, usd_per_token
 
 LIMIT_LABELS: Final = (("five_hour", "5h"), ("seven_day", "7d"))
-CACHE_TTLS: Final = {"5m": 300.0, "1h": 3_600.0}  # prompt_cache.ttl değerleri, saniye
+CACHE_TTLS: Final = {"5m": 300.0, "1h": 3_600.0}  # prompt_cache.ttl values, seconds
 SEPARATOR: Final = " · "
-CHAIN_TIMEOUT_SECONDS: Final = 5.0  # kullanıcının önceki durum satırı komutuna tanınan süre
-STATUS_BUSY_TIMEOUT_SECONDS: Final = 0.25  # durum satırı defter kilidini uzun beklemez
-ERROR_CHARS: Final = 120  # satırda gösterilen hata metninin en fazla uzunluğu
-# Sıkıştırmanın geri ödemesi: sıkıştırmadan sonraki ilk isteğin bağlamı ve özetin çıktısı (yazarın
-# son haftasındaki medyanlar; `cimrihook doctor` kendi değerlerini gösterir).
+CHAIN_TIMEOUT_SECONDS: Final = 5.0  # time allowed to the user's previous status line command
+STATUS_BUSY_TIMEOUT_SECONDS: Final = 0.25  # the status line does not wait long for the ledger lock
+ERROR_CHARS: Final = 120  # maximum length of the error text shown in the line
+# Payback of a compaction: the context of the first request after it and the summary's output
+# (medians of the author's last week; `cimrihook doctor` shows your own values).
 POST_COMPACT_TOKENS: Final = 56_000
 SUMMARY_OUTPUT_TOKENS: Final = 7_000
-PAYBACK_MIN_CONTEXT: Final = 150_000  # daha küçük bağlamda gösterilmez
-PAYBACK_MAX_REQUESTS: Final = 50  # daha uzun geri ödeme gösterilmez
+PAYBACK_MIN_CONTEXT: Final = 150_000  # not shown for a smaller context
+PAYBACK_MAX_REQUESTS: Final = 50  # a longer payback is not shown
 
 
 @dataclass(frozen=True, slots=True)
 class LimitUse:
-    """Bir kullanım limiti penceresinin doluluğu."""
+    """How full a usage limit window is."""
 
-    window: str  # five_hour ya da seven_day
+    window: str  # five_hour or seven_day
     used_percentage: float
     resets_at: int  # epoch saniye
 
 
 @dataclass(frozen=True, slots=True)
 class PromptCache:
-    """Claude Code'un oturum için tuttuğu önbellek durumu."""
+    """The cache state Claude Code keeps for the session."""
 
     warm: bool
     ttl_seconds: float
     expires_at: float | None  # epoch saniye
-    recache_tokens: int | None  # önbellek soğuksa bir sonraki isteğin yeniden yazacağı token
+    recache_tokens: int | None  # tokens the next request rewrites if the cache is cold
 
 
 @dataclass(frozen=True, slots=True)
 class StatusInput:
-    """Durum satırı komutunun girdisinden kullanılan alanlar."""
+    """The fields used from the status line command's input."""
 
     session_id: str
     model: str
-    context_tokens: int | None  # bağlamdaki token; ilk yanıttan önce ve /compact sonrası None
+    context_tokens: int | None  # context tokens; None before the first response and after /compact
     session_usd: float | None
     limits: tuple[LimitUse, ...]
-    cache: PromptCache | None  # ilk istekten önce Claude Code vermez
+    cache: PromptCache | None  # Claude Code does not give it before the first request
 
 
 def run_chained_statusline(raw: str, config: Config, now: float, previous_command: str) -> str:
-    """Kullanıcının önceki durum satırını aynı girdiyle çalıştırır ve CimriHook'unkini ekler.
+    """Runs the user's previous status line with the same input and adds CimriHook's.
 
-    Önceki komut (ör. başka bir aracın köprüsü) girdiyi kendisi de kullanabilir; ona aynen iletilir.
+    The previous command (for example another tool's bridge) may use the input itself; it is passed
+    the input unchanged.
     """
     return joined(previous_status(raw, previous_command), status_or_error(raw, config, now))
 
 
 def previous_status(raw: str, previous_command: str) -> str:
-    """Önceki durum satırı komutunun çıktısı; çıkış kodu ya da süre aşımı metne eklenir.
+    """Output of the previous status line command; an exit code or timeout is added to the text.
 
-    Komut kendi süreç grubunda çalışır; süre aşımında başlattığı tüm süreçler sonlandırılır.
+    The command runs in its own process group; on timeout everything it started is terminated.
     """
     with subprocess.Popen(
         previous_command,
-        shell=True,  # kullanıcının kendi ayarındaki komut, Claude Code'un çalıştırdığı gibi
+        shell=True,  # the user's own command from the settings, as Claude Code runs it
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -98,7 +99,7 @@ def previous_status(raw: str, previous_command: str) -> str:
         try:
             stdout, _ = process.communicate(raw.encode("utf-8"), timeout=CHAIN_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
-            with contextlib.suppress(ProcessLookupError):  # grup kendiliğinden bitmiş olabilir
+            with contextlib.suppress(ProcessLookupError):  # the group may have ended by itself
                 os.killpg(process.pid, signal.SIGKILL)
             process.communicate()
             return f"(previous status line timed out after {CHAIN_TIMEOUT_SECONDS:.0f}s)"
@@ -109,7 +110,7 @@ def previous_status(raw: str, previous_command: str) -> str:
 
 
 def joined(previous: str, ours: str) -> str:
-    """Önceki çıktının satırları korunur; CimriHook'un parçası son satırın sonuna eklenir."""
+    """The previous output's lines are kept; CimriHook's part is appended to the last line."""
     lines = previous.split("\n") if previous else []
     if not lines:
         return ours
@@ -118,7 +119,7 @@ def joined(previous: str, ours: str) -> str:
 
 
 def status_or_error(raw: str, config: Config, now: float) -> str:
-    """CimriHook'un durum satırı; kendi hatası satırda kısa bir iletiyle gösterilir."""
+    """CimriHook's status line; its own error is shown in the line as a short message."""
     try:
         return run_statusline(raw, config, now)
     except CimriHookError as error:
@@ -126,7 +127,7 @@ def status_or_error(raw: str, config: Config, now: float) -> str:
 
 
 def run_statusline(raw: str, config: Config, now: float) -> str:
-    """Durum satırını üretir ve yeni kullanım limiti gözlemlerini deftere yazar."""
+    """Produces the status line and writes new usage limit observations to the ledger."""
     status = parse_status_input(raw)
     samples = quota_samples(status, now)
     if samples:
@@ -135,7 +136,7 @@ def run_statusline(raw: str, config: Config, now: float) -> str:
 
 
 def parse_status_input(raw: str) -> StatusInput:
-    """stdin'deki durum satırı girdisini ayrıştırır; isteğe bağlı alanlar yoksa None."""
+    """Parses the status line input from stdin; optional fields that are absent are None."""
     try:
         decoded: object = json.loads(raw)
     except json.JSONDecodeError as error:
@@ -149,7 +150,7 @@ def parse_status_input(raw: str) -> StatusInput:
     return StatusInput(
         session_id=require_str(payload, "session_id", "statusline"),
         model=require_str(model, "id", "statusline.model"),
-        context_tokens=context if context else None,  # 0: henüz yanıt yok ya da yeni sıkıştırıldı
+        context_tokens=context if context else None,  # 0: no response yet or just compacted
         session_usd=optional_number(payload.get("cost"), "total_cost_usd"),
         limits=tuple(
             use for window, _ in LIMIT_LABELS if (use := limit_use(limits, window)) is not None
@@ -159,7 +160,7 @@ def parse_status_input(raw: str) -> StatusInput:
 
 
 def prompt_cache(value: object) -> PromptCache | None:
-    """Girdideki prompt_cache; Claude Code ilk istekten önce bu alanı vermez."""
+    """The prompt_cache of the input; Claude Code omits it before the first request."""
     if value is None:
         return None
     cache = as_object(value, "statusline.prompt_cache")
@@ -176,7 +177,7 @@ def prompt_cache(value: object) -> PromptCache | None:
 
 
 def optional_integer(container: object, key: str) -> int | None:
-    """Sözlükteki tam sayı alanı; sözlük ya da alan yoksa None."""
+    """An integer field of the dict; None if the dict or the field is missing."""
     if not isinstance(container, dict):
         return None
     value = container.get(key)
@@ -184,7 +185,7 @@ def optional_integer(container: object, key: str) -> int | None:
 
 
 def optional_number(container: object, key: str) -> float | None:
-    """Sözlükteki sayı alanı; sözlük ya da alan yoksa None."""
+    """A numeric field of the dict; None if the dict or the field is missing."""
     if not isinstance(container, dict):
         return None
     value = container.get(key)
@@ -194,7 +195,7 @@ def optional_number(container: object, key: str) -> float | None:
 
 
 def limit_use(limits: object, window: str) -> LimitUse | None:
-    """rate_limits içindeki bir pencere; abonelik dışında ya da pencere bitmişse None."""
+    """A window in rate_limits; None outside a subscription or when the window has ended."""
     entry = limits.get(window) if isinstance(limits, dict) else None
     used = optional_number(entry, "used_percentage")
     resets_at = optional_integer(entry, "resets_at")
@@ -204,7 +205,7 @@ def limit_use(limits: object, window: str) -> LimitUse | None:
 
 
 def quota_samples(status: StatusInput, now: float) -> tuple[QuotaSample, ...]:
-    """Girdideki kullanım limiti doluluklarının defter kaydı."""
+    """Ledger record of the usage limit fill levels in the input."""
     return tuple(
         QuotaSample(
             window=use.window,
@@ -219,7 +220,7 @@ def quota_samples(status: StatusInput, now: float) -> tuple[QuotaSample, ...]:
 
 
 def render_status(status: StatusInput, now: float) -> str:
-    """Durum satırının metni; bilinmeyen parçalar atlanır."""
+    """The text of the status line; unknown parts are skipped."""
     context = status.context_tokens
     parts = [] if context is None else [f"{compact_tokens(context)} ctx"]
     if status.cache is not None:
@@ -232,10 +233,10 @@ def render_status(status: StatusInput, now: float) -> str:
 
 
 def cache_parts(model: str, context: int | None, cache: PromptCache, now: float) -> list[str]:
-    """Önbellek sıcaklığı ve bir sonraki isteğin bağlam maliyeti (fiyatı biliniyorsa).
+    """Cache warmth and the context cost of the next request (if the price is known).
 
-    Sıcak önbellekte bağlam okunur; soğuk önbellekte Claude Code'un tahmin ettiği token yeniden
-    yazılır (yazma fiyatı önbelleğin ömrüne göre).
+    With a warm cache the context is read; with a cold cache the tokens Claude Code estimates are
+    written again (the write price depends on the cache's lifetime).
     """
     prices = claude_prices(model)
     base = usd_per_token(model)
@@ -259,11 +260,11 @@ def cache_parts(model: str, context: int | None, cache: PromptCache, now: float)
 
 
 def payback_requests(model: str, context: int | None, cache: PromptCache) -> int | None:
-    """Şimdi /compact yapılırsa bedelinin kaç istekte geri döneceği; küçük bağlamda ya da çok
-    uzun geri ödemede None.
+    """Requests until a /compact now pays for itself; None for a small context or a long payback.
 
-    Bedel: özet isteği bağlamı bir kez okur ve özeti çıktı fiyatından yazar, sıkıştırmadan sonraki
-    bağlam önbelleğe yeniden yazılır. Kazanç: sonraki her istek daha küçük bağlamı okur.
+    Cost: the summary request reads the context once and writes the summary at the output price,
+    and the context after the compaction is written to the cache again. Gain: every later request
+    reads the smaller context.
     """
     if context is None or context < PAYBACK_MIN_CONTEXT:
         return None
@@ -278,10 +279,10 @@ def payback_requests(model: str, context: int | None, cache: PromptCache) -> int
 
 
 def compact_tokens(tokens: int) -> str:
-    """Token sayısının kısa hali (ör. 412k, 1.05M)."""
+    """Short form of a token count (for example 412k, 1.05M)."""
     return f"{tokens / 1000:.0f}k" if tokens < 1_000_000 else f"{tokens / 1e6:.2f}M"
 
 
 def duration(seconds: float) -> str:
-    """Sürenin kısa hali (ör. 38m, 45s)."""
+    """Short form of a duration (for example 38m, 45s)."""
     return f"{int(seconds // 60)}m" if seconds >= 60 else f"{int(seconds)}s"

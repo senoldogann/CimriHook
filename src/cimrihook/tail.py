@@ -1,10 +1,11 @@
-"""Transcript'in sonundan oturumun son durumu: son yanıtın zamanı, önbellek ömrü ve bağlamı.
+"""Session state from the end of its transcript: last response time, cache lifetime, context.
 
-Soğuk istem koruması bütün transcript'i okumadan sonundan yararlanır; son yanıt bulunana dek okunan
-kısım büyütülür (Claude Code yanıttan sonra büyük ek kayıtlar yazabilir). Önbellek ömrü son önbellek
-yazımının türünden (5 dakika / 1 saat) gelir; ömür her istekte yenilendiğinden önbellek son yanıttan
-bu kadar süre sonra soğur. Son yanıttan sonra bir sıkıştırma sınırı varsa bağlam artık o yanıttaki
-kadar büyük değildir: durum bilinmez sayılır.
+The cold-prompt guard uses the end of the transcript without reading all of it; the part read is
+grown until the last response is found (Claude Code can write large extra records after a
+response). The cache lifetime comes from the kind of the latest cache write (5 minutes / 1 hour);
+the lifetime is renewed on every request, so the cache goes cold that long after the last
+response. If a compaction boundary follows the last response, the context is no longer as large as
+in that response: the state counts as unknown.
 """
 
 import os
@@ -17,7 +18,7 @@ from cimrihook.errors import TranscriptError
 from cimrihook.simulate import SYNTHETIC_MODEL, context_of
 from cimrihook.transcripts import Usage, entry_time, message_usage, parse_line
 
-# Son yanıtı ve önbellek yazımını bulmak için transcript'in okunan son kısmı, adım adım büyür.
+# Tail of the transcript read to find the last response and cache write; it grows step by step.
 TAIL_CHUNKS: Final = (262_144, 1_048_576, 4_194_304)
 ONE_HOUR: Final = 3_600.0
 FIVE_MINUTES: Final = 300.0
@@ -25,28 +26,28 @@ FIVE_MINUTES: Final = 300.0
 
 @dataclass(frozen=True, slots=True)
 class SessionTail:
-    """Oturumun son API yanıtına göre durumu."""
+    """State of the session by its last API response."""
 
     last_response_at: float  # epoch saniye
-    ttl_seconds: float  # önbellek ömrü
-    context_tokens: int  # bir sonraki isteğin taşıyacağı bağlam (son istek + yanıtı)
+    ttl_seconds: float  # cache lifetime
+    context_tokens: int  # context the next request will carry (last request + its response)
     model: str
 
 
 @dataclass(frozen=True, slots=True)
 class TailScan:
-    """Transcript'in bir son kısmının sondan başa taranması."""
+    """A scan of one tail part of the transcript, from the end backwards."""
 
-    compacted: bool  # son yanıttan sonra sıkıştırma sınırı var
-    last: tuple[JsonObject, Usage] | None  # en son API yanıtı ve kullanımı
-    ttl_seconds: float | None  # en son önbellek yazımının ömrü
+    compacted: bool  # a compaction boundary follows the last response
+    last: tuple[JsonObject, Usage] | None  # the latest API response and its usage
+    ttl_seconds: float | None  # lifetime of the latest cache write
 
 
 def read_session_tail(transcript_path: str) -> SessionTail | None:
-    """Transcript'in sonundan oturum durumu.
+    """Session state from the end of the transcript.
 
-    None: transcript yok, son yanıttan sonra sıkıştırma yapılmış ya da son 4 MiB'ta önbellek ömrünü
-    gösteren bir yanıt yok. Okunamayan dosya ve tutarsız kayıt hatadır.
+    None: no transcript, a compaction after the last response, or no response showing the cache
+    lifetime in the last 4 MiB. An unreadable file and an inconsistent record are errors.
     """
     try:
         size = os.path.getsize(transcript_path)
@@ -66,7 +67,7 @@ def read_session_tail(transcript_path: str) -> SessionTail | None:
 
 
 def last_lines(transcript_path: str, size: int, chunk: int) -> list[bytes]:
-    """Dosyanın son `chunk` baytının satırları; ilk satır yarım olabilir (ayrıştırılamaz)."""
+    """Lines of the file's last `chunk` bytes; the first may be cut off (unparseable)."""
     try:
         with open(transcript_path, "rb") as handle:
             handle.seek(max(0, size - chunk))
@@ -76,8 +77,8 @@ def last_lines(transcript_path: str, size: int, chunk: int) -> list[bytes]:
 
 
 def scan_tail(lines: Sequence[bytes], where: str) -> TailScan:
-    """Satırları sondan başa tarar: önce sıkıştırma sınırı mı yoksa yanıt mı geliyor, en son
-    yanıt hangisi ve en son önbellek yazımının ömrü ne."""
+    """Scans the lines from the end: whether a compaction boundary or a response comes first, which
+    response is the latest and what lifetime the latest cache write has."""
     last: tuple[JsonObject, Usage] | None = None
     for raw in reversed(lines):
         entry = parse_line(raw)
@@ -97,7 +98,7 @@ def scan_tail(lines: Sequence[bytes], where: str) -> TailScan:
 
 
 def session_tail(last: tuple[JsonObject, Usage], ttl_seconds: float, where: str) -> SessionTail:
-    """Son yanıttan oturum durumu; zamanı ya da modeli olmayan yanıt tutarsız kayıttır."""
+    """Session state from the last response; one without a time or model is inconsistent."""
     entry, usage = last
     try:
         when = entry_time(entry)
@@ -117,10 +118,11 @@ def session_tail(last: tuple[JsonObject, Usage], ttl_seconds: float, where: str)
 
 
 def write_ttl(entry: JsonObject, where: str) -> float | None:
-    """Yanıtın önbellek yazımının ömrü; yazım yoksa None.
+    """Lifetime of the response's cache write; None if there is no write.
 
-    Ömür yalnızca cache_creation ayrıntısından okunur. Ayrıntı yoksa ya da toplamı tutmuyorsa ömür
-    bilinemez; koruma yanlış süreyle uyarmasın diye bu hatadır.
+    The lifetime is read only from the cache_creation detail. Without the detail, or if it does not
+    add up, the lifetime cannot be known; that is an error, so the guard never warns with a wrong
+    duration.
     """
     message = entry.get("message")
     usage = message.get("usage") if isinstance(message, dict) else None
@@ -139,7 +141,7 @@ def write_ttl(entry: JsonObject, where: str) -> float | None:
 
 
 def response_usage(entry: JsonObject) -> Usage | None:
-    """API'den gelmiş asistan satırının kullanımı; yerel ya da kullanımsız satırda None."""
+    """Usage of an assistant line that came from the API; None for a local or usage-less line."""
     message = entry.get("message")
     if entry.get("type") != "assistant" or not isinstance(message, dict):
         return None

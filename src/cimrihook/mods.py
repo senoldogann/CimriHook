@@ -1,11 +1,11 @@
-"""CimriHook'un Claude Code mod'u: paketteki dosyalardan eklenti klasörünü kurar.
+"""CimriHook's Claude Code mod: installs the plugin folder from the files in the package.
 
-Mod, Claude Code'un fonksiyon hook'larıdır (2.1.286 ve sonrası; masaüstü uygulaması dahil):
-sıkıştırmayı önbellek ömrüne göre zamanlar (bkz. mod/register.ts). Eklenti üç dosyadır:
-.claude-plugin/plugin.json, hooks/hooks.json ve hooks/register.ts. Paket bunları düz bir
-klasörde taşır, kurulum eklentinin düzenini oluşturur. Claude Code klasörü
-CLAUDE_CODE_PLUGIN_DIRS'ten yükler; değişken kullanıcı ayarlarının env bloğundan da okunur,
-masaüstü uygulamasının başlattığı oturumlar dahil.
+The mod is a set of Claude Code function hooks (2.1.286 and later; the desktop app included):
+it schedules compaction around the cache lifetime (see mod/register.ts). The plugin is three
+files: .claude-plugin/plugin.json, hooks/hooks.json and hooks/register.ts. The package keeps
+them in a flat folder and the installation builds the plugin layout. Claude Code loads the
+folder from CLAUDE_CODE_PLUGIN_DIRS; the variable is also read from the env block of the user
+settings, including for sessions the desktop app starts.
 """
 
 from importlib import resources
@@ -22,12 +22,12 @@ LAYOUT: Final = (
 
 
 def mod_dir(home: Path) -> Path:
-    """Mod'un kurulduğu eklenti klasörü."""
+    """The plugin folder the mod is installed into."""
     return home / "mod" / MOD_NAME
 
 
 def write_mod(target: Path) -> Path:
-    """Paketteki mod dosyalarını eklenti düzeniyle yazar (varsa üzerine) ve klasörü döndürür."""
+    """Writes the packaged mod files in the plugin layout (overwriting) and returns the folder."""
     source = resources.files("cimrihook") / "mod"
     for relative, name in LAYOUT:
         path = target / relative
