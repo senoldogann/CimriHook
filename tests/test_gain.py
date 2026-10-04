@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from cimrihook.errors import ConfigError
-from cimrihook.gain import measure_gain, render_gain
+from cimrihook.gain import gain_json, measure_gain, render_gain
 from cimrihook.install import INSTALL_RECORD, InstallRecord, save_record
 from cimrihook.transcripts import estimate_tokens
 
@@ -50,6 +50,10 @@ def test_gain_splits_requests_at_the_install_time(tmp_path: Path) -> None:
     assert gain.after.large_context_usd == 0
     report = render_gain(gain)
     assert "mean context" in report and "-67%" in report
+    # The menu bar panel reads these fields.
+    shown = json.loads(gain_json(gain))
+    assert shown["installed_at"] == T0 and shown["after"]["requests"] == 2
+    assert set(shown["receipt"]) >= {"requests_usd", "without_compactions_usd"}
 
 
 def test_gain_needs_a_recorded_install(tmp_path: Path) -> None:

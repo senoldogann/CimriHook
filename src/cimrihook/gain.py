@@ -19,12 +19,13 @@ beyond that is reset. It cannot see the re-reading or the agent's changed behavi
 this kind of replay came out 0-11 points optimistic.
 """
 
+import json
 import math
 import sqlite3
 import statistics
 from collections.abc import Sequence
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Final
@@ -260,6 +261,11 @@ def render_gain(gain: Gain) -> str:
             *receipt_lines(gain.receipt),
         ]
     )
+
+
+def gain_json(gain: Gain) -> str:
+    """The measurement as JSON for other programs, such as the macOS menu bar panel."""
+    return json.dumps(asdict(gain), indent=2, allow_nan=False)
 
 
 def receipt_lines(receipt: Receipt) -> list[str]:

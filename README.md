@@ -277,6 +277,22 @@ ledger, so CimriHook can learn how your plan counts cache reads, writes and outp
 line of its output is kept and CimriHook's part ends the last line. If CimriHook's part fails, its
 error is shown in the line instead (Claude Code blanks the whole status line on a non-zero exit).
 
+### macOS menu bar panel
+
+`macos/` holds a small SwiftUI menu bar app (macOS 14 or later). The menu bar shows the fullest
+window of each provider (`C 39%  X 100%`); its panel shows every 5-hour and weekly window of
+Claude Code and Codex with the time left until it resets, and the ratios of `cimrihook gain`.
+
+```bash
+macos/build-app.sh                      # builds macos/build/CimriHook Bar.app
+open "macos/build/CimriHook Bar.app"    # or copy it to /Applications
+```
+
+The app holds no measurement of its own: every five minutes, and when you press refresh, it runs
+`cimrihook quota --agent claude`, `cimrihook quota --agent codex` and `cimrihook gain --json` with
+the PATH of your login shell, so `cimrihook`, `claude` and `codex` must be on that PATH. The quota
+probes send no model request. A provider that cannot be read shows its error in its own section.
+
 ## Codex CLI
 
 ```bash

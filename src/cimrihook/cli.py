@@ -38,7 +38,7 @@ from cimrihook.codex_config import (
 from cimrihook.config import load_config
 from cimrihook.doctor import diagnose_claude, render_doctor
 from cimrihook.errors import BenchError, CimriHookError, ConfigError
-from cimrihook.gain import measure_gain, render_gain
+from cimrihook.gain import gain_json, measure_gain, render_gain
 from cimrihook.guard import guard_prompt
 from cimrihook.install import apply_init, apply_remove, plan_init, plan_remove, render_plan
 from cimrihook.limits import LimitSample, limits_dir, read_samples
@@ -133,6 +133,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     gain.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
     gain.add_argument("--settings", default=DEFAULT_SETTINGS_PATH)
+    gain.add_argument("--json", action="store_true", help="print the measurement as JSON")
     commands.add_parser(
         "limits", help="what a point of your 5-hour and weekly windows costs in usage"
     )
@@ -433,16 +434,13 @@ def main() -> None:
                 )
             )
         elif command == "gain":
-            print(
-                render_gain(
-                    measure_gain(
-                        Path(str(args.projects_dir)).expanduser(),
-                        config.home,
-                        Path(str(args.settings)).expanduser(),
-                        time.time(),
-                    )
-                )
+            measured = measure_gain(
+                Path(str(args.projects_dir)).expanduser(),
+                config.home,
+                Path(str(args.settings)).expanduser(),
+                time.time(),
             )
+            print(gain_json(measured) if args.json else render_gain(measured))
         elif command == "limits":
             samples = read_samples(limits_dir(config.home))
             print(render_limits(samples))
