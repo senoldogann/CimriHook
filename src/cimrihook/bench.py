@@ -27,9 +27,9 @@ Variants (mechanism ablation):
 - mask: the window and the CimriHook mod (`--plugin-dir`) with mask-first compaction: on
   automatic compaction old tool results are replaced with a placeholder instead of an LLM summary
   (Claude Code only).
-- boundary: the window and the CimriHook mod with compaction at a task boundary: if the context
-  exceeds BOUNDARY_TOKENS it is compacted before the new prompt; the window is the safety net
-  inside the task (Claude Code only).
+- boundary: etkileşimli ana tur tamamlandıktan sonra mod ile sıkıştırma. Claude Code 2.1.289
+  bu API'yi headless oturumlarda desteklemediğinden yeni benchmark koşuları reddedilir;
+  eski kayıtlar raporlanabilir.
 - codec, combined and brief: retired (tool result recoding and the compaction summary
   instruction are not part of the product; their code is at the `pre-trim` tag). The recorded
   results of these arms are read and reported; new runs cannot be planned.
@@ -241,7 +241,7 @@ RUN_MIN_POINTS: Final = 3.0  # mean points per run under which a window is too c
 OTHER_SESSIONS: Final = "other sessions"  # weight class: recorded sessions that are no arm
 POOLED: Final = "pooled"  # weight class: every recorded session at one weight
 METER_DIR: Final = "meter"  # CIMRIHOOK_HOME of a mod arm, inside the run directory
-BOUNDARY_TOKENS: Final = 100_000  # boundary arm: compact before a prompt above this context
+BOUNDARY_TOKENS: Final = 100_000  # Etkileşimli ana tur tamamlandıktan sonraki eşik.
 RTK_VARIANTS: Final = frozenset({Variant.RTK, Variant.RTK_GOVERNOR})
 RTK_HOOK_COMMAND: Final = "rtk hook claude"  # the command RTK 0.51 installs for Claude Code
 # Arms of the codec and the summary instruction, which are no longer part of the product. Their
@@ -594,6 +594,12 @@ def spec_problem(spec: RunSpec) -> str | None:
         return (
             f"variant {spec.variant.value!r} is retired: its mechanism was removed from CimriHook "
             "(the code is at the git tag pre-trim); its recorded results can still be reported"
+        )
+    if spec.agent is Agent.CLAUDE and spec.variant is Variant.BOUNDARY:
+        return (
+            "claude cannot benchmark 'boundary': session.compact() is unavailable in headless "
+            "(-p / SDK) sessions in Claude Code 2.1.289; use governor, mask or meter-governor. "
+            "Recorded boundary results can still be reported"
         )
     if spec.agent is Agent.CODEX and spec.variant not in CODEX_VARIANTS:
         return (

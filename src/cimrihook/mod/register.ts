@@ -20,6 +20,11 @@ function worthCompacting(usage: { context: { tokens?: number }; rateLimits: read
   return usage.rateLimits.length > 0 && (usage.context.tokens ?? 0) >= min
 }
 
+/** Native kapatma bayraklarında "0" ve "false" açık sayılmaz. */
+function flagEnabled(value: string | undefined): boolean {
+  return ['1', 'true', 'yes', 'on'].includes(value?.toLowerCase() ?? '')
+}
+
 export const register: Register = (on) => {
   const session = {
     running: false, compacted: false, compacting: false,
@@ -73,6 +78,23 @@ export const register: Register = (on) => {
           $.ui.log(`CimriHook prefix record: ${String(error)}`, { to: 'debug' })
         }
       }
+      // Prompt'u tutan hook içinde compact desteklenmez; yalnız tamamlanan ana turdan sonra.
+      const boundary = await $.env.get('CIMRIHOOK_MOD_BOUNDARY_TOKENS')
+      if (boundary !== undefined && !e.isAborted && !session.compacted && !session.compacting &&
+          !flagEnabled(await $.env.get('DISABLE_AUTO_COMPACT')) &&
+          !flagEnabled(await $.env.get('DISABLE_COMPACT')) &&
+          (await $.session.surfaces()).length > 0 &&
+          ((await $.session.usage()).context.tokens ?? 0) >= Number(boundary)) {
+        session.compacting = true
+        try {
+          const outcome = await $.session.compact()
+          session.compacted = outcome.skip === undefined
+        } catch (error) {
+          $.ui.log(`CimriHook boundary compaction: ${String(error)}`, { to: 'debug' })
+        } finally {
+          session.compacting = false
+        }
+      }
     }
     return result
   })
@@ -88,9 +110,14 @@ export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     const minTokens = Number((await $.env.get('CIMRIHOOK_MOD_MIN_TOKENS')) ?? DEFAULT_MIN_TOKENS)
+    // Etkileşimli yüzeyi olmayan -p/SDK oturumlarında bu API desteklenmez.
+    if ((await $.session.surfaces()).length === 0) return result
     $.clock.every(TICK_MS, () => {
       void (async () => {
         if (session.running || session.compacted || session.compacting || session.lastTurnEnd === undefined) return
+        if (flagEnabled(await $.env.get('DISABLE_AUTO_COMPACT')) ||
+            flagEnabled(await $.env.get('DISABLE_COMPACT'))) return
+        if ((await $.session.surfaces()).length === 0) return
         const idle = (await $.clock.now()) - session.lastTurnEnd
         if (idle < CACHE_LIFETIME_MS - WARM_MARGIN_MS || idle >= CACHE_LIFETIME_MS) return
         if (!worthCompacting(await $.session.usage(), minTokens)) return
@@ -130,24 +157,6 @@ export const register: Register = (on) => {
         }))
       }
     }
-    if (e.turnId === undefined && !session.compacted && !session.compacting) {
-      const idle = session.lastTurnEnd === undefined ? 0 : (await $.clock.now()) - session.lastTurnEnd
-      const min = Number((await $.env.get('CIMRIHOOK_MOD_MIN_TOKENS')) ?? DEFAULT_MIN_TOKENS)
-      const boundary = await $.env.get('CIMRIHOOK_MOD_BOUNDARY_TOKENS')
-      const cold = idle >= CACHE_LIFETIME_MS && worthCompacting(await $.session.usage(), min)
-      const large = boundary !== undefined && ((await $.session.usage()).context.tokens ?? 0) >= Number(boundary)
-      if (cold || large) {
-        session.compacting = true
-        try {
-          const outcome = await $.session.compact()
-          session.compacted = outcome.skip === undefined
-        } catch (error) {
-          $.ui.log(`CimriHook prompt compaction: ${String(error)}`, { to: 'debug' })
-        } finally {
-          session.compacting = false
-        }
-      }
-    }
     return next(e)
   }).catch(($, e, next) => {
     if (closure.enabled && !next.called) return { drop: `CimriHook closure prompt veto: ${next.error.message}` }
@@ -176,6 +185,12 @@ export const register: Register = (on) => {
   })
 
   on('session.compact', async ($, e, next) => {
+    if (flagEnabled(await $.env.get('DISABLE_COMPACT'))) {
+      return { skip: 'CimriHook: DISABLE_COMPACT is enabled' }
+    }
+    if (e.trigger === 'auto' && flagEnabled(await $.env.get('DISABLE_AUTO_COMPACT'))) {
+      return { skip: 'CimriHook: DISABLE_AUTO_COMPACT is enabled' }
+    }
     if (e.agentId === undefined && (e.trigger === 'plugin' || e.trigger === 'manual') &&
         e.instructions === CLOSE_INSTRUCTION && await $.env.get('CIMRIHOOK_MOD_CLOSE_PROBE') === '1') {
       try {

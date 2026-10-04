@@ -27,7 +27,7 @@ const current: SessionMessage[] = [...prefix,
   { role: 'assistant', text: 'Fixed and tested', toolUses: [] },
 ]
 
-for (const failure of ['none', 'manual', 'verification', 'prefix', 'file', 'archive', 'receipt-write', 'request-read', 'hook-catch', 'evidence']) {
+for (const failure of ['none', 'manual', 'auto-disabled', 'all-disabled', 'verification', 'prefix', 'file', 'archive', 'receipt-write', 'request-read', 'hook-catch', 'evidence']) {
   test(`closure ${failure}: veto failures before downstream summary`, async ($, on) => {
     const base = '/probe/closure/session-1'
     const closure = {
@@ -49,6 +49,8 @@ for (const failure of ['none', 'manual', 'verification', 'prefix', 'file', 'arch
     const env: Record<string, string> = { CIMRIHOOK_HOME: '/probe',
       CIMRIHOOK_MOD_CLOSE_PROBE: '1', CIMRIHOOK_PROBE_WORKSPACE: '/workspace',
       CIMRIHOOK_PROBE_PHASE: 'closed' }
+    if (failure === 'auto-disabled') env.DISABLE_AUTO_COMPACT = '1'
+    if (failure === 'all-disabled') env.DISABLE_COMPACT = '1'
     on('env.get', (_, e) => {
       if (failure === 'hook-catch') throw new Error('unexpected hook failure')
       return { value: env[e.name] }
@@ -74,7 +76,7 @@ for (const failure of ['none', 'manual', 'verification', 'prefix', 'file', 'arch
     const result = await $.session.compact({ trigger: failure === 'manual' ? 'manual' : 'plugin', messages: controlled,
       instructions: CLOSE_INSTRUCTION })
     expect(summaries).toBe(0)
-    if (failure === 'none' || failure === 'manual') {
+    if (failure === 'none' || failure === 'manual' || failure === 'auto-disabled') {
       expect(result.messages?.[0].handle).toBe('prefix-user')
       const saved = JSON.parse(files.get(`${base}.closed.json`) ?? '{}')
       expect(saved.projected[0].text).toBe('Keep this original constraint')

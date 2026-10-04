@@ -190,9 +190,9 @@ context size:
   (`CIMRIHOOK_MOD_MIN_TOKENS`), the mod compacts while the cache is still warm. The summary request
   reads the context at the cache-read price, and when you come back the first request writes the
   short summary instead of re-caching the whole conversation. A toast says it happened.
-- **Cold fallback:** if the timer could not run (the machine slept), the first prompt you send into
-  an idle session whose cache has expired is preceded by a compaction: that request was going to
-  rewrite the whole context anyway.
+- **Cold resume:** if the timer could not run (the machine slept), the cold-prompt guard can
+  suggest `/compact` once before a large cold request. The mod does not compact inside
+  `prompt.submit`: Claude Code refuses that call while the hook holds the incoming turn.
 - **Limit meter:** on a subscription, every turn appends the session's list-price spend and the
   use of the 5-hour and weekly windows to `~/.cimrihook/limits/`; `cimrihook limits` turns it into
   what a point of each window costs on your plan.
@@ -201,10 +201,10 @@ context size:
   `cimrihook doctor` shows each active category's median when present and its session count;
   deferred tools, messages and reserved space are excluded. These snapshots do not measure
   recoverable savings or establish that a category was present on every request.
-- **Boundary compaction (experimental, `CIMRIHOOK_MOD_BOUNDARY_TOKENS=N`):** a prompt that enters
-  a conversation larger than N tokens is preceded by a compaction, so the summary closes a
-  finished task instead of cutting into the middle of one; the window stays the backstop inside a
-  task. Not measured yet.
+- **Boundary compaction (experimental, `CIMRIHOOK_MOD_BOUNDARY_TOKENS=N`):** after a completed
+  main turn, an interactive session at or above N tokens can compact. Turn completion does not
+  establish that a task is finished. No saving or quality improvement has been measured for this
+  mechanism. The window remains the backstop inside a turn.
 - **Mask-first (experimental, `CIMRIHOOK_MOD_MASK=1`):** an automatic compaction keeps the
   conversation and replaces older tool results with a one-line placeholder instead of asking the
   model for a summary (observation masking, which matched summarisation at lower cost in the
@@ -218,8 +218,11 @@ context size:
 `CLAUDE_CODE_PLUGIN_DIRS` in your settings, keeping folders you already have there; `--remove`
 puts the variable back. The mod counts every compaction of the main conversation, so after Claude
 Code's own compaction (including idle compaction where a server flag enables it) or a `/compact`
-it does not compact again before the next turn. With the mod the cold-prompt guard rarely has
-anything to stop.
+it does not compact again before the next turn. Warm and boundary compaction require an attached
+interactive surface. Claude Code 2.1.289 does not support `session.compact()` in `-p`/SDK sessions;
+the mod skips those automatic paths there. Native window compaction and explicit `/compact`
+commands remain available. `DISABLE_AUTO_COMPACT=1` disables CimriHook's automatic paths;
+`DISABLE_COMPACT=1` also disables its manual compaction overrides.
 
 Mask-first hands its messages back rebuilt rather than by the engine's handles: in Claude Code
 2.1.288 the handles tie a resumed session to the history before the compaction, so `--resume`
@@ -378,13 +381,15 @@ Codex CLI (`codex exec`) in one arm per mechanism:
 | `rtk` | RTK's hook (`rtk hook claude`; RTK must be on the `PATH`) | not available |
 | `rtk-governor` | RTK's hook and the window | not available |
 | `mask` | window and the CimriHook mod with mask-first compaction | not available |
-| `boundary` | window and the mod with boundary compaction (before a prompt above 100k tokens) | not available |
+| `boundary` | new runs rejected: the mod's automatic call is unsupported in `-p`/SDK on 2.1.289 | not available |
 | `meter` | the mod's limit meter only, no window | not available |
 | `meter-governor` | the mod's limit meter and the window | not available |
 
 The `codec`, `combined` and `brief` arms of earlier result sets belong to mechanisms that were
 removed from CimriHook (the code is at the git tag `pre-trim`). They can no longer be run, but
 `bench-report` still reads their recorded results.
+Earlier `boundary` records can also be reported, but new headless runs are rejected because
+the agent cannot apply that mechanism. They do not establish that boundary compaction ran.
 
 The `meter` arms record how many points of your 5-hour and weekly windows a task takes.
 Whatever else runs on your account meanwhile moves the same windows, so `bench-report` also
@@ -434,8 +439,10 @@ runs: use that no session records still raises the weights.
 | `CIMRIHOOK_DISABLE` | empty | `guard` switches the cold-prompt guard off |
 | `CIMRIHOOK_GUARD_MIN_TOKENS` | `150000` | the cold-prompt guard only stops sessions at least this large |
 | `CIMRIHOOK_MOD_MIN_TOKENS` | `100000` | the mod compacts around the cache only above this context |
-| `CIMRIHOOK_MOD_BOUNDARY_TOKENS` | unset | boundary compaction threshold (experimental) |
+| `CIMRIHOOK_MOD_BOUNDARY_TOKENS` | unset | compaction threshold after an interactive main turn (experimental) |
 | `CIMRIHOOK_MOD_MASK` | unset | `1` turns mask-first compaction on (experimental) |
+| `DISABLE_AUTO_COMPACT` | unset | Claude Code flag; `1` also stops the mod's automatic compaction; manual `/compact` is allowed |
+| `DISABLE_COMPACT` | unset | Claude Code flag; `1` also stops all mod compaction overrides, including manual ones |
 
 ## Limitations
 
