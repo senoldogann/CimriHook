@@ -24,10 +24,11 @@ from dataclasses import dataclass
 from itertools import pairwise
 from typing import Final
 
-from cimrihook.limits import LimitSample
+from cimrihook.limits import WINDOW_NAMES, LimitSample
 from cimrihook.stats import RatioEstimate, t_975
 
 MIN_EXTRA_SPANS: Final = 3  # spans beyond the number of classes before weights are stated
+ALL_SESSIONS: Final = "all sessions"  # the one class of a ledger fit
 SINGULAR_RATIO: Final = 1e-9  # a pivot this small next to the matrix scale is a singular system
 
 
@@ -261,3 +262,51 @@ def weight_text(weight: ClassWeight) -> str:
         f"{points} = ${1 / weight.weight:,.2f} per point "
         f"[95% ${1 / weight.high:,.2f}-${1 / weight.low:,.2f}]"
     )
+
+
+def ledger_spans(samples: Sequence[LimitSample], kind: str) -> list[Span]:
+    """The spans of a window over the whole ledger, with the spend of all sessions as one class."""
+    curves = [spend_curve(group) for group in sessions_of(samples)]
+    moments = [sample.time for sample in samples]
+    return crossing_spans(window_crossings(samples, kind), [curves], min(moments), max(moments))
+
+
+def point_cost_text(weight: ClassWeight) -> str:
+    """What one point of a window costs, in list-price dollars, with the 95% interval."""
+    if weight.weight <= 0:
+        return "no recorded spend has moved this window yet"
+    cost = f"1 point is about ${1 / weight.weight:,.2f} of usage at API list prices"
+    if weight.low <= 0:
+        return f"{cost} (the 95% interval has no upper bound)"
+    return f"{cost} [95% ${1 / weight.high:,.2f}-${1 / weight.low:,.2f}]"
+
+
+def render_limits(samples: Sequence[LimitSample]) -> str:
+    """Output of `cimrihook limits`: the cost of a window point from the ledger's own readings."""
+    sessions = len({sample.session for sample in samples})
+    lines = [
+        f"CimriHook limits: {len(samples):,} measurements from {sessions:,} sessions "
+        "(list-price spend of each session against your subscription windows)"
+    ]
+    kinds = sorted({window.kind for sample in samples for window in sample.windows})
+    if not kinds:
+        lines.append("  no window reading yet")
+    for kind in kinds:
+        spans = ledger_spans(samples, kind)
+        fit = fit_weights(spans, [ALL_SESSIONS])
+        measured = (
+            f"{len(spans)} spans between whole-percent crossings, "
+            f"{sum(span.points for span in spans):.0f} points, "
+            f"${sum(sum(span.spends) for span in spans):,.2f} measured"
+        )
+        cost = (
+            point_cost_text(fit.weights[0])
+            if fit is not None
+            else f"needs at least {1 + MIN_EXTRA_SPANS} spans to estimate"
+        )
+        lines.append(f"  {WINDOW_NAMES.get(kind, kind)}: {cost} ({measured})")
+    lines.append(
+        "  Use outside these sessions (claude.ai, sessions without the mod, A/B runs) also "
+        "fills the windows; with such use a point looks cheaper than it is."
+    )
+    return "\n".join(lines)

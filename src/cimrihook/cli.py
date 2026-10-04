@@ -39,7 +39,7 @@ from cimrihook.errors import BenchError, CimriHookError, ConfigError
 from cimrihook.gain import measure_gain, render_gain
 from cimrihook.guard import guard_prompt
 from cimrihook.install import apply_init, apply_remove, plan_init, plan_remove, render_plan
-from cimrihook.limits import LimitSample, limits_dir, read_samples, render_limits, window_rates
+from cimrihook.limits import LimitSample, limits_dir, read_samples
 from cimrihook.mods import mod_dir, write_mod
 from cimrihook.settings import (
     cache_ttl_settings,
@@ -63,6 +63,7 @@ from cimrihook.simulate import (
     simulate_codex,
 )
 from cimrihook.statusline import run_chained_statusline, status_or_error
+from cimrihook.weights import render_limits
 
 DEFAULT_PROJECTS_DIR: Final = "~/.claude/projects"
 DEFAULT_SIMULATE_DAYS: Final = 30
@@ -428,7 +429,7 @@ def main() -> None:
             )
         elif command == "limits":
             samples = read_samples(limits_dir(config.home))
-            print(render_limits(samples, window_rates(samples)))
+            print(render_limits(samples))
         elif command == "simulate":
             agent: str = args.agent
             logs_dir = DEFAULT_LOGS[agent] if args.logs_dir is None else str(args.logs_dir)

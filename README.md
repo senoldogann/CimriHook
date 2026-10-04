@@ -99,8 +99,9 @@ itself warns that switching model or effort mid-conversation "re-reads everythin
 adds to your usage": the windows fill with the same token flows CimriHook prices. With the mod
 enabled, every turn records the session's list-price spend and the windows' use, and `limits`
 turns that into a rate for your own plan, such as "1 point of the 5-hour window is about $X of
-usage". Use outside Claude Code (claude.ai chats, other machines) also fills the windows, so with
-such use a point looks cheaper than it is.
+usage" with a 95% interval, read off the spend between one whole-percent step of a window and
+the next. Use outside Claude Code (claude.ai chats, other machines) also fills the windows, so
+with such use a point looks cheaper than it is.
 
 `gain` compares the time since your last `cimrihook init` that changed your settings with the same
 length of time before it: requests, spend at list prices, spend per request, mean context, the

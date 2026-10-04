@@ -9,6 +9,7 @@ from cimrihook.weights import (
     SpendCurve,
     crossing_spans,
     fit_weights,
+    render_limits,
     spend_at,
     spend_curve,
     weight_ratio,
@@ -40,6 +41,12 @@ def test_spend_is_linear_between_readings_and_zero_before_the_first() -> None:
     assert [spend_at(curve, moment) for moment in (5.0, 10.0, 15.0, 25.0)] == [0.0, 1.0, 2.0, 3.0]
 
 
+def test_spend_counts_from_the_first_reading() -> None:
+    # A resumed session already carries $5 that never filled the window during its readings.
+    curve = spend_curve([reading("c", 10, 5.0, 10), reading("c", 20, 8.0, 11)])
+    assert curve == SpendCurve((10.0, 20.0), (0.0, 3.0))
+
+
 def test_spans_run_between_bracket_midpoints_and_read_each_class_off_its_curve() -> None:
     crossings = window_crossings([*FIRST, *SECOND], "five_hour")
     classes = [[spend_curve(FIRST)], [spend_curve(SECOND)]]
@@ -69,3 +76,13 @@ def test_fit_is_none_without_enough_spans_or_with_spends_that_move_together() ->
     assert fit_weights(few, ["a", "b"]) is None  # 3 spans for 2 classes
     together = [Span(0, 1, 0.3 * n, (float(n), 2.0 * n)) for n in range(1, 8)]
     assert fit_weights(together, ["a", "b"]) is None  # the second spend is always twice the first
+
+
+def test_limits_state_the_cost_of_a_point_from_the_spans_between_crossings() -> None:
+    # One session spends $4 per point, read at every point: five spans of one point and $4.
+    steady = [reading("s", 60.0 * n, 4.0 * n, 10 + n) for n in range(7)]
+    assert (
+        "5-hour window: 1 point is about $4.00 of usage at API list prices [95% $4.00-$4.00] "
+        "(5 spans between whole-percent crossings, 5 points, $20.00 measured)"
+    ) in render_limits(steady)
+    assert "needs at least 4 spans to estimate" in render_limits(steady[:3])

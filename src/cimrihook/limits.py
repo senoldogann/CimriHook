@@ -8,16 +8,13 @@ flows CimriHook counts at list prices.
 
 On every measurement (after every turn, and when a window advances by a point) the CimriHook mod
 appends the session's list-price spend so far and the windows' percentages to
-`limits/<session>.jsonl`. Here the records of all sessions are combined: in each window period
-(the same reset time), the observed rise in percentage is compared with the sum of the spend
-increases of the sessions in that period, which yields the rate "one point of the window is this
-many dollars of usage". claude.ai chats, sessions without the mod and A/B runs also fill the
-window but are not recorded; with such use the rate shows a point as worth fewer dollars than it
-is.
+`limits/<session>.jsonl`. `cimrihook.weights` combines the records of all sessions into the rate
+"one point of the window is this many dollars of usage". claude.ai chats, sessions without the
+mod and A/B runs also fill the window but are not recorded; with such use the rate shows a point
+as worth fewer dollars than it is.
 """
 
 import json
-from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,7 +23,6 @@ from typing import Final, TypeGuard
 from cimrihook.errors import ConfigError
 
 LIMITS_DIR: Final = "limits"
-MIN_POINTS: Final = 3.0  # total points that must be observed before a rate is stated
 WINDOW_NAMES: Final = {"five_hour": "5-hour window", "seven_day": "weekly window"}
 
 
@@ -47,20 +43,6 @@ class LimitSample:
     time: float  # epoch seconds
     usd: float  # the session's list-price spend up to that moment
     windows: tuple[WindowUse, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class WindowRate:
-    """Points and spend summed over the observed periods of one window kind."""
-
-    kind: str
-    periods: int  # periods in which at least one point of progress was observed
-    points: float
-    usd: float
-
-    def usd_per_point(self) -> float | None:
-        """List-price spend per point of the window; None if there are not enough points."""
-        return self.usd / self.points if self.points >= MIN_POINTS else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,36 +115,6 @@ def is_number(value: object) -> TypeGuard[int | float]:
     return isinstance(value, int | float) and not isinstance(value, bool)
 
 
-def window_rates(samples: Sequence[LimitSample]) -> list[WindowRate]:
-    """Observed rise in points per window kind and the spend rise in the same periods.
-
-    The spend between two consecutive measurements of a session goes to the later measurement's
-    period. A period's points are the difference between the highest and the lowest percentage
-    observed in it.
-    """
-    percents: dict[tuple[str, str], list[float]] = defaultdict(list)
-    spend: dict[tuple[str, str], float] = defaultdict(float)
-    previous: dict[str, LimitSample] = {}
-    for sample in samples:
-        for window in sample.windows:
-            percents[(window.kind, window.resets_at)].append(window.percent)
-        before = previous.get(sample.session)
-        if before is not None and sample.usd >= before.usd:
-            for window in sample.windows:
-                spend[(window.kind, window.resets_at)] += sample.usd - before.usd
-        previous[sample.session] = sample
-    rates: dict[str, WindowRate] = {}
-    for (kind, period), values in percents.items():
-        points = max(values) - min(values)
-        if points <= 0:
-            continue
-        current = rates.get(kind, WindowRate(kind, 0, 0.0, 0.0))
-        rates[kind] = WindowRate(
-            kind, current.periods + 1, current.points + points, current.usd + spend[(kind, period)]
-        )
-    return [rates[kind] for kind in sorted(rates)]
-
-
 def run_points(samples: Sequence[LimitSample], where: str) -> list[RunPoints]:
     """Points each window kind moved between the first and the last reading of one run.
 
@@ -192,31 +144,3 @@ def kind_points(ordered: Sequence[LimitSample], kind: str, where: str) -> RunPoi
             f"(points {points}, spend ${usd:.4f})"
         )
     return RunPoints(kind, points, usd)
-
-
-def render_limits(samples: Sequence[LimitSample], rates: Sequence[WindowRate]) -> str:
-    """Output of `cimrihook limits`."""
-    sessions = len({sample.session for sample in samples})
-    lines = [
-        f"CimriHook limits: {len(samples):,} measurements from {sessions:,} sessions "
-        "(list-price spend of each session against your subscription windows)"
-    ]
-    if not rates:
-        lines.append("  no window has moved a whole point between measurements yet")
-    for rate in rates:
-        name = WINDOW_NAMES.get(rate.kind, rate.kind)
-        per_point = rate.usd_per_point()
-        measured = (
-            f"1 point is about ${per_point:,.2f} of usage at API list prices"
-            if per_point is not None
-            else f"needs at least {MIN_POINTS:.0f} points to estimate"
-        )
-        lines.append(
-            f"  {name}: {rate.points:.0f} points over {rate.periods} periods, "
-            f"${rate.usd:,.2f} measured; {measured}"
-        )
-    lines.append(
-        "  Use outside these sessions (claude.ai, sessions without the mod, A/B runs) also "
-        "fills the windows; with such use a point looks cheaper than it is."
-    )
-    return "\n".join(lines)
