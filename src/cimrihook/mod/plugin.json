@@ -1,0 +1,8 @@
+{
+  "name": "cimrihook",
+  "version": "0.1.0",
+  "description": "Compacts a large idle session while its prompt cache is still warm, and optionally masks old tool results instead of summarising.",
+  "author": {
+    "name": "Senol Dogan"
+  }
+}

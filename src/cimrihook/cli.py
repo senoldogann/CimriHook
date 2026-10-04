@@ -38,6 +38,7 @@ from cimrihook.guard import compaction_brief, guard_prompt
 from cimrihook.hook import ledger_path, run_hook
 from cimrihook.install import apply_init, apply_remove, plan_init, plan_remove, render_plan
 from cimrihook.ledger import BUSY_TIMEOUT_SECONDS, Ledger
+from cimrihook.mods import mod_dir, write_mod
 from cimrihook.report import render_savings
 from cimrihook.settings import (
     brief_settings,
@@ -46,6 +47,7 @@ from cimrihook.settings import (
     guard_settings,
     hook_settings,
     merge_settings,
+    mod_settings,
     statusline_settings,
 )
 from cimrihook.simulate import (
@@ -180,6 +182,11 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--cache-ttl", choices=("5m", "1h"), help="main conversation cache lifetime")
     init.add_argument("--subagent-cache-ttl", choices=("5m", "1h"), help="subagent cache lifetime")
     init.add_argument("--codec", action="store_true", help="also re-encode tool results")
+    init.add_argument(
+        "--mod",
+        action="store_true",
+        help="also install the mod that compacts idle sessions while their cache is warm",
+    )
     init.add_argument("--dry-run", action="store_true", help="show the change, write nothing")
     init.add_argument("--remove", action="store_true", help="take out only what CimriHook added")
     settings = commands.add_parser(
@@ -199,6 +206,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--codec", action="store_true", help="also re-encode tool results (REF/DELTA/OUTLINE)"
     )
     settings.add_argument("--cache-ttl", choices=("5m", "1h"), help="main conversation cache")
+    settings.add_argument("--mod", action="store_true", help="also load the CimriHook mod")
     settings.add_argument(
         "--subagent-cache-ttl", choices=("5m", "1h"), help="subagent cache lifetime"
     )
@@ -217,8 +225,8 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument(
         "--variants",
         default="baseline,governor",
-        help="baseline, governor, codec, combined, brief, rtk, rtk-governor (all but baseline and "
-        "governor: claude only)",
+        help="baseline, governor, codec, combined, brief, rtk, rtk-governor, mask (all but "
+        "baseline and governor: claude only)",
     )
     bench.add_argument("--reps", type=int, default=1)
     bench.add_argument("--claude-model", default=DEFAULT_CLAUDE_MODEL)
@@ -285,7 +293,7 @@ def run_codex_init(args: argparse.Namespace, home: Path, now: float) -> str:
     return apply_codex_window(plan, home, now)
 
 
-def selected_blocks(args: argparse.Namespace) -> list[dict[str, object]]:
+def selected_blocks(args: argparse.Namespace, home: Path) -> list[dict[str, object]]:
     """Seçilen bileşenlerin ayar blokları: koruma ve durum satırı her zaman, diğerleri seçilince."""
     window = optional_int(args.compact_window)
     if window is not None and not CLAUDE_MIN_COMPACT_WINDOW <= window <= CLAUDE_MAX_COMPACT_WINDOW:
@@ -306,6 +314,7 @@ def selected_blocks(args: argparse.Namespace) -> list[dict[str, object]]:
             if args.cache_ttl is None and args.subagent_cache_ttl is None
             else [cache_ttl_settings(args.cache_ttl, args.subagent_cache_ttl)]
         ),
+        *([mod_settings(str(mod_dir(home)))] if args.mod else []),
     ]
 
 
@@ -451,13 +460,15 @@ def main() -> None:
             plan = (
                 plan_remove(path, config.home)
                 if args.remove
-                else plan_init(path, selected_blocks(args), config.home)
+                else plan_init(path, selected_blocks(args, config.home), config.home)
             )
             if args.dry_run:
                 print(f"{render_plan(plan)}\ndry run: nothing written")
             elif args.remove:
                 print(apply_remove(plan, config.home, time.time()))
             else:
+                if args.mod:
+                    write_mod(mod_dir(config.home))
                 print(apply_init(plan, config.home, time.time()))
         elif command == "bench-run":
             bench_run(args)
@@ -474,7 +485,7 @@ def main() -> None:
             results_dir = Path(str(args.results_dir)) / str(args.name)
             print(render_calibration(load_results(results_dir)))
         elif command == "settings":
-            print(json.dumps(merge_settings(selected_blocks(args)), indent=2))
+            print(json.dumps(merge_settings(selected_blocks(args, config.home)), indent=2))
         else:
             raise ConfigError(f"unhandled command {command!r}")
     except CimriHookError as error:

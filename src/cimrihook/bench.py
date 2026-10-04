@@ -28,6 +28,8 @@ Varyantlar (mekanizma ablasyonu):
 - rtk ve rtk-governor: RTK'nın Bash komut çıktısı sıkıştırması (PreToolUse hook'u, `rtk hook
   claude`), tek başına ve pencereyle birlikte (yalnızca Claude Code). Tezdeki 2×2 tasarım: RTK var
   ya da yok, pencere var ya da yok.
+- mask: pencere ve CimriHook mod'u (`--plugin-dir`), önce maskeleme açık: otomatik sıkıştırmada
+  LLM özeti yerine eski araç sonuçları yer tutucuyla değişir (yalnızca Claude Code).
 
 Ölçüm:
 - Birincil maliyet sağlayıcı düzeyindedir ve sıkıştırma ile yardımcı çağrıları içerir. Claude Code
@@ -65,6 +67,7 @@ from typing import Final
 from cimrihook.audit import Usage, average_write_weight, parse_line
 from cimrihook.errors import BenchError
 from cimrihook.hook import LEDGER_FILE
+from cimrihook.mods import MOD_NAME, write_mod
 from cimrihook.settings import (
     HOOK_TIMEOUT_SECONDS,
     command,
@@ -195,11 +198,13 @@ class Variant(StrEnum):
     BRIEF = "brief"
     RTK = "rtk"
     RTK_GOVERNOR = "rtk-governor"
+    MASK = "mask"
 
 
 WINDOW_VARIANTS: Final = frozenset(
-    {Variant.GOVERNOR, Variant.COMBINED, Variant.BRIEF, Variant.RTK_GOVERNOR}
+    {Variant.GOVERNOR, Variant.COMBINED, Variant.BRIEF, Variant.RTK_GOVERNOR, Variant.MASK}
 )
+MOD_VARIANTS: Final = frozenset({Variant.MASK})
 RTK_VARIANTS: Final = frozenset({Variant.RTK, Variant.RTK_GOVERNOR})
 RTK_HOOK_COMMAND: Final = "rtk hook claude"  # RTK 0.51'in Claude Code kurulumundaki komut
 CODEC_VARIANTS: Final = frozenset({Variant.CODEC, Variant.COMBINED})
@@ -1173,6 +1178,7 @@ def claude_call(
         str(MAX_TURNS),
         "--allowedTools",
         CLAUDE_TOOLS,
+        *plugin_args(spec, run_dir),
     )
     env = agent_env(spec, run_dir, os.environ)
     process = run_process(command, workspace, env, timeout, run_dir, step)
@@ -1259,7 +1265,15 @@ def agent_env(spec: RunSpec, run_dir: Path, base: Mapping[str, str]) -> dict[str
         else {}
     )
     ledger = {"CIMRIHOOK_HOME": str(run_dir / "ledger")} if spec.variant in CODEC_VARIANTS else {}
-    return allowed | window | ledger
+    mask = {"CIMRIHOOK_MOD_MASK": "1"} if spec.variant in MOD_VARIANTS else {}
+    return allowed | window | ledger | mask
+
+
+def plugin_args(spec: RunSpec, run_dir: Path) -> tuple[str, ...]:
+    """Mod kollarında CimriHook mod'unu çalıştırmanın kendi dizininden yükleyen seçenek."""
+    if spec.variant not in MOD_VARIANTS:
+        return ()
+    return ("--plugin-dir", str(write_mod(run_dir / "mod" / MOD_NAME)))
 
 
 def claude_reported_usage(stdout: str) -> ReportedUsage | None:

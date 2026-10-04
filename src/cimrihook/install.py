@@ -36,7 +36,10 @@ MARKER: Final = " -m cimrihook "  # CimriHook'un yazdığı komutları tanır
 AFTER_FLAG: Final = "--after"  # zincirlenen önceki durum satırı komutunun argümanı
 INSTALL_RECORD: Final = "installed.json"
 RECORD_VERSION: Final = 2
-MANAGED_ENV: Final = frozenset({"CLAUDE_CODE_AUTO_COMPACT_WINDOW"})  # farkta değeri görünenler
+# Farkta değeri görünen, CimriHook'un yönettiği ortam değişkenleri.
+MANAGED_ENV: Final = frozenset({"CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_CODE_PLUGIN_DIRS"})
+# Yol listesi değişkenleri: kullanıcının değeri korunur, CimriHook'un yolu sona eklenir.
+PATH_LIST_ENV: Final = frozenset({"CLAUDE_CODE_PLUGIN_DIRS"})
 WINDOW_ENV: Final = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"  # ayarlanmışsa autoCompactWindow'u ezer
 # CimriHook'un yazdığı üst düzey ayarlar: sıkıştırma penceresi ve önbellek ömürleri.
 MANAGED_KEYS: Final = ("autoCompactWindow", "promptCacheTtl", "subagentPromptCacheTtl")
@@ -115,8 +118,13 @@ def install(
             hooks[event] = [*hooks.get(event, []), *entries]
         for name, value in env_of(block).items():
             previous = env.get(name)
-            changes.append(EnvChange(name, str(value), None if previous is None else str(previous)))
-            env[name] = value
+            merged = (
+                joined_paths(None if previous is None else str(previous), str(value))
+                if name in PATH_LIST_ENV
+                else str(value)
+            )
+            changes.append(EnvChange(name, merged, None if previous is None else str(previous)))
+            env[name] = merged
         for key in MANAGED_KEYS:
             wanted_value = block.get(key)
             if wanted_value is None:
@@ -146,6 +154,12 @@ def install(
         {"hooks": hooks or None, "env": env or None, "statusLine": status_line, **values},
     )
     return after, InstallRecord(tuple(changes), tuple(setting_changes), None), tuple(notes)
+
+
+def joined_paths(current: str | None, path: str) -> str:
+    """Yol listesine yolu sona ekler; listede zaten olan aynı yol önce çıkarılır."""
+    kept = [] if current is None else [p for p in current.split(os.pathsep) if p and p != path]
+    return os.pathsep.join([*kept, path])
 
 
 def setting_value(value: object, key: str) -> SettingValue:

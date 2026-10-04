@@ -140,6 +140,34 @@ error, so both defaults stay. With an API key, where the main conversation gets 
 the same replay is where the saving usually is. `FORCE_PROMPT_CACHING_5M` and
 `ENABLE_PROMPT_CACHING_1H` in your env override these settings; `init` warns about them.
 
+## Compact before the cache goes cold (mod)
+
+```bash
+cimrihook init --mod        # adds the CimriHook mod to CLAUDE_CODE_PLUGIN_DIRS
+```
+
+Claude Code 2.1.286 and later load function-hook plugins ("mods") in the terminal and the desktop
+app. CimriHook's mod schedules compaction around the prompt cache instead of only around the
+context size:
+
+- **Warm compaction:** when a session on a subscription (1-hour cache) has been idle until five
+  minutes before the cache expires and its context is above 100k tokens
+  (`CIMRIHOOK_MOD_MIN_TOKENS`), the mod compacts while the cache is still warm. The summary request
+  reads the context at the cache-read price, and when you come back the first request writes the
+  short summary instead of re-caching the whole conversation. A toast says it happened.
+- **Cold fallback:** if the timer could not run (the machine slept), the first prompt you send into
+  an idle session whose cache has expired is preceded by a compaction: that request was going to
+  rewrite the whole context anyway.
+- **Mask-first (opt-in, `CIMRIHOOK_MOD_MASK=1`):** an automatic compaction keeps every message and
+  replaces older tool results with a short placeholder instead of asking the model for a summary
+  (the approach that matched summarisation at lower cost in the JetBrains study); when that would
+  not remove at least 40% of the context, Claude Code's own summary runs.
+
+`init --mod` writes the plugin to `~/.cimrihook/mod/cimrihook` and adds that folder to
+`CLAUDE_CODE_PLUGIN_DIRS` in your settings, keeping folders you already have there; `--remove`
+puts the variable back. Claude Code has the same warm-compaction idea behind a server flag that is
+off; the mod turns it on for you. With the mod the cold-prompt guard rarely has anything to stop.
+
 ## Guard the cache
 
 When a session sits idle past its prompt-cache lifetime (1 hour on subscriptions, 5 minutes

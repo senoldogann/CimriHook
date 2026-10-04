@@ -8,6 +8,7 @@ sıkıştırmalar. Önerilen sıkıştırma penceresinin etkisi simülatörden g
 doğrulanmamış bir tahmin olarak etiketlenir.
 """
 
+import os
 import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from cimrihook.lifetime import (
     recommended_lifetime,
     replay_lifetimes,
 )
+from cimrihook.mods import MOD_NAME, PLUGIN_DIRS_ENV
 from cimrihook.scan import (
     Request,
     TranscriptScan,
@@ -275,9 +277,12 @@ def setup_line(settings_path: Path) -> str:
         for command in hook_commands(entry)
     )
     status = is_ours(settings.get("statusLine"))
+    plugin_dirs = str(env_of(settings).get(PLUGIN_DIRS_ENV, ""))
+    mod = any(Path(part).name == MOD_NAME for part in plugin_dirs.split(os.pathsep) if part)
     return (
         f"Setup ({settings_path}): compaction window {compaction}; cold-prompt guard "
-        f"{'on' if guard else 'off'}; status line {'on' if status else 'off'}"
+        f"{'on' if guard else 'off'}; status line {'on' if status else 'off'}; idle-compaction "
+        f"mod {'on' if mod else 'off'}"
     )
 
 

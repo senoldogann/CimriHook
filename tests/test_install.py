@@ -20,10 +20,12 @@ from cimrihook.install import (
     plan_remove,
     settings_diff,
 )
+from cimrihook.mods import write_mod
 from cimrihook.settings import (
     cache_ttl_settings,
     governor_settings,
     guard_settings,
+    mod_settings,
     statusline_settings,
 )
 
@@ -147,3 +149,25 @@ def test_cache_lifetimes_are_set_and_restored(tmp_path: Path) -> None:
     assert (installed["promptCacheTtl"], installed["subagentPromptCacheTtl"]) == ("5m", "1h")
     apply_remove(plan_remove(path, home), home, 3.0)
     assert json.loads(path.read_text()) == {"promptCacheTtl": "1h"}
+
+
+def test_the_mod_joins_the_users_plugin_dirs_and_remove_restores_them(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"env": {"CLAUDE_CODE_PLUGIN_DIRS": "/mine"}}), encoding="utf-8")
+    home = tmp_path / "home"
+    apply_init(plan_init(path, [mod_settings("/cimri/mod")], home), home, 2.0)
+    env = json.loads(path.read_text())["env"]
+    assert env["CLAUDE_CODE_PLUGIN_DIRS"] == os.pathsep.join(["/mine", "/cimri/mod"])
+    apply_init(plan_init(path, [mod_settings("/cimri/mod")], home), home, 3.0)  # yinelenmez
+    assert json.loads(path.read_text())["env"] == env
+    apply_remove(plan_remove(path, home), home, 4.0)
+    assert json.loads(path.read_text()) == {"env": {"CLAUDE_CODE_PLUGIN_DIRS": "/mine"}}
+
+
+def test_write_mod_lays_out_the_plugin(tmp_path: Path) -> None:
+    folder = write_mod(tmp_path / "cimrihook")
+    manifest = json.loads((folder / ".claude-plugin" / "plugin.json").read_text())
+    hooks = json.loads((folder / "hooks" / "hooks.json").read_text())
+    assert manifest["name"] == "cimrihook"
+    assert hooks == {"modules": ["./register.ts"]}
+    assert "session.compact" in (folder / "hooks" / "register.ts").read_text()

@@ -88,6 +88,14 @@ def cache_ttl_settings(main: str | None, subagent: str | None) -> dict[str, obje
     }
 
 
+def mod_settings(plugin_dir: str) -> dict[str, object]:
+    """CimriHook mod'u: Claude Code eklenti klasörlerine (CLAUDE_CODE_PLUGIN_DIRS) eklenir.
+
+    Kurulum, kullanıcının bu değişkende zaten olan klasörlerini korur ve bunu sona ekler.
+    """
+    return {"env": {"CLAUDE_CODE_PLUGIN_DIRS": plugin_dir}}
+
+
 def governor_env(window: int) -> dict[str, object]:
     """Bağlam yöneticisi, ortam değişkeniyle: CLAUDE_CODE_AUTO_COMPACT_WINDOW her ayarı ezer.
 
