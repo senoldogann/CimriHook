@@ -564,6 +564,32 @@ or installed-setting change is part of this screening. Exact prompts, native out
 host verification and aggregate opportunity JSON are retained locally in
 `/tmp/cimrihook-bench/preparation-screen-20261005/`.
 
+## Preregistered preparation study: awaiting approval
+
+The [preparation A/B preregistration](preparation-ab-preregistration.md) freezes an
+exploratory six-task, three-repository design with control/oracle/auto/wrong arms,
+two repeats per arm and agent (96 episodes, at most 160 generation invocations).
+Its primary comparison is deterministic no-model auto preparation versus governor
+without a packet. The [implementation plan](superpowers/plans/2026-10-05-preparation-ab.md)
+keeps new code beside the existing benchmark runner.
+
+**Current status: design only. Zero new model benchmark invocations or attributable
+benchmark window points.** The proposed measurement pilot needs first explicit
+approval: one episode per arm per agent, eight total, n=1 task and no efficacy CI.
+The full study requires separate approval after that pilot. No new quality or
+repeatability result is established. Full-run CIs will bootstrap six task clusters;
+shared repository provenance and the small sample limit generalization.
+
+The stage-1 estimate uses historical control consumption for every arm, without
+assuming savings. Pilot expected/reserved consumption is Claude $0.3613/$0.7227,
+Codex 1.7659/3.5318 predicted five-hour points and 0.3020/0.6040 weekly pooled proxy
+points. Full-study estimates, excluding pilot, are $7.2268/$14.4536,
+35.3185/70.6369 five-hour points and 6.0402/12.0804 weekly proxy points.
+The reserve is 2×, not a bound. Separate weekly input/output weights are
+unidentifiable; the pooled estimate's coefficient-only 95% interval is documented
+in the preregistration. No Claude window-point conversion is supported by these USD.
+Every relevant weekly window exceeding 85% stops active and queued generation.
+
 ## Reproduce existing A/B studies
 
 ```bash
