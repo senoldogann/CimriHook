@@ -86,6 +86,13 @@ struct ProviderCard<Extra: View>: View {
                         .frame(width: 16, height: 16)
                         .foregroundStyle(logo.tint)
                     Text(title).font(.subheadline.weight(.semibold))
+                    Spacer()
+                    if case .loaded(let snapshot) = reading, let fullest = fullestPercent(snapshot) {
+                        Circle()
+                            .fill(levelColor(level(fullest)))
+                            .frame(width: 7, height: 7)
+                            .help("Fullest window \(Int(fullest.rounded()))%")
+                    }
                 }
                 windows
                 extra
@@ -128,14 +135,14 @@ struct WindowRow: View {
             }
             UsageBar(percent: window.usedPercent)
             TimelineView(.periodic(from: .now, by: 60)) { context in
-                HStack {
+                VStack(alignment: .leading, spacing: 2) {
                     if let reset = try? window.resetsAt.map(resetDate) {
-                        Text("Resets in \(countdown(context.date, reset))")
-                            .help(reset.formatted(date: .abbreviated, time: .shortened))
+                        Text("Resets in \(countdown(context.date, reset)) · \(resetMoment(reset, context.date))")
+                            .help(reset.formatted(date: .complete, time: .shortened))
                     }
-                    Spacer()
                     if let heading = try? pace(window, context.date) {
-                        Text(paceLabel(heading, context.date))
+                        let sentence = paceText(heading, context.date)
+                        Text(sentence.prefix(1).uppercased() + sentence.dropFirst())
                             .foregroundStyle(paceColor(heading))
                     }
                 }
@@ -145,12 +152,11 @@ struct WindowRow: View {
         }
     }
 
-    private func paceLabel(_ heading: Pace, _ now: Date) -> String {
-        switch heading {
-        case .full: "Full"
-        case .fillsAt(let date): "Full in \(countdown(now, date))"
-        case .lastsUntilReset: "On pace"
-        }
+    /// The reset's clock time, with the weekday when it is not today: `02:09`, `Sat 23:59`.
+    private func resetMoment(_ reset: Date, _ now: Date) -> String {
+        Calendar.current.isDate(reset, inSameDayAs: now)
+            ? reset.formatted(date: .omitted, time: .shortened)
+            : reset.formatted(.dateTime.weekday(.abbreviated).hour().minute())
     }
 
     private func paceColor(_ heading: Pace) -> Color {
@@ -185,22 +191,29 @@ struct PointCostLines: View {
     let reading: Loaded<[PointCost]>
 
     var body: some View {
-        if case .loaded(let costs) = reading, !costs.isEmpty {
-            VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("1 point over the last 30 days").font(.caption.weight(.medium))
+            switch reading {
+            case .loading:
+                Text("Reading rollouts…").foregroundStyle(.secondary)
+            case .failed(let message):
+                FailureText(message: message)
+            case .loaded(let costs) where costs.isEmpty:
+                Text("No Codex rollouts with window readings yet.").foregroundStyle(.secondary)
+            case .loaded(let costs):
                 ForEach(costs, id: \.kind) { cost in
-                    if let text = pointCostText(cost) {
-                        Text("\(pointCostLabel(cost)) point ≈ \(text)")
-                            .help(
-                                "Fitted over the last 30 days of Codex rollouts: \(cost.spans) "
-                                    + "spans between whole-percent crossings")
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(pointCostLabel(cost)) ≈ \(pointCostText(cost) ?? "not enough readings yet")")
+                        Text(verbatim: "\(cost.spans) spans · \(Int(cost.points.rounded())) points\(cost.inputTokens != nil && cost.outputTokens != nil ? "" : " · in and out pooled")")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
+                    .help("Fitted over the last 30 days of Codex rollouts, between whole-percent crossings")
                 }
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        } else if case .failed(let message) = reading {
-            FailureText(message: message)
         }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 }
 
@@ -217,13 +230,14 @@ struct GainSection: View {
             case .failed(let message):
                 FailureText(message: message)
             case .loaded(let gain):
-                content(summarize(gain))
+                content(gain)
             }
         }
     }
 
     @ViewBuilder
-    private func content(_ summary: GainSummary) -> some View {
+    private func content(_ gain: Gain) -> some View {
+        let summary = summarize(gain)
         HStack(alignment: .top, spacing: 12) {
             Figure(value: percentText(summary.spendPerRequestChange), label: "Per request")
             Figure(value: percentText(summary.meanContextChange), label: "Context")
@@ -231,9 +245,83 @@ struct GainSection: View {
                 Figure(value: String(format: "$%.0f", saved), label: "Saved")
             }
         }
-        Text(String(format: "%.1f days before vs after, at API list prices", summary.days))
-            .font(.caption2)
+        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
+            GridRow {
+                Text("")
+                Text("Before").gridColumnAlignment(.trailing)
+                Text("After").gridColumnAlignment(.trailing)
+            }
             .foregroundStyle(.tertiary)
+            CompareRow(label: "Requests", before: "\(gain.before.requests)", after: "\(gain.after.requests)")
+            CompareRow(label: "Spend", before: usd(gain.before.usd), after: usd(gain.after.usd))
+            CompareRow(
+                label: "Per request",
+                before: String(format: "$%.3f", perRequest(gain.before)),
+                after: String(format: "$%.3f", perRequest(gain.after)))
+            CompareRow(
+                label: "Mean context",
+                before: tokenText(gain.before.meanContext),
+                after: tokenText(gain.after.meanContext))
+            CompareRow(
+                label: "Spend over 200k",
+                before: shareText(summary.largeContextShareBefore),
+                after: shareText(summary.largeContextShareAfter))
+            CompareRow(
+                label: "Compactions", before: "\(gain.before.compactions)", after: "\(gain.after.compactions)")
+            CompareRow(
+                label: "Idle re-cache", before: usd(gain.before.idleRewriteUsd), after: usd(gain.after.idleRewriteUsd))
+            CompareRow(label: "Guard stops", before: "\(gain.before.guardStops)", after: "\(gain.after.guardStops)")
+        }
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.secondary)
+        receipt(gain.receipt, summary)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(String(format: "Periods compared: %.1f days each, since %@", summary.days,
+                Date(timeIntervalSince1970: gain.installedAt).formatted(date: .abbreviated, time: .shortened)))
+            Text("API list prices, not a subscription bill. Before/after view, not an A/B test.")
+        }
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private func receipt(_ receipt: GainReceipt, _ summary: GainSummary) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Compaction receipt").font(.caption.weight(.medium))
+            if let saved = summary.receiptSavedUsd {
+                Text("\(usd(saved)) saved (\(percentText(summary.receiptChange))) over \(receipt.compactions) compactions in \(receipt.sessions) sessions")
+                Text("\(usd(receipt.requestsUsd)) requests + \(usd(receipt.compactionCallsUsd)) compaction calls vs \(usd(receipt.withoutCompactionsUsd)) without")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            } else {
+                Text("No compaction since init yet")
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func usd(_ value: Double) -> String { String(format: "$%.2f", value) }
+
+    private func shareText(_ ratio: Double?) -> String {
+        ratio.map { String(format: "%.0f%%", $0 * 100) } ?? "–"
+    }
+}
+
+/// One measure before and after init.
+struct CompareRow: View {
+    let label: String
+    let before: String
+    let after: String
+
+    var body: some View {
+        GridRow {
+            Text(label)
+            Text(before).gridColumnAlignment(.trailing)
+            Text(after).gridColumnAlignment(.trailing).foregroundStyle(.primary)
+        }
     }
 }
 

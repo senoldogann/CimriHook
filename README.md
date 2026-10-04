@@ -289,9 +289,10 @@ error is shown in the line instead (Claude Code blanks the whole status line on 
 
 `macos/` holds a small SwiftUI menu bar app (macOS 14 or later). The menu bar shows each
 provider's mark with its fullest window; its panel shows every 5-hour and weekly window of
-Claude Code and Codex with the time left until it resets, whether it fills before then at the
-rate it has filled since it opened, what a point of each Codex window cost
-over the last 30 days, and the ratios of `cimrihook gain`.
+Claude Code and Codex with the time left until it resets and the reset's clock time, whether it
+fills before then at the rate it has filled since it opened, what a point of each Codex window
+cost over the last 30 days with the spans and points behind the fit, and everything
+`cimrihook gain` measures: each before/after figure and the compaction receipt.
 
 ```bash
 macos/build-app.sh                      # builds macos/build/CimriHook Bar.app

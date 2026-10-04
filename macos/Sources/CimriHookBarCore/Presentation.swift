@@ -83,7 +83,8 @@ public func summarize(_ gain: Gain) -> GainSummary {
     )
 }
 
-func perRequest(_ period: GainPeriod) -> Double {
+/// The spend per request of a period, 0 without requests.
+public func perRequest(_ period: GainPeriod) -> Double {
     period.requests > 0 ? period.usd / Double(period.requests) : 0
 }
 
