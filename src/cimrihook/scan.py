@@ -29,7 +29,7 @@ class Request:
     model: str
     usage: Usage
     subagent: bool
-    first: bool  # transcript'teki ilk istek
+    first: bool  # first request in the transcript
     after_compaction: bool  # first request after a compaction
     model_switch: bool  # a different model than the previous request
     gap_seconds: float | None  # time since the previous request

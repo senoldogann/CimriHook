@@ -88,7 +88,7 @@ class Share:
 
 @dataclass(frozen=True, slots=True)
 class Anatomy:
-    """Raporun verisi."""
+    """The data of the report."""
 
     transcripts: int
     days: int
@@ -104,7 +104,7 @@ class Anatomy:
     prefix_main: int | None  # median context of the first request of the sessions
     prefix_subagent: int | None
     compactions: int
-    compaction_trigger: int | None  # medyan
+    compaction_trigger: int | None  # median
     after_compaction_context: int | None  # context of the first request after a compaction, median
 
 
@@ -135,7 +135,7 @@ def rewrite_cause(request: Request) -> str | None:
 
 
 def build_anatomy(scans: Sequence[TranscriptScan], days: int) -> Anatomy:
-    """Taranan transcript'lerden maliyet anatomisi."""
+    """Cost anatomy of the scanned transcripts."""
     requests = [request for scan in scans for request in scan.requests]
     priced = [
         (request, token_costs(request, base))
@@ -213,7 +213,7 @@ def median_or_none(values: Sequence[int]) -> int | None:
 
 @dataclass(frozen=True, slots=True)
 class Diagnosis:
-    """doctor raporunun verisi."""
+    """The data of the doctor report."""
 
     anatomy: Anatomy
     simulation: SimulationResult | None  # unmeasurable if the records hold no real compaction
@@ -286,7 +286,7 @@ def setup_line(settings_path: Path) -> str:
 
 
 def hook_commands(entry: object) -> list[str]:
-    """Bir hook grubundaki komut metinleri."""
+    """The command texts in a hook group."""
     handlers = entry.get("hooks") if isinstance(entry, dict) else None
     if not isinstance(handlers, list):
         return []
@@ -335,7 +335,7 @@ def tokens_text(tokens: int | None) -> str:
 
 
 def render_doctor(diagnosis: Diagnosis) -> str:
-    """Raporun metni."""
+    """The text of the report."""
     anatomy = diagnosis.anatomy
     simulation = diagnosis.simulation
     total = anatomy.total_usd

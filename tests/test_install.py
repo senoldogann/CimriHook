@@ -158,7 +158,7 @@ def test_the_mod_joins_the_users_plugin_dirs_and_remove_restores_them(tmp_path: 
     apply_init(plan_init(path, [mod_settings("/cimri/mod")], home), home, 2.0)
     env = json.loads(path.read_text())["env"]
     assert env["CLAUDE_CODE_PLUGIN_DIRS"] == os.pathsep.join(["/mine", "/cimri/mod"])
-    apply_init(plan_init(path, [mod_settings("/cimri/mod")], home), home, 3.0)  # yinelenmez
+    apply_init(plan_init(path, [mod_settings("/cimri/mod")], home), home, 3.0)  # not duplicated
     assert json.loads(path.read_text())["env"] == env
     apply_remove(plan_remove(path, home), home, 4.0)
     assert json.loads(path.read_text()) == {"env": {"CLAUDE_CODE_PLUGIN_DIRS": "/mine"}}

@@ -49,7 +49,7 @@ class LimitUse:
 
     window: str  # five_hour or seven_day
     used_percentage: float
-    resets_at: int  # epoch saniye
+    resets_at: int  # epoch seconds
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +58,7 @@ class PromptCache:
 
     warm: bool
     ttl_seconds: float
-    expires_at: float | None  # epoch saniye
+    expires_at: float | None  # epoch seconds
     recache_tokens: int | None  # tokens the next request rewrites if the cache is cold
 
 

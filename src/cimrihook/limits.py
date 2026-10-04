@@ -44,7 +44,7 @@ class LimitSample:
     """One measurement the mod makes in a session."""
 
     session: str
-    time: float  # epoch saniye
+    time: float  # epoch seconds
     usd: float  # the session's list-price spend up to that moment
     windows: tuple[WindowUse, ...]
 

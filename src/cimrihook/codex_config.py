@@ -81,7 +81,7 @@ def read_config(path: Path) -> str:
 
 
 def parse_toml(text: str, path: Path) -> TomlTable:
-    """TOML metnini okur; bozuk dosyaya dokunulmaz."""
+    """Reads the TOML text; a corrupt file is left untouched."""
     try:
         return tomllib.loads(text)
     except tomllib.TOMLDecodeError as error:

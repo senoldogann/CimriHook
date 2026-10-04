@@ -215,7 +215,7 @@ def guard_stop_times(ledger: Path) -> tuple[float, ...]:
 
 
 def render_gain(gain: Gain) -> str:
-    """Raporun metni."""
+    """The text of the report."""
     before, after = gain.before, gain.after
     since = datetime.fromtimestamp(gain.installed_at).strftime("%Y-%m-%d %H:%M")
     days = (after.end - after.start) / SECONDS_PER_DAY

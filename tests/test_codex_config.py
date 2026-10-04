@@ -50,7 +50,7 @@ def test_init_and_remove_restore_the_users_own_value(tmp_path: Path) -> None:
     assert "OLLAMA_SECRET" not in report  # no context line
     assert tomllib.loads(path.read_text())["model_auto_compact_token_limit"] == 100_000
     assert path.stat().st_mode & 0o777 == 0o600
-    apply_codex_window(plan_codex_window(path, 120_000, home), home, 6.0)  # ikinci ayar
+    apply_codex_window(plan_codex_window(path, 120_000, home), home, 6.0)  # second setting
     apply_codex_remove(plan_codex_remove(path, home), home, 7.0)
     assert path.read_text(encoding="utf-8") == original
 

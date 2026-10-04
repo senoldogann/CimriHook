@@ -28,7 +28,7 @@ FIVE_MINUTES: Final = 300.0
 class SessionTail:
     """State of the session by its last API response."""
 
-    last_response_at: float  # epoch saniye
+    last_response_at: float  # epoch seconds
     ttl_seconds: float  # cache lifetime
     context_tokens: int  # context the next request will carry (last request + its response)
     model: str

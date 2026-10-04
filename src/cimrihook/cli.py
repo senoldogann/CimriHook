@@ -298,7 +298,7 @@ def split_csv(raw: str) -> tuple[str, ...]:
 
 
 def parse_agents(raw: str) -> tuple[Agent, ...]:
-    """Ajan listesi (claude, codex)."""
+    """List of agents (claude, codex)."""
     allowed = {agent.value for agent in Agent}
     values = split_csv(raw)
     unknown = [value for value in values if value not in allowed]
@@ -308,7 +308,7 @@ def parse_agents(raw: str) -> tuple[Agent, ...]:
 
 
 def parse_protocols(raw: str) -> tuple[Protocol, ...]:
-    """Protokol listesi (single, sequential, deep, deeper)."""
+    """List of protocols (single, sequential, deep, deeper)."""
     allowed = {protocol.value for protocol in Protocol}
     values = split_csv(raw)
     unknown = [value for value in values if value not in allowed]

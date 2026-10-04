@@ -224,7 +224,7 @@ LIMITS_SUFFIX: Final = ".limits.jsonl"  # per-run window readings, beside the ru
 METER_DIR: Final = "meter"  # CIMRIHOOK_HOME of a mod arm, inside the run directory
 BOUNDARY_TOKENS: Final = 100_000  # boundary arm: compact before a prompt above this context
 RTK_VARIANTS: Final = frozenset({Variant.RTK, Variant.RTK_GOVERNOR})
-RTK_HOOK_COMMAND: Final = "rtk hook claude"  # RTK 0.51'in Claude Code kurulumundaki komut
+RTK_HOOK_COMMAND: Final = "rtk hook claude"  # the command RTK 0.51 installs for Claude Code
 # Arms of the codec and the summary instruction, which are no longer part of the product. Their
 # results from earlier sets are still loaded and reported; new runs cannot be planned.
 RETIRED_VARIANTS: Final = frozenset({Variant.CODEC, Variant.COMBINED, Variant.BRIEF})
@@ -444,7 +444,7 @@ class RunResult:
     agent_exit: int
     timed_out: bool
     duration_seconds: float
-    provider: ProviderMeasurement | None  # birincil maliyet; bilinmiyorsa None
+    provider: ProviderMeasurement | None  # primary cost; None if unknown
     requests: int
     compactions: int
     compaction_pre_tokens: tuple[int, ...]
@@ -1425,7 +1425,7 @@ def read_agent_logs(
 
 
 def claude_transcript(session_id: str) -> Path:
-    """Oturumun ana transcript'i."""
+    """The session's main transcript."""
     main = sorted(CLAUDE_PROJECTS.glob(f"*/{session_id}.jsonl"))
     if len(main) != 1:
         raise BenchError(f"expected one Claude transcript for {session_id}, found {len(main)}")
@@ -2226,7 +2226,7 @@ def simulated_cost(traces: Sequence[SessionTrace], policy: Policy, model: CostMo
 
 
 def json_object(value: object, where: str) -> dict[str, object]:
-    """JSON nesnesi bekler."""
+    """Expects a JSON object."""
     if not isinstance(value, dict):
         raise BenchError(f"{where}: expected a JSON object")
     return {str(key): item for key, item in value.items()}
