@@ -16,7 +16,6 @@ context; CimriHook manages how long it stays there, through the agents' own sett
 | Guard | asks once before an idle session re-caches its whole context | `UserPromptSubmit` hook |
 | Show | context, prompt-cache warmth, next-request cost and usage limits | status line |
 | Evaluate | A/B runs on your own subscriptions, with honest statistics | `cimrihook bench-run` |
-| Encode (experimental) | re-encodes tool results against what the agent already holds | `init --codec` |
 
 **Measured** (Claude Code with Opus 5.5 and a 1M context, 5 runs per arm,
 [details](docs/evaluation.md)): in 20-step bug-fixing sessions that grow to about 450k tokens,
@@ -68,9 +67,8 @@ upgrade or a move replaces the old commands instead of adding new ones next to t
 you already have is chained (its command is kept in CimriHook's `--after` argument, which is also
 where `--remove` restores it from), and the setting and environment values it replaced are
 remembered per settings file in `~/.cimrihook/installed.json`, with the time of the change for
-`gain`, so `--remove` can put them back. `--brief` and
-`--codec` add the compaction brief and the tool codec. `cimrihook settings` prints the same blocks
-for merging by hand or for a single run: `claude --settings "$(cimrihook settings)"`.
+`gain`, so `--remove` can put them back. `cimrihook settings` prints the same blocks for merging
+by hand or for a single run: `claude --settings "$(cimrihook settings)"`.
 
 The hook and status line commands run Python with `-I`: they run in your project directory,
 outside Claude Code's permission prompts, and without `-I` a `json.py` or `statistics.py` in that
@@ -85,8 +83,6 @@ change, so uv would otherwise reuse the old build.
 cimrihook doctor --days 7   # where your spend goes and what would change it
 cimrihook limits            # what a point of your 5-hour and weekly windows costs (Pro/Max)
 cimrihook gain              # the time since your last init vs the same time before it
-cimrihook audit --days 30   # replay your past transcripts: what would CimriHook have saved?
-cimrihook report            # savings recorded by the live hook
 ```
 
 On Pro and Max plans there is no bill: usage fills a 5-hour and a weekly window. Anthropic does
@@ -110,13 +106,6 @@ and their likely cause (idle past the cache lifetime, compaction, model switch),
 and subagents, and by the static prefix every request carries. It ends with what would change the
 largest items; the compaction-window estimate comes from `simulate` and is labelled as a
 simulation until an A/B run confirms it.
-
-`audit` runs the same codec over the tool results stored in `~/.claude/projects`. Subagent
-transcripts do not store the structured tool result, so their Read and Bash results are parsed
-from the text the model received. It reports direct token savings and a context-residency
-weighted share of your input cost. The weighting reflects
-that each saved token would have been re-read from cache on every later request until compaction,
-priced with the 5-minute/1-hour cache-write mix found in your own usage data.
 
 ## Govern the context window
 
@@ -243,14 +232,6 @@ prompts. A scheduled prompt that arrives as plain text cannot be told apart from
 deliver such prompts into long idle sessions, switch the guard off with
 `CIMRIHOOK_DISABLE=guard`.
 
-`--brief` adds a `PreCompact` hook whose output Claude Code appends to its compaction prompt
-(every compaction path does this in 2.1.288, though the hooks reference does not document it):
-keep the summary short and structured, refer to code by file path and line instead of pasting it.
-Claude Code's own nine-section summary template still dominates, and Claude Code shows the hook's
-output to you at every compaction. A summary is a small part of the context that follows it, so
-expect little cost effect; in the one deep pilot run it was within noise of the plain window. It
-stays opt-in.
-
 ## See it live
 
 Add CimriHook's status line to Claude Code (`~/.claude/settings.json`):
@@ -297,11 +278,13 @@ Results so far, with the method and the corrections to earlier figures, are in
 
 ```bash
 cimrihook bench-run --name claude-ablation --agents claude --protocols sequential \
-  --variants baseline,governor,codec,combined --window 100000 --reps 5
+  --variants baseline,governor,rtk,rtk-governor --window 100000 --reps 5
 cimrihook bench-run --name codex-governor --agents codex --protocols sequential \
   --variants baseline,governor --window 60000 --reps 5
 cimrihook bench-run --name claude-deep --agents claude --protocols deep \
-  --variants baseline,governor,brief --window 183000 --reps 5
+  --variants baseline,governor --window 183000 --reps 5
+cimrihook bench-run --name claude-limits --agents claude --protocols deeper \
+  --variants meter,meter-governor --window 183000 --reps 6 --concurrency 1
 cimrihook bench-report --name claude-ablation
 ```
 
@@ -314,12 +297,16 @@ Codex CLI (`codex exec`) in one arm per mechanism:
 |---|---|---|
 | `baseline` | default behaviour | default behaviour |
 | `governor` | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (at least 100000; compacts at window − 33k) | `model_auto_compact_token_limit` |
-| `codec` | codec hooks only | not available (hooks cannot rewrite tool output) |
-| `combined` | window and codec hooks | not available |
-| `brief` | window and the compaction brief (PreCompact) | not available |
 | `rtk` | RTK's hook (`rtk hook claude`; RTK must be on the `PATH`) | not available |
 | `rtk-governor` | RTK's hook and the window | not available |
 | `mask` | window and the CimriHook mod with mask-first compaction | not available |
+| `boundary` | window and the mod with boundary compaction (before a prompt above 100k tokens) | not available |
+| `meter` | the mod's limit meter only, no window | not available |
+| `meter-governor` | the mod's limit meter and the window | not available |
+
+The `codec`, `combined` and `brief` arms of earlier result sets belong to mechanisms that were
+removed from CimriHook (the code is at the git tag `pre-trim`). They can no longer be run, but
+`bench-report` still reads their recorded results.
 
 - **Isolation:** every run gets its own workspace and virtual environment. Agents get only an
   allowlisted environment (no inherited `CLAUDE_CODE_*`/`ANTHROPIC_*` variables). Claude Code
@@ -343,66 +330,40 @@ Codex CLI (`codex exec`) in one arm per mechanism:
   first has the agent read every library source file, so the session starts at about 200k tokens
   of context that mostly goes stale: the regime where most real spend happens. `deeper` also has
   it read every test file first; its baseline sessions peak at about 450k tokens.
+- **Limit use:** the meter arms load the CimriHook mod, which appends the use of the 5-hour and
+  weekly windows after every turn to a `.limits.jsonl` file next to the run's result. The windows
+  are whole percentages, so a single run moves them by a few points at most: run the two meter
+  arms interleaved (`--concurrency 1`) and compare the points each run consumed, not one run's
+  reading.
 - **Resumable:** results are written per run, so an interrupted batch picks up where it stopped.
   Runs that hit a usage limit (a failed turn, or a step without model requests) are recorded as
   unmeasured and re-run.
 - **Re-measuring:** `cimrihook bench-remeasure --name <set>` recomputes a result set from the
   agents' logs with the current schema without running the agents again.
 
-## Encode tool results (experimental)
-
-Opt in with `cimrihook init --codec`. On the author's sessions the codec would have saved about 1%
-of the input cost, and no A/B run has shown a measurable effect; the context window is the lever
-that matters.
-
-The context codec works on the tool layer, so it behaves the same with every model and every effort
-level. The tool always really runs. Only the *encoding* of its result changes, relative to what the
-agent already has in its context:
-
-| Encoding | When | What the model receives | Information |
-|---|---|---|---|
-| REF | the result is identical to text the agent already received in this context (an earlier Read covering these lines, or the previous output of the same command) | a one-line reference | lossless |
-| DELTA | the result changed compared with the last full version (keyframe) the agent received | a unified diff against that keyframe | lossless |
-| OUTLINE | the agent asks for a whole large file (≥ 6k tokens) it has never seen | declarations with line numbers and how to read ranges | recoverable |
-
-## Codec safety rules
-
-- **Nothing is hidden twice.** If the agent repeats a request whose answer was re-encoded and nothing
-  changed in between, it gets the raw result. A request gets an outline at most once.
-- **Context-aware invalidation.** Knowledge is tracked per context window (main conversation and
-  each subagent) and per generation. `SessionStart`, `PreCompact` and compaction boundaries written
-  to the transcript start a new generation.
-- **Depth-1 deltas.** A delta always references the last raw keyframe, so the model never chains diffs.
-- **Fail-open.** CimriHook errors exit with status 1. Claude Code treats that as a non-blocking hook
-  error and uses the original tool output.
-- **Complements Claude Code.** Claude Code itself answers exact re-reads of unchanged files (same
-  offset/limit, same mtime) with `file_unchanged`. CimriHook covers what that misses: changed files,
-  sub-ranges, mtime-only changes and command output. If the agent only ever saw an outline,
-  CimriHook replaces the native `file_unchanged` answer with the real content.
-
 ## Configuration
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CIMRIHOOK_HOME` | `~/.cimrihook` | ledger directory (SQLite) |
-| `CIMRIHOOK_DISABLE` | empty | comma list of `guard,ref,delta,outline` to switch parts off |
+| `CIMRIHOOK_HOME` | `~/.cimrihook` | ledger directory (SQLite); the mod's limit meter writes to `limits/` there |
+| `CIMRIHOOK_DISABLE` | empty | `guard` switches the cold-prompt guard off |
 | `CIMRIHOOK_GUARD_MIN_TOKENS` | `150000` | the cold-prompt guard only stops sessions at least this large |
-| `CIMRIHOOK_OUTLINE_MIN_TOKENS` | `6000` | outline threshold |
-| `CIMRIHOOK_DELTA_MAX_RATIO` | `0.5` | send a delta only if it is at most this share of the raw result |
-| `CIMRIHOOK_MIN_SAVING_TOKENS` | `150` | do not re-encode for smaller savings |
+| `CIMRIHOOK_MOD_MIN_TOKENS` | `100000` | the mod compacts around the cache only above this context |
+| `CIMRIHOOK_MOD_BOUNDARY_TOKENS` | unset | boundary compaction threshold (experimental) |
+| `CIMRIHOOK_MOD_MASK` | unset | `1` turns mask-first compaction on (experimental) |
 
 ## Limitations
 
-- When a Bash command exits non-zero, hooks only receive a plain-text error
-  (`PostToolUseFailure`), which they cannot rewrite. Failing test runs pass through unchanged.
-- Claude Code can clear old tool results in memory (microcompaction) without writing a marker. If a
-  REF or DELTA points at text the model can no longer see, the model repeats the call and gets the
-  raw result.
-- With `--codec`, the ledger keeps the text the agent received (zlib-compressed, which is not
-  encryption) in `~/.cimrihook/ledger.sqlite3`, readable by you only and not deleted
-  automatically. Claude Code's own transcripts store the same text.
-- Token numbers in reports are estimates (~4 characters per token). Evaluations should use the
-  usage numbers reported by the API.
+- The measurements come from one user's sessions, one task family (bug fixing in Python
+  libraries with a test suite) and one model setup (Opus 5.5 with a 1M context at medium effort).
+  Costs are dollars at API list prices, which is not the same unit as the points of a subscription's
+  usage windows; `cimrihook limits` measures what a point costs on your own plan.
+- Bench sessions run without idle gaps, so the cold-prompt guard and warm compaction are not part of
+  the measured numbers.
+- A compaction trades detail for a smaller context. Bug fixing tolerates that well; check task
+  quality with an A/B run on your own work before adopting a small window.
+- Compaction summary sizes in reports are estimated at about 4 characters per token; every other
+  token number is the usage the API reported.
 
 ## Development
 

@@ -19,11 +19,14 @@ cost (see [Corrections](#corrections-to-earlier-figures)).
   spend went to requests carrying more than 400k tokens.
 - **Arms.** `baseline` (default behaviour), `governor` (Claude Code
   `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, which compacts at the window minus 33k tokens; Codex
-  `model_auto_compact_token_limit`), `brief` (the window plus the `PreCompact` brief), `combined`
-  (the window plus the tool codec), `rtk` (RTK's Claude Code hook, `rtk hook claude`, which rewrites
-  shell commands into their compressed RTK form) and `rtk-governor` (RTK plus the window). The
-  harness sets the window through the environment variable so that no settings file can change an
-  arm; `cimrihook init` sets the same window through Claude Code's `autoCompactWindow` setting.
+  `model_auto_compact_token_limit`), `rtk` (RTK's Claude Code hook, `rtk hook claude`, which
+  rewrites shell commands into their compressed RTK form) and `rtk-governor` (RTK plus the
+  window). The harness sets the window through the environment variable so that no settings file
+  can change an arm; `cimrihook init` sets the same window through Claude Code's
+  `autoCompactWindow` setting. Three arms in the recorded sets belong to mechanisms that were
+  measured and then removed from CimriHook (the code is at the git tag `pre-trim`): `brief` (the
+  window plus a `PreCompact` hook asking for a short structured summary), `combined` (the window
+  plus the tool codec) and `codec` (the codec alone). Their results stay in the tables below.
 - **Isolation.** Every run gets its own workspace and virtual environment, an allowlisted
   environment, project settings only and `--strict-mcp-config` (Claude Code) or
   `--ignore-user-config` (Codex). The arms of a result set share model, effort and agent version.
@@ -167,6 +170,13 @@ optimistic the replay.
 
 Measured before shipping, cheapest test first. None of these is in CimriHook.
 
+- **The tool codec**, which re-encoded a tool result as a reference, a diff or an outline when the
+  agent already held the text. Replayed on the author's week it would have saved about 1% of the
+  input cost, and no A/B run showed a measurable effect (the `combined` arm in the sequential
+  table above). Removed.
+- **The compaction brief**, a `PreCompact` hook asking for a short, structured summary that
+  refers to code by path and line. A summary is a small part of the context that follows it; the
+  `brief` arm was within noise of the plain window (x0.977 against it). Removed.
 - **Delegating work to subagents when the context is large.** A prompt note told the agent that a
   step at N tokens costs N/30k times a step in a fresh subagent. Opus 5.5 followed it, one
   subagent per bug, but each step still cost $0.34-0.44 against about $0.37 in the baseline:
@@ -217,7 +227,7 @@ Measured before shipping, cheapest test first. None of these is in CimriHook.
 
 ```bash
 cimrihook bench-run --name deep --tasks boltons-twenty-steps --protocols deep --agents claude \
-  --variants baseline,governor,brief --window 183000 --reps 5 --concurrency 3
+  --variants baseline,governor --window 183000 --reps 5 --concurrency 3
 cimrihook bench-report --name deep
 cimrihook bench-calibrate --name deep
 ```
