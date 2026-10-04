@@ -29,9 +29,14 @@ def status(cache: PromptCache | None, context: int | None) -> StatusInput:
 
 def test_warm_cache_prices_the_next_request_as_a_read() -> None:
     # 412000 x 0.05 (Opus 5.x okuma) x $4/MTok = $0.08; ömrün bitmesine 50 dakika var.
+    # Şimdi sıkıştırmak: 412k x 0.05 + 7k x 5 + 56k x 2 = 167,600 taban; her istek
+    # (412k - 56k) x 0.05 = 17,800 taban kazandırır: 10 istekte geri döner.
     cache = PromptCache(True, 3_600.0, NOW + 3_000, 412_000)
     line = render_status(status(cache, 412_000), NOW)
-    assert line == "412k ctx · cache warm 50m · next $0.08 · 5h 42% · 7d 18% · $4.12"
+    assert line == (
+        "412k ctx · cache warm 50m · next $0.08 · compact pays back in 10 requests · 5h 42% · "
+        "7d 18% · $4.12"
+    )
 
 
 def test_cold_cache_prices_the_next_request_as_a_rewrite() -> None:

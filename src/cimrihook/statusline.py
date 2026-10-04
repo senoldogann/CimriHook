@@ -15,6 +15,7 @@ içinde gösterilir; böylece ne kullanıcının satırı kaybolur ne de hata g�
 
 import contextlib
 import json
+import math
 import os
 import signal
 import subprocess
@@ -35,6 +36,12 @@ SEPARATOR: Final = " · "
 CHAIN_TIMEOUT_SECONDS: Final = 5.0  # kullanıcının önceki durum satırı komutuna tanınan süre
 STATUS_BUSY_TIMEOUT_SECONDS: Final = 0.25  # durum satırı defter kilidini uzun beklemez
 ERROR_CHARS: Final = 120  # satırda gösterilen hata metninin en fazla uzunluğu
+# Sıkıştırmanın geri ödemesi: sıkıştırmadan sonraki ilk isteğin bağlamı ve özetin çıktısı (yazarın
+# son haftasındaki medyanlar; `cimrihook doctor` kendi değerlerini gösterir).
+POST_COMPACT_TOKENS: Final = 56_000
+SUMMARY_OUTPUT_TOKENS: Final = 7_000
+PAYBACK_MIN_CONTEXT: Final = 150_000  # daha küçük bağlamda gösterilmez
+PAYBACK_MAX_REQUESTS: Final = 50  # daha uzun geri ödeme gösterilmez
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,7 +251,31 @@ def cache_parts(model: str, context: int | None, cache: PromptCache, now: float)
         weight = prices.write_1h if cache.ttl_seconds >= CACHE_TTLS["1h"] else prices.write_5m
     if base is None or tokens is None:
         return [state]
-    return [state, f"next ${tokens * weight * base:.2f}"]
+    payback = payback_requests(model, context, cache) if state != "cache cold" else None
+    return [
+        state,
+        f"next ${tokens * weight * base:.2f}",
+        *([] if payback is None else [f"compact pays back in {payback} requests"]),
+    ]
+
+
+def payback_requests(model: str, context: int | None, cache: PromptCache) -> int | None:
+    """Şimdi /compact yapılırsa bedelinin kaç istekte geri döneceği; küçük bağlamda ya da çok
+    uzun geri ödemede None.
+
+    Bedel: özet isteği bağlamı bir kez okur ve özeti çıktı fiyatından yazar, sıkıştırmadan sonraki
+    bağlam önbelleğe yeniden yazılır. Kazanç: sonraki her istek daha küçük bağlamı okur.
+    """
+    if context is None or context < PAYBACK_MIN_CONTEXT:
+        return None
+    prices = claude_prices(model)
+    write = prices.write_1h if cache.ttl_seconds >= CACHE_TTLS["1h"] else prices.write_5m
+    cost = (
+        context * prices.read + SUMMARY_OUTPUT_TOKENS * prices.output + POST_COMPACT_TOKENS * write
+    )
+    saving = (context - POST_COMPACT_TOKENS) * prices.read
+    requests = math.ceil(cost / saving)
+    return requests if requests <= PAYBACK_MAX_REQUESTS else None
 
 
 def compact_tokens(tokens: int) -> str:

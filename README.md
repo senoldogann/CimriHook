@@ -176,11 +176,13 @@ Add CimriHook's status line to Claude Code (`~/.claude/settings.json`):
 "statusLine": {"type": "command", "command": "cimrihook statusline"}
 ```
 
-`412k ctx · cache warm 38m · next $0.08 · 5h 42% · 7d 18% · $4.12`
+`412k ctx · cache warm 38m · next $0.08 · compact pays back in 10 requests · 5h 42% · 7d 18% · $4.12`
 
 It shows the session's context, whether the prompt cache is still warm and for how long, what
 the next request costs at list prices (a cache read while warm, the re-cache Claude Code expects
-once cold), your 5-hour and 7-day usage limits and the session's spend. Cache warmth, lifetime and
+once cold), how many requests a `/compact` now would take to pay for itself (above 150k tokens of
+context: the summary request and the re-cached shorter context against the smaller reads that
+follow), your 5-hour and 7-day usage limits and the session's spend. Cache warmth, lifetime and
 expiry come from Claude Code's own `prompt_cache` input (2.1.251 and later); Claude Code also
 re-runs the status line when the cache expires. Every new usage-limit reading is recorded in the
 ledger, so CimriHook can learn how your plan counts cache reads, writes and output.
