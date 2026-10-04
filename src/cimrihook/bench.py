@@ -25,6 +25,9 @@ Varyantlar (mekanizma ablasyonu):
   değiştiremez).
 - combined: pencere ve codec birlikte (yalnızca Claude Code).
 - brief: pencere ve sıkıştırma özeti talimatı (PreCompact) birlikte (yalnızca Claude Code).
+- rtk ve rtk-governor: RTK'nın Bash komut çıktısı sıkıştırması (PreToolUse hook'u, `rtk hook
+  claude`), tek başına ve pencereyle birlikte (yalnızca Claude Code). Tezdeki 2×2 tasarım: RTK var
+  ya da yok, pencere var ya da yok.
 
 Ölçüm:
 - Birincil maliyet sağlayıcı düzeyindedir ve sıkıştırma ile yardımcı çağrıları içerir. Claude Code
@@ -190,9 +193,15 @@ class Variant(StrEnum):
     CODEC = "codec"
     COMBINED = "combined"
     BRIEF = "brief"
+    RTK = "rtk"
+    RTK_GOVERNOR = "rtk-governor"
 
 
-WINDOW_VARIANTS: Final = frozenset({Variant.GOVERNOR, Variant.COMBINED, Variant.BRIEF})
+WINDOW_VARIANTS: Final = frozenset(
+    {Variant.GOVERNOR, Variant.COMBINED, Variant.BRIEF, Variant.RTK_GOVERNOR}
+)
+RTK_VARIANTS: Final = frozenset({Variant.RTK, Variant.RTK_GOVERNOR})
+RTK_HOOK_COMMAND: Final = "rtk hook claude"  # RTK 0.51'in Claude Code kurulumundaki komut
 CODEC_VARIANTS: Final = frozenset({Variant.CODEC, Variant.COMBINED})
 BRIEF_VARIANTS: Final = frozenset({Variant.BRIEF})
 CODEX_VARIANTS: Final = frozenset({Variant.BASELINE, Variant.GOVERNOR})
@@ -1200,9 +1209,24 @@ def claude_settings(spec: RunSpec, run_dir: Path) -> dict[str, object]:
         [
             *([hook_settings(sys.executable)] if spec.variant in CODEC_VARIANTS else []),
             *([counted_brief_settings(run_dir)] if spec.variant in BRIEF_VARIANTS else []),
+            *([rtk_settings()] if spec.variant in RTK_VARIANTS else []),
             *([governor_env(spec.window)] if spec.variant in WINDOW_VARIANTS else []),
         ]
     )
+
+
+def rtk_settings() -> dict[str, object]:
+    """RTK'nın Claude Code hook'u: Bash komutlarını sıkıştıran sürümleriyle yeniden yazar."""
+    return {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [{"type": "command", "command": RTK_HOOK_COMMAND}],
+                }
+            ]
+        }
+    }
 
 
 def counted_brief_settings(run_dir: Path) -> dict[str, object]:

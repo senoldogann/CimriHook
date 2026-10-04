@@ -111,6 +111,16 @@ def test_brief_arm_sets_the_window_and_the_compaction_brief_only() -> None:
     assert "-m cimrihook brief && echo >> /runs/r1/brief-calls" in json.dumps(hooks["PreCompact"])
 
 
+def test_rtk_arms_add_rtks_bash_hook_and_only_the_governor_one_sets_a_window() -> None:
+    rtk = claude_settings(spec(Agent.CLAUDE, Protocol.DEEP, Variant.RTK, 233_000), Path("/r"))
+    both = claude_settings(
+        spec(Agent.CLAUDE, Protocol.DEEP, Variant.RTK_GOVERNOR, 233_000), Path("/r")
+    )
+    assert "rtk hook claude" in json.dumps(rtk["hooks"]) and "env" not in rtk
+    assert both["env"] == {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "233000"}
+    assert spec_problem(spec(Agent.CODEX, Protocol.SEQUENTIAL, Variant.RTK, 60_000)) is not None
+
+
 def test_an_arm_whose_hook_never_ran_is_not_measured(tmp_path: Path) -> None:
     brief = spec(Agent.CLAUDE, Protocol.DEEP, Variant.BRIEF, 183_000)
     assert arm_problem(brief, tmp_path, 2) == "the brief hook succeeded 0 times for 2 compactions"
