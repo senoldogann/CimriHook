@@ -1,7 +1,12 @@
 import json
 from pathlib import Path
 
-from cimrihook.codex_doctor import diagnose_codex, read_rollout, render_codex_doctor
+from cimrihook.codex_doctor import (
+    codex_limits_json,
+    diagnose_codex,
+    read_rollout,
+    render_codex_doctor,
+)
 
 START = 1_790_000_000.0
 # (uncached input, output) per request; at 1e-5 and 2e-4 points per token each moves 1 or 2 points
@@ -70,3 +75,5 @@ def test_rollout_requests_and_window_cost(tmp_path: Path) -> None:
     report = render_codex_doctor(diagnosis)
     assert "5-hour window: 1 point is about" in report
     assert "no model_auto_compact_token_limit" in report
+    costs = json.loads(codex_limits_json(diagnosis.windows))
+    assert costs[0]["kind"] == "five_hour" and costs[0]["output_tokens"] < costs[0]["input_tokens"]

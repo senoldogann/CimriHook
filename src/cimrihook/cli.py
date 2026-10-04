@@ -37,6 +37,7 @@ from cimrihook.codex_config import (
 )
 from cimrihook.codex_doctor import (
     WINDOW_KINDS,
+    codex_limits_json,
     diagnose_codex,
     recent_rollouts,
     render_codex_doctor,
@@ -151,6 +152,7 @@ def build_parser() -> argparse.ArgumentParser:
     limits.add_argument("--agent", choices=("claude", "codex"), default="claude")
     limits.add_argument("--sessions-dir", default=DEFAULT_LOGS["codex"])
     limits.add_argument("--days", type=int, default=DEFAULT_DOCTOR_DAYS)
+    limits.add_argument("--json", action="store_true", help="print the Codex point cost as JSON")
     quota = commands.add_parser(
         "quota", help="read current account-wide subscription windows without a model request"
     )
@@ -470,9 +472,10 @@ def main() -> None:
             rollouts = recent_rollouts(
                 Path(str(args.sessions_dir)).expanduser(), int(args.days), time.time()
             )
-            print(
-                render_codex_limits([window_cost(rollouts, kind) for kind in WINDOW_KINDS.values()])
-            )
+            costs = [window_cost(rollouts, kind) for kind in WINDOW_KINDS.values()]
+            print(codex_limits_json(costs) if args.json else render_codex_limits(costs))
+        elif command == "limits" and args.json:
+            raise ConfigError("limits --json reads Codex rollouts only: add --agent codex")
         elif command == "limits":
             samples = read_samples(limits_dir(config.home))
             print(render_limits(samples))

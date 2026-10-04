@@ -15,9 +15,10 @@ session (`cimrihook.weights`). Use outside these rollouts (Codex cloud tasks, an
 also moves the windows, so a point then looks cheaper than it is.
 """
 
+import json
 import statistics
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Final
@@ -88,6 +89,19 @@ class WindowCost:
     output_weight: ClassWeight | None  # points per output token
     output_share: float | None  # share of the points the output moved
     pooled: ClassWeight | None  # points per base input unit, input and output at list ratios
+
+
+@dataclass(frozen=True, slots=True)
+class PointCost:
+    """A window point in tokens, for other programs; a value is None when it is not measured."""
+
+    kind: str
+    spans: int
+    points: float
+    input_tokens: float | None  # input tokens per point, when input and output are told apart
+    output_tokens: float | None
+    output_share: float | None
+    base_units: float | None  # base input units per point at list ratios
 
 
 @dataclass(frozen=True, slots=True)
@@ -437,3 +451,33 @@ def render_codex_limits(windows: Sequence[WindowCost]) -> str:
         ["CimriHook limits (Codex): what a point of your windows costs, from the rollouts"]
         + [f"  {line}" for line in window_lines(windows)]
     )
+
+
+def point_cost(window: WindowCost) -> PointCost:
+    """The tokens per point a report states: only weights whose 95% interval excludes zero."""
+    separated = (
+        window.input_weight is not None
+        and window.output_weight is not None
+        and window.input_weight.low > 0
+        and window.output_weight.low > 0
+    )
+    return PointCost(
+        kind=window.kind,
+        spans=window.spans,
+        points=window.points,
+        input_tokens=1 / window.input_weight.weight
+        if separated and window.input_weight is not None
+        else None,
+        output_tokens=1 / window.output_weight.weight
+        if separated and window.output_weight is not None
+        else None,
+        output_share=window.output_share if separated else None,
+        base_units=1 / window.pooled.weight
+        if window.pooled is not None and window.pooled.low > 0
+        else None,
+    )
+
+
+def codex_limits_json(windows: Sequence[WindowCost]) -> str:
+    """`cimrihook limits --agent codex --json`, for the macOS menu bar panel."""
+    return json.dumps([asdict(point_cost(window)) for window in windows], indent=2, allow_nan=False)

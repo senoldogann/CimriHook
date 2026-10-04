@@ -46,6 +46,19 @@ public struct Gain: Decodable, Sendable, Equatable {
     public let receipt: GainReceipt
 }
 
+/// What a point of one Codex window costs, from `cimrihook limits --agent codex --json`.
+///
+/// Token counts are nil when the fit cannot tell them apart from zero.
+public struct PointCost: Decodable, Sendable, Equatable {
+    public let kind: String
+    public let spans: Int
+    public let points: Double
+    public let inputTokens: Double?
+    public let outputTokens: Double?
+    public let outputShare: Double?
+    public let baseUnits: Double?
+}
+
 /// A payload that `cimrihook` printed but this panel cannot read.
 public struct PayloadError: LocalizedError, Equatable {
     public let what: String
@@ -62,6 +75,11 @@ public func decodeQuota(_ data: Data) throws -> QuotaSnapshot {
 /// Reads the output of `cimrihook gain --json`.
 public func decodeGain(_ data: Data) throws -> Gain {
     try decode(Gain.self, data, "cimrihook gain")
+}
+
+/// Reads the output of `cimrihook limits --agent codex --json`.
+public func decodePointCosts(_ data: Data) throws -> [PointCost] {
+    try decode([PointCost].self, data, "cimrihook limits")
 }
 
 func decode<T: Decodable>(_ type: T.Type, _ data: Data, _ what: String) throws -> T {

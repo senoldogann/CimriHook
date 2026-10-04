@@ -100,3 +100,31 @@ public func percentText(_ ratio: Double?) -> String {
     guard let ratio else { return "–" }
     return String(format: "%+.0f%%", ratio * 100)
 }
+
+/// A token count as `99K` or `5.0K`, `1.2M`.
+public func tokenText(_ tokens: Double) -> String {
+    if tokens >= 999_500 { return String(format: "%.1fM", tokens / 1_000_000) }
+    if tokens >= 9_950 { return String(format: "%.0fK", tokens / 1_000) }
+    if tokens >= 1_000 { return String(format: "%.1fK", tokens / 1_000) }
+    return String(format: "%.0f", tokens)
+}
+
+/// The window a point cost belongs to: `5-hour`, `Weekly`.
+public func pointCostLabel(_ cost: PointCost) -> String {
+    switch cost.kind {
+    case "five_hour": "5-hour"
+    case "seven_day": "Weekly"
+    default: cost.kind
+    }
+}
+
+/// `99K in or 5.0K out · output 38%`, the pooled base units when input and output cannot be told
+/// apart, nil when nothing is measured yet.
+public func pointCostText(_ cost: PointCost) -> String? {
+    if let input = cost.inputTokens, let output = cost.outputTokens {
+        let share = cost.outputShare.map { " · output \(Int(($0 * 100).rounded()))%" } ?? ""
+        return "\(tokenText(input)) in or \(tokenText(output)) out\(share)"
+    }
+    return cost.baseUnits.map { "\(tokenText($0)) base units" }
+}
+

@@ -14,7 +14,8 @@ enum Loaded<Value: Sendable>: Sendable {
     }
 }
 
-/// The panel's state: both providers' windows and the gain since the last `cimrihook init`.
+/// The panel's state: both providers' windows, what a Codex point costs and the gain since the
+/// last `cimrihook init`.
 ///
 /// The quota probes open a control connection to each CLI and send no model request, so
 /// reading them does not use the windows they report.
@@ -26,6 +27,7 @@ final class PanelStore {
     var claude: Loaded<QuotaSnapshot> = .loading
     var codex: Loaded<QuotaSnapshot> = .loading
     var gain: Loaded<Gain> = .loading
+    var codexCost: Loaded<[PointCost]> = .loading
     var refreshedAt: Date?
     var refreshing = false
 
@@ -54,12 +56,16 @@ final class PanelStore {
         } catch {
             let message = "Cannot read the login shell's PATH: \(error.localizedDescription)"
             (claude, codex, gain) = (.failed(message), .failed(message), .failed(message))
+            codexCost = .failed(message)
             return
         }
         async let claudeReading = load(["quota", "--agent", "claude"], path, decodeQuota)
         async let codexReading = load(["quota", "--agent", "codex"], path, decodeQuota)
         async let gainReading = load(["gain", "--json"], path, decodeGain)
+        async let costReading = load(
+            ["limits", "--agent", "codex", "--days", "30", "--json"], path, decodePointCosts)
         (claude, codex, gain) = await (claudeReading, codexReading, gainReading)
+        codexCost = await costReading
         refreshedAt = Date()
     }
 

@@ -46,3 +46,17 @@ let gainOutput = Data(
 @Test func aMalformedPayloadNamesTheCommand() {
     #expect(throws: PayloadError.self) { try decodeQuota(Data("{}".utf8)) }
 }
+
+@Test func codexPointCostReadsBothFits() throws {
+    let costs = try decodePointCosts(Data(
+        """
+        [{"kind": "five_hour", "spans": 1629, "points": 2194.0, "input_tokens": 99329.0,
+          "output_tokens": 5024.6, "output_share": 0.38, "base_units": 75951.3},
+         {"kind": "seven_day", "spans": 350, "points": 478.0, "input_tokens": null,
+          "output_tokens": null, "output_share": null, "base_units": 442423.4}]
+        """.utf8))
+    #expect(costs.map(pointCostLabel) == ["5-hour", "Weekly"])
+    #expect(pointCostText(costs[0]) == "99K in or 5.0K out · output 38%")
+    #expect(pointCostText(costs[1]) == "442K base units")
+}
+

@@ -12,6 +12,7 @@ struct PanelView: View {
             ProviderSection(title: "Claude Code", reading: store.claude)
             Divider()
             ProviderSection(title: "Codex", reading: store.codex)
+            PointCostSection(reading: store.codexCost)
             Divider()
             GainSection(reading: store.gain)
             Divider()
@@ -74,6 +75,34 @@ struct ProviderSection: View {
             case .loaded(let snapshot):
                 ForEach(snapshot.windows, id: \.id) { window in
                     WindowRow(window: window)
+                }
+            }
+        }
+    }
+}
+
+/// What a point of each Codex window cost over the last 30 days of rollouts.
+struct PointCostSection: View {
+    let reading: Loaded<[PointCost]>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("1 point over 30 days").font(.caption).foregroundStyle(.secondary)
+            switch reading {
+            case .loading:
+                Text("Reading…").font(.caption).foregroundStyle(.secondary)
+            case .failed(let message):
+                FailureText(message: message)
+            case .loaded(let costs):
+                ForEach(costs, id: \.kind) { cost in
+                    HStack {
+                        Text(pointCostLabel(cost)).font(.caption)
+                        Spacer()
+                        Text(pointCostText(cost) ?? "not enough readings")
+                            .font(.caption.monospacedDigit())
+                    }
+                    .help("\(cost.spans) spans between whole-percent crossings, "
+                        + "\(Int(cost.points)) points")
                 }
             }
         }
