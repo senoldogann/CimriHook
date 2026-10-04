@@ -411,6 +411,7 @@ def main() -> None:
                     diagnose_claude(
                         Path(str(args.projects_dir)).expanduser(),
                         Path(str(args.settings)).expanduser(),
+                        config.home,
                         int(args.days),
                         time.time(),
                     )

@@ -63,6 +63,9 @@ def test_anatomy_prices_bands_and_explains_a_cold_rewrite(tmp_path: Path) -> Non
     assert idle.usd == pytest.approx(1.2)
     assert (anatomy.compactions, anatomy.compaction_trigger) == (1, 900_000)
     assert (anatomy.after_compaction_context, anatomy.prefix_main) == (25_000, 30_000)
+    # Prefix 30000, 13400 above bare: 60000*13400/30000 + 5500*13400/32000 + 30500*13400/25000
+    # + 300000*13400/150000 = 72251 base units -> $0.289.
+    assert anatomy.prefix_excess_usd == pytest.approx(0.289, abs=0.0005)
 
 
 def test_a_forked_transcript_and_old_requests_are_not_counted_again(tmp_path: Path) -> None:
@@ -92,7 +95,7 @@ def test_a_forked_transcript_and_old_requests_are_not_counted_again(tmp_path: Pa
 
 def test_an_empty_log_directory_is_an_error_not_a_zero_report(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="no Claude Code transcripts"):
-        diagnose_claude(tmp_path, tmp_path / "settings.json", 7, T0)
+        diagnose_claude(tmp_path, tmp_path / "settings.json", tmp_path / "home", 7, T0)
 
 
 def test_cache_lifetime_replay_prices_pauses_with_both_lifetimes(tmp_path: Path) -> None:

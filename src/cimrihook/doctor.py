@@ -24,6 +24,7 @@ from cimrihook.lifetime import (
     replay_lifetimes,
 )
 from cimrihook.mods import MOD_NAME, PLUGIN_DIRS_ENV
+from cimrihook.prefix import PrefixPart, prefix_dir, prefix_parts, prefix_text, read_records
 from cimrihook.scan import (
     Request,
     TranscriptScan,
@@ -106,6 +107,7 @@ class Anatomy:
     compactions: int
     compaction_trigger: int | None  # median
     after_compaction_context: int | None  # context of the first request after a compaction, median
+    prefix_excess_usd: float  # input cost put to the part of each session's prefix above bare
 
 
 def band(context: int) -> str:
@@ -203,6 +205,27 @@ def build_anatomy(scans: Sequence[TranscriptScan], days: int) -> Anatomy:
         compactions=len(triggers),
         compaction_trigger=median_or_none(triggers),
         after_compaction_context=median_or_none(after),
+        prefix_excess_usd=sum(prefix_excess(scan) for scan in scans),
+    )
+
+
+def prefix_excess(scan: TranscriptScan) -> float:
+    """The input cost of a session put to the part of its prefix above bare Claude Code.
+
+    The prefix is the context of the session's first request; each request's input cost (reads,
+    writes and uncached input) is split in proportion to the context. Nothing is put to a session
+    whose first request is outside the window.
+    """
+    first = next((request for request in scan.requests if request.first), None)
+    if first is None or context_of(first.usage) <= BARE_PREFIX_TOKENS:
+        return 0.0
+    excess = context_of(first.usage) - BARE_PREFIX_TOKENS
+    return sum(
+        sum(costs[:3]) * min(excess / context_of(request.usage), 1.0)
+        for request in scan.requests
+        if (base := usd_per_token(request.model)) is not None
+        and (costs := token_costs(request, base))
+        and context_of(request.usage) > 0
     )
 
 
@@ -221,9 +244,13 @@ class Diagnosis:
     bench_transcripts: int  # CimriHook A/B run transcripts that were left out
     setup: str  # window, guard and status line in the settings file
     lifetimes: tuple[LifetimeReplay, LifetimeReplay]  # main sessions and subagents
+    prefix_parts: tuple[PrefixPart, ...]  # median breakdown of the sessions the mod recorded
+    prefix_sessions: int
 
 
-def diagnose_claude(projects_dir: Path, settings_path: Path, days: int, now: float) -> Diagnosis:
+def diagnose_claude(
+    projects_dir: Path, settings_path: Path, home: Path, days: int, now: float
+) -> Diagnosis:
     """Cost anatomy of the last `days` days, a simulation of window policies and a guard self-check.
 
     The anatomy counts only requests in the window; requests and compactions that forked or resumed
@@ -241,8 +268,10 @@ def diagnose_claude(projects_dir: Path, settings_path: Path, days: int, now: flo
     bench = bench_transcripts(projects_dir, days, now)
     setup = setup_line(settings_path)
     lifetimes = replay_lifetimes(scans)
+    records = read_records(prefix_dir(home), now - days * SECONDS_PER_DAY)
+    parts, recorded = tuple(prefix_parts(records)), len(records)
     if anatomy.compactions == 0:
-        return Diagnosis(anatomy, None, guard, bench, setup, lifetimes)
+        return Diagnosis(anatomy, None, guard, bench, setup, lifetimes, parts, recorded)
     traces = load_claude_traces(files)
     requests = [usage for trace in traces for usage in trace.requests]
     simulation = simulate_traces(
@@ -253,7 +282,7 @@ def diagnose_claude(projects_dir: Path, settings_path: Path, days: int, now: flo
         CostOverrides(None, None, None, MEASURED_REFETCH_TOKENS, MEASURED_REFETCH_REQUESTS, None),
         dollar_weight,
     )
-    return Diagnosis(anatomy, simulation, guard, bench, setup, lifetimes)
+    return Diagnosis(anatomy, simulation, guard, bench, setup, lifetimes, parts, recorded)
 
 
 def setup_line(settings_path: Path) -> str:
@@ -382,6 +411,7 @@ def render_doctor(diagnosis: Diagnosis) -> str:
         f"subagent {tokens_text(anatomy.prefix_subagent)} tokens; bare Claude Code is about "
         f"{tokens_text(BARE_PREFIX_TOKENS)} (plugins, skills, MCP servers and CLAUDE.md add the "
         "rest to every request)",
+        *prefix_lines(diagnosis),
         f"Compactions: {anatomy.compactions:,}; median trigger "
         f"{tokens_text(anatomy.compaction_trigger)} tokens, next request "
         f"{tokens_text(anatomy.after_compaction_context)} tokens",
@@ -413,6 +443,24 @@ def bottom_line(anatomy: Anatomy, simulation: SimulationResult | None) -> str:
         f"above {tokens_text(window)} (simulated), plus ${idle.usd:,.0f} of re-caching after an "
         f"hour idle; apply with {claude_hint(window)}"
     )
+
+
+def prefix_lines(diagnosis: Diagnosis) -> list[str]:
+    """What the prefix above bare cost and, when the mod recorded sessions, what it is made of."""
+    anatomy = diagnosis.anatomy
+    lines = []
+    if anatomy.prefix_excess_usd > 0:
+        lines.append(
+            f"  the part above bare cost about ${anatomy.prefix_excess_usd:,.0f} "
+            f"({percent(anatomy.prefix_excess_usd, anatomy.total_usd)} of the spend), re-read "
+            "with every request"
+        )
+    if diagnosis.prefix_parts:
+        lines.append(
+            f"  what it is (median of {diagnosis.prefix_sessions} sessions the mod recorded, "
+            f"as /context counts them): {prefix_text(list(diagnosis.prefix_parts))}"
+        )
+    return lines
 
 
 def lifetime_line(replay: LifetimeReplay) -> str:
@@ -481,6 +529,9 @@ def recommendations(anatomy: Anatomy, simulation: SimulationResult | None) -> li
     if anatomy.prefix_main is not None and anatomy.prefix_main > BARE_PREFIX_TOKENS:
         lines.append(
             f"  trim the prefix: {tokens_text(anatomy.prefix_main - BARE_PREFIX_TOKENS)} tokens "
-            "above bare Claude Code ride along on every main request and every re-cache"
+            "above bare Claude Code ride along on every main request and every re-cache, about "
+            f"${anatomy.prefix_excess_usd:,.0f} "
+            f"({percent(anatomy.prefix_excess_usd, anatomy.total_usd)}); /context in Claude Code "
+            "lists what they are"
         )
     return lines

@@ -240,6 +240,16 @@ Measured before shipping, cheapest test first. None of these is in CimriHook.
   save 3-5%. RTK's measured effect in the A/B above is in line with that.
 - **Mask-first compaction** saved nothing against the window in its pilot; it stays an
   experimental opt-in for its millisecond compactions (above).
+- **Shrinking file reads as they enter the context** (an "RTK for the Read tool", which RTK
+  cannot touch). On the author's week, with each request's input cost split over what the
+  request re-reads by character counts scaled to the measured context, shell output was about
+  22% of the input cost, file reads 22%, the agent's own tool inputs (edits, written files,
+  commands) 18%, the static prefix 16% and thinking at most 10%; no single source dominates.
+  Cutting every unbounded read of a file over 400 lines to 120 lines and an outline, and
+  assuming the agent never reads the rest, would have saved under 1%: the large reads were
+  few, and the largest "reads" were PDF pages, which are billed by the page, not by their text.
+  The prefix above bare Claude Code was 8% of the spend; `doctor` now prices it and the mod
+  records what it is made of.
 
 ## What the numbers do not show
 

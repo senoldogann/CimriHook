@@ -112,9 +112,11 @@ view, not an A/B test; spend per request and mean context depend least on how mu
 `doctor` prices every real request in your Claude Code transcripts at API list prices and splits
 the spend by the context size of the request, by token type, by cache rewrites over 100k tokens
 and their likely cause (idle past the cache lifetime, compaction, model switch), by main session
-and subagents, and by the static prefix every request carries. It ends with what would change the
-largest items; the compaction-window estimate comes from `simulate` and is labelled as a
-simulation until an A/B run confirms it.
+and subagents, and by the static prefix every request carries, priced: the part of the prefix
+above bare Claude Code (plugins, skills, MCP servers, CLAUDE.md) is re-read with every request,
+and with the mod enabled `doctor` lists what it is made of, as `/context` counts it. It ends
+with what would change the largest items; the compaction-window estimate comes from `simulate`
+and is labelled as a simulation until an A/B run confirms it.
 
 ## Govern the context window
 
@@ -193,6 +195,10 @@ context size:
 - **Limit meter:** on a subscription, every turn appends the session's list-price spend and the
   use of the 5-hour and weekly windows to `~/.cimrihook/limits/`; `cimrihook limits` turns it into
   what a point of each window costs on your plan.
+- **Prefix record:** when a session's first turn ends, the context breakdown `/context` shows is
+  written to `~/.cimrihook/prefix/` (one token count per tool and memory file, as `/context`
+  makes them); `cimrihook doctor` reports the median over your sessions next to what the prefix
+  costs.
 - **Boundary compaction (experimental, `CIMRIHOOK_MOD_BOUNDARY_TOKENS=N`):** a prompt that enters
   a conversation larger than N tokens is preceded by a compaction, so the summary closes a
   finished task instead of cutting into the middle of one; the window stays the backstop inside a
@@ -361,7 +367,7 @@ runs: use that no session records still raises the weights.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CIMRIHOOK_HOME` | `~/.cimrihook` | ledger directory (SQLite); the mod's limit meter writes to `limits/` there |
+| `CIMRIHOOK_HOME` | `~/.cimrihook` | ledger directory (SQLite); the mod writes its limit samples to `limits/` and its prefix records to `prefix/` there |
 | `CIMRIHOOK_DISABLE` | empty | `guard` switches the cold-prompt guard off |
 | `CIMRIHOOK_GUARD_MIN_TOKENS` | `150000` | the cold-prompt guard only stops sessions at least this large |
 | `CIMRIHOOK_MOD_MIN_TOKENS` | `100000` | the mod compacts around the cache only above this context |

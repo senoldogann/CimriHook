@@ -23,6 +23,10 @@
 // 5-hour or weekly window moves a point) appends the session's list-price spend and the windows'
 // use to <CIMRIHOOK_HOME or ~/.cimrihook>/limits/<session id>.jsonl, so `cimrihook limits` can
 // measure what share of each window a dollar of usage takes on your own plan.
+//
+// Prefix record: when a session's first turn ends, the context breakdown that /context shows
+// (system prompt, tools, MCP tools, agents, memory files, skills, messages) is written to
+// <home>/prefix/<session id>.json, so `cimrihook doctor` can say what rides on every request.
 
 import type { Register, SessionMessage, ToolResultSummary } from 'claude-code'
 
@@ -40,6 +44,36 @@ type Session = {
   lastTurnEnd: number | undefined
   compacted: boolean
   limits: { id: string; lines: string[] } | undefined // this session's limit samples so far
+  prefixRecorded: boolean
+}
+
+type Engine = {
+  env: { get: (name: string) => Promise<string | undefined> }
+  fs: { write: (path: string, text: string) => Promise<void> }
+  session: {
+    id: () => Promise<string>
+    usage: (args: { breakdown: 'full' }) => Promise<{
+      context: { breakdown?: { categories: readonly { name: string; tokens: number; kind: string }[] } }
+    }>
+  }
+  clock: { now: () => Promise<number> }
+}
+
+/** CimriHook's home: CIMRIHOOK_HOME, or ~/.cimrihook. */
+async function homeOf($: Engine): Promise<string> {
+  return (await $.env.get('CIMRIHOOK_HOME')) ?? `${(await $.env.get('HOME')) ?? '.'}/.cimrihook`
+}
+
+/** Writes the breakdown of the session's context, as /context counts it (one token count per tool and memory file). */
+async function recordPrefix($: Engine): Promise<void> {
+  const usage = await $.session.usage({ breakdown: 'full' })
+  const rows = usage.context.breakdown?.categories
+  if (rows === undefined) return
+  const record = {
+    t: await $.clock.now(),
+    rows: rows.map(({ name, tokens, kind }) => ({ name, tokens, kind })),
+  }
+  await $.fs.write(`${await homeOf($)}/prefix/${await $.session.id()}.json`, `${JSON.stringify(record)}\n`)
 }
 
 export const register: Register = (on) => {
@@ -48,6 +82,7 @@ export const register: Register = (on) => {
     lastTurnEnd: undefined,
     compacted: false,
     limits: undefined,
+    prefixRecorded: false,
   }
 
   on('turn.start', async ($, e, next) => {
@@ -61,6 +96,12 @@ export const register: Register = (on) => {
       session.running = false
       session.lastTurnEnd = await $.clock.now()
       session.compacted = false
+      if (!session.prefixRecorded) {
+        session.prefixRecorded = true
+        await recordPrefix($).catch((error: unknown) => {
+          $.ui.log(`CimriHook prefix record: ${String(error)}`, { to: 'debug' })
+        })
+      }
     }
     return result
   })
@@ -117,10 +158,8 @@ export const register: Register = (on) => {
     const usd = e.cost?.usd
     if (e.rateLimits.length === 0 || usd === undefined) return result
     try {
-      const home =
-        (await $.env.get('CIMRIHOOK_HOME')) ?? `${(await $.env.get('HOME')) ?? '.'}/.cimrihook`
       const id = await $.session.id()
-      const path = `${home}/limits/${id}.jsonl`
+      const path = `${await homeOf($)}/limits/${id}.jsonl`
       if (session.limits?.id !== id) {
         const lines = (await $.fs.exists(path))
           ? (await $.fs.read(path)).split('\n').filter((line) => line !== '')
