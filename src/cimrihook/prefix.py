@@ -1,8 +1,8 @@
-"""Mod'un tamamlanan turda kaydettiği etkin bağlam kategorileri.
+"""The active context categories the mod records at a completed turn.
 
-Deferred araçlar, boş alan, buffer ve konuşma prefix toplamına katılmaz. Kategorinin medyanı
-yalnız bulunduğu kayıtlardan hesaplanır; kaç oturumda bulunduğu ayrıca gösterilir. Bu anlık
-kayıtlar her isteğin sabit prefix'i veya kaldırılabilecek maliyetin ölçümü değildir.
+Deferred tools, free space, the buffer and the conversation do not count toward the prefix. A
+category's median comes from the records it appears in only; how many sessions it appears in is
+shown beside it. These snapshots measure neither every request's fixed prefix nor a removable cost.
 """
 
 import json
@@ -39,7 +39,7 @@ class PrefixRecord:
 
 @dataclass(frozen=True, slots=True)
 class PrefixPart:
-    """Bir kategorinin bulunduğu oturumlardaki medyanı ve kayıt sayısı."""
+    """A category's median over the sessions it appears in, and its record count."""
 
     name: str
     tokens: int
@@ -99,7 +99,7 @@ def prefix_parts(records: list[PrefixRecord]) -> list[PrefixPart]:
 
 
 def prefix_text(parts: list[PrefixPart]) -> str:
-    """Seyrek kategori tüm oturumların yükü gibi görünmesin; kayıt sayısını yaz."""
+    """Shows the record count, so that a rare category does not look like every session's load."""
     return ", ".join(
         f"{part.name} {part.tokens / 1000:.1f}k "
         f"({part.sessions} {'session' if part.sessions == 1 else 'sessions'})"

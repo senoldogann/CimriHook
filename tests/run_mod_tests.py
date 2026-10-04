@@ -1,4 +1,4 @@
-"""Paketlenmiş plugin'in hook'larını gerçek Claude test engine'i ile kontrol et."""
+"""Checks the packaged plugin's hooks with the real Claude test engine."""
 
 import subprocess
 import tempfile
@@ -8,7 +8,7 @@ from cimrihook.mods import write_mod
 
 
 def main() -> int:
-    """Geçici plugin düzeni; model çağrısı veya kullanıcı ayarı değişikliği yok."""
+    """A temporary plugin layout; no model call and no change to user settings."""
     with tempfile.TemporaryDirectory(prefix="cimrihook-mod-test-") as directory:
         plugin = write_mod(Path(directory))
         for test in (Path(__file__).parent / "mod").glob("*.test.ts"):

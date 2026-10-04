@@ -43,7 +43,7 @@ for (const mode of ['enabled', 'DISABLE_AUTO_COMPACT', 'DISABLE_COMPACT', 'headl
     const disabled = mode === 'DISABLE_AUTO_COMPACT' || mode === 'DISABLE_COMPACT'
     expect(auto.skip !== undefined).toBe(disabled)
     expect(compactions).toBe((automatic ? 1 : 0) + (disabled ? 0 : 1))
-    // Yalnız otomatik kapalıysa kullanıcının /compact isteği çalışmaya devam eder.
+    // With only automatic compaction disabled, the user's /compact still runs.
     const manual = await $.session.compact({ trigger: 'manual', messages })
     expect(compactions).toBe((automatic ? 1 : 0) + (disabled ? 0 : 1) + (mode === 'DISABLE_COMPACT' ? 0 : 1))
     expect(manual.skip !== undefined).toBe(mode === 'DISABLE_COMPACT')
@@ -88,7 +88,7 @@ for (const scenario of [
     expect(compactions).toBe(0)
     await clock.advance(20 * 60_000)
     await clock.settle()
-    // Native timer'ın setImmediate/RPC kuyruğunu saat değiştirmeden tamamlamasını bekle.
+    // Let the native timer drain its setImmediate/RPC queue without moving the clock.
     for (let attempt = 0; attempt < 20 && compactions === 0; attempt += 1) {
       await new Promise<void>((resolve) => setTimeout(resolve, 10))
     }

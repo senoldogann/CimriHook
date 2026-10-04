@@ -1,4 +1,4 @@
-"""Sabit model/effort ile izole, dışarıdan doğrulanan görev kapatma deneyi."""
+"""The task closure experiment: isolated, at a fixed model and effort, verified from outside."""
 
 import hashlib
 import json
@@ -40,12 +40,12 @@ class DiscountTest(unittest.TestCase):
 
 
 def write_json(path: Path, value: object) -> None:
-    """Deney dizinindeki kayıtları okunabilir JSON olarak yaz."""
+    """Writes a record of the experiment directory as readable JSON."""
     path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8")
 
 
 def read_json(path: Path) -> object:
-    """Mevcut bir ölçüm kaydını oku; eksik veya bozuk veri görünür hata verir."""
+    """Reads an existing measurement record; missing or corrupt data is a visible error."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
@@ -53,7 +53,7 @@ def read_json(path: Path) -> object:
 
 
 def noise(label: str) -> str:
-    """Tekrarlanabilir ve token açısından yeterince büyük gerçek Read içeriği."""
+    """Real Read content, reproducible and large enough in tokens."""
     return (
         "\n".join(
             f"{index:04d} {hashlib.sha256(f'{label}:{index}'.encode()).hexdigest()[:32]}"
@@ -64,14 +64,14 @@ def noise(label: str) -> str:
 
 
 def request_rows(value: object) -> list[dict[str, object]]:
-    """Provider isteği ölçümleri listesi; null usage kabul ölçütünü karşılamaz."""
+    """The provider request measurements; a null usage does not meet the acceptance criterion."""
     if not isinstance(value, list):
         raise BenchError("probe requests must be a list")
     return [object_value(row, "probe request") for row in value]
 
 
 def number(row: Mapping[str, object], name: str) -> float | None:
-    """Eksik ve nonfinite sayaçları başarı kanıtı sayma."""
+    """Missing and non-finite counters are no evidence of success."""
     value = row.get(name)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
@@ -79,7 +79,7 @@ def number(row: Mapping[str, object], name: str) -> float | None:
 
 
 def cache_gate(phases: Mapping[str, Sequence[Mapping[str, object]]]) -> dict[str, object]:
-    """Yalnız ilk ana isteklerden, sıcak ortak bağlama ait cache kanıtı üret."""
+    """Cache evidence for the warm shared context, from the first main requests only."""
     missing = [phase for phase in ("warmup", "fix", "closed") if not phases.get(phase)]
     if missing:
         return {"passed": False, "reason": f"missing first-request measurements: {missing}"}
@@ -153,7 +153,7 @@ def call_phase(
     effort: str,
     timeout: int,
 ) -> dict[str, object]:
-    """Kendi process grubunda ve özel plugin/ayarlarla tek bir Claude turn çalıştır."""
+    """Runs one Claude turn in its own process group with its own plugin and settings."""
     index = PHASES.index(phase)
     env = {key: os.environ[key] for key in ENV_ALLOWLIST if key in os.environ}
     env.update(
@@ -221,7 +221,7 @@ def call_phase(
 
 
 def verify_fixture(workspace: Path, output: Path, phase: str) -> dict[str, object]:
-    """Agent yanıtından bağımsız, değiştirilmemiş testleri gerçek Python ile çalıştır."""
+    """Runs the unmodified tests with real Python, independent of the agent's answer."""
     if (workspace / "test_calc.py").read_text(encoding="utf-8") != TESTS:
         raise BenchError("closure probe test file was changed")
     command = [sys.executable, "-m", "unittest", "-q"]
@@ -242,7 +242,7 @@ def verify_fixture(workspace: Path, output: Path, phase: str) -> dict[str, objec
 
 
 def full_observation(transcript: Path, workspace: Path) -> bool:
-    """Büyük gözlemin gerçekten bütünüyle okunduğunu provider araç kayıtlarından doğrula."""
+    """Verifies from the provider's tool records that the large observation was read whole."""
     reads: set[str] = set()
     ending = (workspace / "disposable.txt").read_text(encoding="utf-8").splitlines()[-1].split()[-1]
     for line in transcript.read_text(encoding="utf-8").splitlines():
@@ -274,7 +274,7 @@ def full_observation(transcript: Path, workspace: Path) -> bool:
 
 
 def evidence_ids(completed: object, workspace: Path) -> list[str]:
-    """Gerçek başarılı edit ve test araç çiftlerini kısa, doğrulanabilir kanıt olarak seç."""
+    """Picks the real successful edit and test tool pairs as short, verifiable evidence."""
     if not isinstance(completed, list):
         raise BenchError("completed transcript must be a list")
     edits: list[str] = []
@@ -306,7 +306,7 @@ def evidence_ids(completed: object, workspace: Path) -> list[str]:
 
 
 def contract_gate(answers: Mapping[str, str]) -> dict[str, object]:
-    """Hatırlamanın yanında modelin korunmuş gerçek test kanıtını kullanmasını doğrula."""
+    """Verifies that, besides recalling, the model uses the preserved real test evidence."""
     verified: dict[str, object] = {}
     for phase in ("closed", "resumed"):
         try:
@@ -330,7 +330,7 @@ def contract_gate(answers: Mapping[str, str]) -> dict[str, object]:
 
 
 def run_probe(output: Path, model: str, effort: str, timeout: int) -> dict[str, object]:
-    """İlk deney: olumlu ya da olumsuz fizibiliteyi kanıtlarıyla kaydet."""
+    """The first experiment: records positive or negative feasibility with its evidence."""
     if timeout <= 0:
         raise BenchError("probe timeout must be positive")
     output = output.expanduser().resolve()

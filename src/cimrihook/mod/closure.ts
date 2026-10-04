@@ -1,4 +1,4 @@
-// Yalnız dışarıdan doğrulanan, açıkça etkinleştirilmiş görev kapatma deneyi.
+// The task closure experiment: explicitly enabled and verified from outside only.
 import type { SessionMessage } from 'claude-code'
 export const CLOSE_INSTRUCTION = 'CimriHook externally verified closure pilot'
 
@@ -14,11 +14,11 @@ export type ClosureRequest = {
   evidenceToolUseIds: string[]
 }
 
-/** Kalıcı kayıtlar yalnız görünür metin ve araç projeksiyonudur; handle saklanmaz. */
+/** Persisted records are a projection of visible text and tools only; no handle is kept. */
 export function project(messages: readonly SessionMessage[]): Projection[] {
   return messages.map(({ role, text, toolUses, toolResults }) => ({
     role, text,
-    // decoded result gövdesi turn sonunda boşaltılabilir; provider'ın okuduğu text sabittir.
+    // The decoded result body can be emptied at the end of a turn; the text the provider read is stable.
     toolUses: toolUses.map(({ result: _result, ...tool }) => tool),
     ...(toolResults === undefined ? {} : {
       toolResults: toolResults.map(({ result: _result, ...tool }) => tool),
@@ -26,7 +26,7 @@ export function project(messages: readonly SessionMessage[]): Projection[] {
   }))
 }
 
-/** Yalnız engine'in bu kontrollü /compact komutu için eklediği son kayıt ayrılır. */
+/** Only the last record, which the engine adds for this controlled /compact command, is split off. */
 export function completedMessages(messages: readonly SessionMessage[]): readonly SessionMessage[] {
   const last = messages.at(-1)
   const command = /^<command-name>\/compact<\/command-name>\s*<command-message>compact<\/command-message>\s*<command-args>CimriHook externally verified closure pilot<\/command-args>$/
@@ -74,7 +74,7 @@ export function validRequest(value: unknown): value is ClosureRequest {
       value.proof.command.join(' ') === '.venv/bin/python -m pytest -q')
 }
 
-/** Başarılı işin kullanıcı girdileri ve son yanıtı korunur, araç gözlemleri çıkarılır. */
+/** The user inputs and the final answer of the successful work stay; tool observations are removed. */
 export function closeMessages(current: readonly SessionMessage[], closure: ClosureRequest): SessionMessage[] {
   const tail = current.slice(closure.anchor.length)
   const users = tail.filter((message) => message.role === 'user' && message.text.length > 0)
@@ -96,8 +96,8 @@ export function closeMessages(current: readonly SessionMessage[], closure: Closu
       ...(outputs.length === 0 ? {} : { toolResults: outputs }),
     }]
   })
-  // Daha önce yeniden kurulan kayıtlardaki handle'ları tekrar kullanmak resume'da UUID çoğaltır.
-  // Yalnız hiç yeniden kurulmamış ortak prefiks engine handle'larını korur.
+  // Reusing the handles of records rebuilt earlier duplicates UUIDs on resume.
+  // Only the shared prefix that was never rebuilt keeps the engine's handles.
   const original = current.slice(0, closure.originalPrefixLength)
   const previousReceipts = project(current.slice(closure.originalPrefixLength, closure.anchor.length))
   return [...original, ...previousReceipts, ...users, ...project(evidence), {

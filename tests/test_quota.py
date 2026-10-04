@@ -1,4 +1,4 @@
-"""Provider format sınırları ve gerçek alt süreç kontrol bağlantısı."""
+"""Provider format edges and a real child process control connection."""
 
 import os
 import sys

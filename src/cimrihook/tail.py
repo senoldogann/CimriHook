@@ -1,11 +1,11 @@
-"""Transcript sonundan yanıt zamanı, cache süresi ve bağlamı oku.
+"""Reads the response time, cache lifetime and context from the end of a transcript.
 
-Guard tüm dosyayı okumaz; son yanıt bulunana kadar okunan kısmı büyütür. TTL son cache
-yazımının türünden gelir (5 dakika / 1 saat), fakat istek başlangıcından itibaren işler.
-Yanıtın transcript zaman damgası istek başlangıcını vermez: guard'ın yanıt yaşı kontrolü
-geç kalabilen temkinli bir soğuk-cache uyarısıdır, kesin sıcaklık ölçümü değildir.
-Son yanıttan sonra compact sınırı varsa eski bağlam boyutu artık geçersizdir ve durum
-bilinmiyor sayılır. Statusline, sağlayıcının kendi prompt_cache bilgisini kullanır.
+The guard does not read the whole file; it widens the part it reads until it finds the last
+response. The TTL comes from the type of the last cache write (5 minutes or 1 hour) but runs from
+the start of the request. A response's transcript timestamp does not give the request start: the
+guard's response age check is a cautious cold-cache warning that can be late, not an exact
+warmth measurement. A compact boundary after the last response makes the old context size invalid,
+and the state counts as unknown. The status line uses the provider's own prompt_cache data.
 """
 
 import os

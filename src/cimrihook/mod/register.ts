@@ -1,4 +1,4 @@
-// CimriHook: cache ömrü yöneticisi, limit kayıtları ve isteğe bağlı doğrulanmış görev kapatma deneyi.
+// CimriHook: cache lifetime manager, limit records and the opt-in verified task closure experiment.
 import type { Register, SessionMessage, ToolResultSummary } from 'claude-code'
 import { canonical, CLOSE_INSTRUCTION, closeMessages, completedMessages, object, project, validRequest } from './closure'
 
@@ -11,7 +11,7 @@ const RECENT_RESULTS_SHARE = 0.1
 const MASK_MIN_CHARS = 500
 const MAX_KEPT_SHARE = 0.6
 
-/** Engine çağrıları hook içindedir; yardımcılar yalnız verilen değerleri dönüştürür. */
+/** Engine calls stay inside the hooks; the helpers only transform the values they are given. */
 function homeOf(configured: string | undefined, home: string | undefined): string {
   return configured ?? `${home ?? '.'}/.cimrihook`
 }
@@ -20,7 +20,7 @@ function worthCompacting(usage: { context: { tokens?: number }; rateLimits: read
   return usage.rateLimits.length > 0 && (usage.context.tokens ?? 0) >= min
 }
 
-/** Native kapatma bayraklarında "0" ve "false" açık sayılmaz. */
+/** In the native disable flags, "0" and "false" do not count as enabled. */
 function flagEnabled(value: string | undefined): boolean {
   return ['1', 'true', 'yes', 'on'].includes(value?.toLowerCase() ?? '')
 }
@@ -43,7 +43,7 @@ export const register: Register = (on) => {
     const started = await $.clock.now()
     const result = yield* next(e)
     if (e.agentId === undefined) {
-      // TTL, yanıt sonunda değil cache'i okuyan/yazan isteğin başında yenilenir.
+      // The TTL restarts when the request that reads or writes the cache starts, not when it ends.
       const usage = result.usage
       session.lastCacheUse = usage !== null &&
         (usage.cache_read_input_tokens > 0 || usage.cache_creation_input_tokens > 0) ? started : undefined
@@ -83,7 +83,7 @@ export const register: Register = (on) => {
           $.ui.log(`CimriHook prefix record: ${String(error)}`, { to: 'debug' })
         }
       }
-      // Prompt'u tutan hook içinde compact desteklenmez; yalnız tamamlanan ana turdan sonra.
+      // Compaction is not supported inside a hook that holds the prompt; only after a completed main turn.
       const boundary = await $.env.get('CIMRIHOOK_MOD_BOUNDARY_TOKENS')
       if (boundary !== undefined && !e.isAborted && !session.compacted && !session.compacting &&
           !flagEnabled(await $.env.get('DISABLE_AUTO_COMPACT')) &&
@@ -107,7 +107,7 @@ export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     const minTokens = Number((await $.env.get('CIMRIHOOK_MOD_MIN_TOKENS')) ?? DEFAULT_MIN_TOKENS)
-    // Etkileşimli yüzeyi olmayan -p/SDK oturumlarında bu API desteklenmez.
+    // -p and SDK sessions have no interactive surface and do not support this API.
     if ((await $.session.surfaces()).length === 0) return result
     $.clock.every(TICK_MS, () => {
       void (async () => {
@@ -215,7 +215,7 @@ export const register: Register = (on) => {
           if (await $.fs.read(`${workspace}/${name}`) !== expected) return { skip: `CimriHook closure: verified file changed (${name})` }
         }
         const closed = closeMessages(current, raw)
-        // Önce projeksiyon arşivi; tam JSONL yedeğini deney sürücüsü alır.
+        // The projection archive first; the experiment driver keeps the full JSONL backup.
         await $.fs.write(`${base}.projection-archive.json`, JSON.stringify(project(e.messages)))
         await $.fs.write(`${base}.closed.json`, JSON.stringify({
           messagesBefore: e.messages.length, messagesAfter: closed.length,

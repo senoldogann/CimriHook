@@ -27,9 +27,9 @@ Variants (mechanism ablation):
 - mask: the window and the CimriHook mod (`--plugin-dir`) with mask-first compaction: on
   automatic compaction old tool results are replaced with a placeholder instead of an LLM summary
   (Claude Code only).
-- boundary: etkileşimli ana tur tamamlandıktan sonra mod ile sıkıştırma. Claude Code 2.1.289
-  bu API'yi headless oturumlarda desteklemediğinden yeni benchmark koşuları reddedilir;
-  eski kayıtlar raporlanabilir.
+- boundary: compaction by the mod after a completed interactive main turn. Claude Code 2.1.289
+  does not support this API in headless sessions, so new benchmark runs are refused; earlier
+  records can still be reported.
 - codec, combined and brief: retired (tool result recoding and the compaction summary
   instruction are not part of the product; their code is at the `pre-trim` tag). The recorded
   results of these arms are read and reported; new runs cannot be planned.
@@ -241,7 +241,7 @@ RUN_MIN_POINTS: Final = 3.0  # mean points per run under which a window is too c
 OTHER_SESSIONS: Final = "other sessions"  # weight class: recorded sessions that are no arm
 POOLED: Final = "pooled"  # weight class: every recorded session at one weight
 METER_DIR: Final = "meter"  # CIMRIHOOK_HOME of a mod arm, inside the run directory
-BOUNDARY_TOKENS: Final = 100_000  # Etkileşimli ana tur tamamlandıktan sonraki eşik.
+BOUNDARY_TOKENS: Final = 100_000  # threshold after a completed interactive main turn
 RTK_VARIANTS: Final = frozenset({Variant.RTK, Variant.RTK_GOVERNOR})
 RTK_HOOK_COMMAND: Final = "rtk hook claude"  # the command RTK 0.51 installs for Claude Code
 # Arms of the codec and the summary instruction, which are no longer part of the product. Their

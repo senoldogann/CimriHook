@@ -25,7 +25,7 @@ def test_parts_are_the_median_of_the_used_rows_but_the_messages(tmp_path: Path) 
     parts = prefix_parts(read_records(tmp_path, 0.5))
     assert parts == [PrefixPart("System tools", 13_000, 2)]
     assert prefix_text(parts) == "System tools 13.0k (2 sessions)"
-    # Tek kayıttaki büyük MCP yükü iki oturumda da varmış gibi raporlanmaz.
+    # A large MCP load in one record is not reported as if both sessions had it.
     single = {"t": 3_000, "rows": [{"name": "MCP tools", "tokens": 29_469, "kind": "used"}]}
     (tmp_path / "rare.json").write_text(json.dumps(single), encoding="utf-8")
     parts = prefix_parts(read_records(tmp_path, 0.5))

@@ -1,4 +1,4 @@
-"""İlk istekteki cache kaybı, sonraki sıcak isteklerle gizlenmemelidir."""
+"""A cache loss on the first request must not be hidden by the warm requests after it."""
 
 import json
 from pathlib import Path

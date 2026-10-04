@@ -107,7 +107,7 @@ class Anatomy:
     compactions: int
     compaction_trigger: int | None  # median
     after_compaction_context: int | None  # context of the first request after a compaction, median
-    prefix_excess_usd: float  # İlk istek inputu üzerinden tahmini maliyet payı; tasarruf değildir.
+    prefix_excess_usd: float  # estimated cost share from first-request input; not a saving
 
 
 def band(context: int) -> str:
@@ -210,11 +210,11 @@ def build_anatomy(scans: Sequence[TranscriptScan], days: int) -> Anatomy:
 
 
 def prefix_excess(scan: TranscriptScan) -> float:
-    """İlk istek inputunun tarihsel bare eşiğini aşan kısmına tahmini input maliyeti ayır.
+    """Estimated input cost of the first-request input above the historical bare baseline.
 
-    İlk istek kullanıcı mesajlarını da içerir. Her isteğin okuma/yazma/uncached maliyeti bu
-    miktarın bağlama oranıyla paylaştırılır; sonuç gerçek prefix veya kaldırılabilir tasarruf
-    ölçümü değildir. İlk isteği zaman aralığının dışında kalan oturuma maliyet atanmaz.
+    The first request also holds the user's messages. Each request's read, write and uncached cost
+    is shared by that amount's ratio to the context; the result measures neither the real prefix
+    nor a removable saving. A session whose first request falls outside the period gets no cost.
     """
     first = next((request for request in scan.requests if request.first), None)
     if first is None or context_of(first.usage) <= BARE_PREFIX_TOKENS:
@@ -244,7 +244,7 @@ class Diagnosis:
     bench_transcripts: int  # CimriHook A/B run transcripts that were left out
     setup: str  # window, guard and status line in the settings file
     lifetimes: tuple[LifetimeReplay, LifetimeReplay]  # main sessions and subagents
-    prefix_parts: tuple[PrefixPart, ...]  # Kategori varsa medyan token ve bulunduğu oturum sayısı.
+    prefix_parts: tuple[PrefixPart, ...]  # median tokens and session count of each category
     prefix_sessions: int
 
 
