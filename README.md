@@ -224,7 +224,9 @@ context size:
   faster compactions, no saving. When masking would not remove at least 40% of the context,
   Claude Code's own summary runs.
 
-`init --mod` writes the plugin to `~/.cimrihook/mod/cimrihook` and adds that folder to
+`init --mod` first runs `claude plugin validate` on the mod, which checks every hook and call it
+makes against your installed Claude Code, and refuses `--mod` if that fails; install without it to
+keep the governor and guard. It then writes the plugin to `~/.cimrihook/mod/cimrihook` and adds that folder to
 `CLAUDE_CODE_PLUGIN_DIRS` in your settings, keeping folders you already have there; `--remove`
 puts the variable back. The mod counts every compaction of the main conversation, so after Claude
 Code's own compaction (including idle compaction where a server flag enables it) or a `/compact`
@@ -324,6 +326,9 @@ cimrihook init --agent codex --remove                   # puts your previous val
 Codex hooks cannot rewrite tool output and OpenAI does not document how long its prompt cache
 lives, so on Codex CimriHook's lever is the compaction limit. Codex applies
 `model_auto_compact_token_limit` to the whole context and caps it at 90% of the model's window.
+With `model_auto_compact_token_limit_scope = "body_after_prefix"` Codex counts the limit after
+the stable prompt prefix instead; the simulation replays the whole context, so `doctor` says so and
+`init` leaves the limit to you.
 The standard library cannot write TOML, so `init` changes only that one line of
 `~/.codex/config.toml`, reads the result back and refuses to write if anything else would change.
 It keeps a backup and the file's permissions, prints the changed line without context lines, and
