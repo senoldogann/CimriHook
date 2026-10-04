@@ -73,9 +73,15 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Final
 
-from cimrihook.errors import BenchError
+from cimrihook.errors import BenchError, PreparationError
 from cimrihook.limits import WINDOW_NAMES, LimitSample, RunPoints, run_points, session_samples
 from cimrihook.mods import MOD_NAME, write_mod
+from cimrihook.preparation import (
+    DEFAULT_PACKET_BYTES,
+    build_packet,
+    parse_target,
+    render_packet,
+)
 from cimrihook.settings import governor_env, merge_settings
 from cimrihook.simulate import (
     CLAUDE_MIN_COMPACT_WINDOW,
@@ -208,6 +214,8 @@ class Variant(StrEnum):
 
     BASELINE = "baseline"
     GOVERNOR = "governor"
+    TARGETED_GOVERNOR = "targeted-governor"
+    PREPARED_GOVERNOR = "prepared-governor"
     CODEC = "codec"  # retired: kept so recorded results stay readable
     COMBINED = "combined"  # retired: window and codec
     BRIEF = "brief"  # retired: window and a summary instruction
@@ -222,6 +230,8 @@ class Variant(StrEnum):
 WINDOW_VARIANTS: Final = frozenset(
     {
         Variant.GOVERNOR,
+        Variant.TARGETED_GOVERNOR,
+        Variant.PREPARED_GOVERNOR,
         Variant.COMBINED,
         Variant.BRIEF,
         Variant.RTK_GOVERNOR,
@@ -247,7 +257,8 @@ RTK_HOOK_COMMAND: Final = "rtk hook claude"  # the command RTK 0.51 installs for
 # Arms of the codec and the summary instruction, which are no longer part of the product. Their
 # results from earlier sets are still loaded and reported; new runs cannot be planned.
 RETIRED_VARIANTS: Final = frozenset({Variant.CODEC, Variant.COMBINED, Variant.BRIEF})
-CODEX_VARIANTS: Final = frozenset({Variant.BASELINE, Variant.GOVERNOR})
+PREPARATION_VARIANTS: Final = frozenset({Variant.TARGETED_GOVERNOR, Variant.PREPARED_GOVERNOR})
+CODEX_VARIANTS: Final = frozenset({Variant.BASELINE, Variant.GOVERNOR, *PREPARATION_VARIANTS})
 # The previous schema's single treatment arm: window and codec in Claude Code, only the window in
 # Codex.
 LEGACY_VARIANT: Final = "cimrihook"
@@ -291,6 +302,7 @@ class Task:
     expected_failures: int
     prompt: str
     mutations: tuple[Mutation, ...]
+    preparation_targets: tuple[tuple[str, ...], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -546,7 +558,28 @@ def parse_task(data: dict[str, object], where: str) -> Task:
             )
             for item in object_list(data, "mutations", where)
         ),
+        preparation_targets=parse_preparation_targets(data, where),
     )
+
+
+def parse_preparation_targets(data: dict[str, object], where: str) -> tuple[tuple[str, ...], ...]:
+    """Independent explicit scopes per mutation, never inferred from injected edits."""
+    raw = data.get("preparation_targets", [])
+    if not isinstance(raw, list):
+        raise BenchError(f"{where}: preparation_targets must be a list of source lists")
+    targets: list[tuple[str, ...]] = []
+    for group in raw:
+        if (
+            not isinstance(group, list)
+            or not group
+            or not all(isinstance(item, str) for item in group)
+        ):
+            raise BenchError(f"{where}: preparation target group must contain source strings")
+        sources = tuple(str(item) for item in group)
+        for source in sources:
+            parse_target(source)
+        targets.append(sources)
+    return tuple(targets)
 
 
 def plan_runs(
@@ -595,6 +628,13 @@ def spec_problem(spec: RunSpec) -> str | None:
             f"variant {spec.variant.value!r} is retired: its mechanism was removed from CimriHook "
             "(the code is at the git tag pre-trim); its recorded results can still be reported"
         )
+    if spec.variant in PREPARATION_VARIANTS:
+        if spec.protocol not in (Protocol.SINGLE, Protocol.SEQUENTIAL):
+            return "preparation arms require single or sequential protocols"
+        if len(spec.task.preparation_targets) != len(spec.task.mutations):
+            return (
+                "preparation arms require independently declared source scopes for every mutation"
+            )
     if spec.agent is Agent.CLAUDE and spec.variant is Variant.BOUNDARY:
         return (
             "claude cannot benchmark 'boundary': session.compact() is unavailable in headless "
@@ -604,7 +644,7 @@ def spec_problem(spec: RunSpec) -> str | None:
     if spec.agent is Agent.CODEX and spec.variant not in CODEX_VARIANTS:
         return (
             f"codex cannot run variant {spec.variant.value!r}: only the compaction window is "
-            "implemented for Codex, so run codex with --variants baseline,governor"
+            "supported arms are baseline,governor,targeted-governor,prepared-governor"
         )
     if spec.agent is Agent.CODEX and spec.protocol in (Protocol.DEEP, Protocol.DEEPER):
         return (
@@ -719,7 +759,7 @@ def needs_run(path: Path, spec: RunSpec) -> bool:
             f"{path} was measured with {recorded}, this batch asks for {wanted}; "
             "use another --name for a different condition"
         )
-    return data.get("error") is not None
+    return data.get("error") is not None and spec.variant not in PREPARATION_VARIANTS
 
 
 def progress_fields(result: RunResult) -> dict[str, object]:
@@ -747,6 +787,12 @@ def execute_run(spec: RunSpec, repo_dir: Path, work_dir: Path, timeout: int) -> 
     identifier = run_id(spec)
     run_dir = work_dir / identifier
     if run_dir.exists():
+        if spec.variant in PREPARATION_VARIANTS:
+            return failed_result(
+                spec,
+                identifier,
+                f"preparation attempt already exists at {run_dir}; use a new --name",
+            )
         shutil.rmtree(run_dir)  # leftover of an earlier attempt that was cut short
     workspace = run_dir / "workspace"
     try:
@@ -865,7 +911,16 @@ def run_single(
         )
     seal(workspace)
     started = time.monotonic()
-    call = start_agent(spec, spec.task.prompt, workspace, run_dir, timeout, 1)
+    prompt = prepared_prompt(
+        spec,
+        spec.task.prompt,
+        workspace,
+        run_dir,
+        1,
+        tuple(dict.fromkeys(source for group in spec.task.preparation_targets for source in group)),
+        suite.tail,
+    )
+    call = start_agent(spec, prompt, workspace, run_dir, timeout, 1)
     duration = time.monotonic() - started
     passed = tests_pass(spec.task, workspace)
     return SessionOutcome(
@@ -912,6 +967,15 @@ def run_sequential(
             )
         seal(workspace)  # so that the new bug does not show up in the git history
         prompt = FIRST_BUG_PROMPT if step == 1 else NEXT_BUG_PROMPT
+        prompt = prepared_prompt(
+            spec,
+            prompt,
+            workspace,
+            run_dir,
+            step,
+            spec.task.preparation_targets[step - 1] if spec.variant in PREPARATION_VARIANTS else (),
+            mutated.tail,
+        )
         first = opening if opening is not None else (calls[0] if calls else None)
         calls.append(
             start_agent(spec, prompt, workspace, run_dir, timeout, step)
@@ -928,6 +992,36 @@ def run_sequential(
         step_passed=tuple(step_passed),
         passed=tests_pass(spec.task, workspace),
     )
+
+
+def prepared_prompt(
+    spec: RunSpec,
+    request: str,
+    workspace: Path,
+    run_dir: Path,
+    step: int,
+    targets: tuple[str, ...],
+    failure: str,
+) -> str:
+    """Identical explicit scope/failure in both pilot arms; only prepared gets source content."""
+    if spec.variant not in PREPARATION_VARIANTS:
+        return request
+    scoped = (
+        f"{request}\nExplicit source scope (read further if needed): {', '.join(targets)}\n"
+        f"Host test command: {' '.join(spec.task.test_command)}\n"
+        f"Observed failing test output (tail excerpt; not full output):\n{failure}"
+    )
+    prompt = scoped
+    if spec.variant is Variant.PREPARED_GOVERNOR:
+        try:
+            packet = build_packet(
+                workspace, scoped, tuple(parse_target(source) for source in targets), ()
+            )
+            prompt = render_packet(packet, DEFAULT_PACKET_BYTES)
+        except PreparationError as error:
+            raise BenchError(f"preparation step {step} failed: {error}") from error
+    (run_dir / f"preparation.{step}.prompt.txt").write_text(prompt, encoding="utf-8")
+    return prompt
 
 
 def warm_up(spec: RunSpec, workspace: Path, run_dir: Path, timeout: int) -> AgentRun:
@@ -1233,7 +1327,8 @@ def claude_call(
         "--permission-mode",
         "acceptEdits",
         "--max-turns",
-        str(MAX_TURNS),
+        str(12 if spec.variant in PREPARATION_VARIANTS else MAX_TURNS),
+        *(("--max-budget-usd", "3") if spec.variant in PREPARATION_VARIANTS else ()),
         "--allowedTools",
         CLAUDE_TOOLS,
         *plugin_args(spec, run_dir),
@@ -1261,7 +1356,10 @@ def claude_failure(stdout: str, timed_out: bool) -> str | None:
     if not results:
         return "no result record in the output"
     last = results[-1]
-    if last.get("is_error") is True and last.get("subtype") != "error_max_turns":
+    if last.get("is_error") is True and last.get("subtype") not in (
+        "error_max_turns",
+        "error_max_budget_usd",
+    ):
         return f"{last.get('subtype')}: {str(last.get('result'))[:300]}"
     return None
 
@@ -1846,6 +1944,9 @@ def render_bench_report(
         "variation); run success over every measured run, so a run without a provider cost still "
         "counts; steps are descriptive only (the steps of a run are dependent):",
         *scenario_comparisons(measured),
+        "Explicit-target preparation vs targeted governor (same scope and failure observation; "
+        "small screenings do not establish subscription savings):",
+        *preparation_comparisons(results),
         "A/B per agent and mechanism: cost is the equal-weight mean of balanced scenarios with two "
         "95% intervals (across scenarios, which generalises beyond them, and within these "
         "scenarios); non-inferiority uses the Newcombe interval of the run success difference:",
@@ -2017,6 +2118,37 @@ def scenario_comparisons(measured: Sequence[RunResult]) -> list[str]:
                 f"(costed {len(base_costed)}/{len(treated_costed)}) cost {cost} transcript "
                 f"x{transcript.ratio:.3f} {success_text(base, treated)}"
             )
+    return lines
+
+
+def preparation_comparisons(measured: Sequence[RunResult]) -> list[str]:
+    """Compare preparation with its matched scoped control, not a different generic prompt."""
+    lines: list[str] = []
+    for agent, label in sorted({(result.agent, scenario(result)) for result in measured}):
+        base = arm(measured, agent, label, Variant.TARGETED_GOVERNOR.value)
+        treated = arm(measured, agent, label, Variant.PREPARED_GOVERNOR.value)
+        if not base or not treated:
+            continue
+        base_costed, treated_costed = costed_runs(base), costed_runs(treated)
+        costs = (
+            ratio_text(
+                ratio_estimate(
+                    [final_cost(result) for result in base_costed],
+                    [final_cost(result) for result in treated_costed],
+                )
+            )
+            if base_costed and treated_costed
+            else "unknown (missing provider cost)"
+        )
+        lines.append(
+            f"  {agent} {label}: cost {costs}; requests "
+            f"{sum(result.requests for result in treated)}/"
+            f"{sum(result.requests for result in base)}; "
+            f"{success_text(base, treated)}; quality non-inferiority "
+            f"{noninferiority(len(base), len(treated), run_success_difference(base, treated).low)}"
+            f"; costed attempts {len(treated_costed)}/{len(treated)} prepared, "
+            f"{len(base_costed)}/{len(base)} control (missing costs are unknown, never zero)"
+        )
     return lines
 
 

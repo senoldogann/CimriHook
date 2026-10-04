@@ -1,0 +1,15 @@
+{
+  "id": "preparation-smoke",
+  "repo": "https://github.com/more-itertools/more-itertools.git",
+  "ref": "v11.1.0",
+  "packages": ["pytest"],
+  "test_command": [".venv/bin/python", "-m", "pytest", "-q"],
+  "expected_failures": 2,
+  "prompt": "Fix the exactly_n function's incorrect truthy-item count handling in more_itertools/more.py. Do not modify, add, or delete test files. Run the entire test suite with `.venv/bin/python -m pytest -q`. Finish when the whole suite passes. Keep the final answer brief.",
+  "preparation_targets": [["more_itertools/more.py::exactly_n", "tests/test_more.py::ExactlyNTests"]],
+  "mutations": [{
+    "path": "more_itertools/more.py",
+    "find": "iterator = islice(iterator, n - 1, None)",
+    "replace": "iterator = islice(iterator, n, None)"
+  }]
+}

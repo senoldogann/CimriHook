@@ -512,6 +512,58 @@ uv run python bench/closure_ab.py --arm governor --close-every 5 \
 Use `--tools default` and another new directory for the control; `--steps 3` selects screening.
 No task closure occurs in the governor arm.
 
+## Explicit local task preparation screening (2026-10-05)
+
+The opt-in preparation prototype preserves the original request and attaches literal source
+selected by explicitly declared file/range/Python-symbol targets. Source content is not summarized
+by a model. The opportunity report and packet builder make no model calls.
+
+The screening uses More-itertools v11.1.0 and one injected `exactly_n` bug. Both arms get the same
+explicit `exactly_n` / `ExactlyNTests` scope and the same host-observed failing test tail. Only the
+prepared arm gets literal source excerpts and Git/hash metadata. Targets are declared independently
+in [the task fixture](../bench/tasks/preparation-smoke.json); the builder never searches the mutation
+replacement. Both use the 183000 governor window and medium effort. Claude Code 2.1.289 uses
+`claude-opus-5-5[1m]`; Codex 0.160.0 uses `gpt-6.1-sol`. Calls run serially in the order Claude
+control, Claude prepared, Codex control, Codex prepared. This is one pair per agent, not a
+counterbalanced or replicated estimate.
+
+| Agent / arm | Provider cost or fixed price-table units | Requests | Generated output | Host acceptance |
+|---|---:|---:|---:|---|
+| Claude targeted governor | $0.090335 | 4 | 739 tokens | Pass |
+| Claude prepared governor | $0.0851292 | 2 | 596 tokens | Pass |
+| Codex targeted governor | 33397.8 base input units | 5 | 760 tokens | Pass |
+| Codex prepared governor | 25784.0 base input units | 5 | 518 tokens | Pass |
+
+Every workspace passed **722 tests and 19896 subtests**, with unchanged test files and the target
+library file byte-identical to the pinned reference after fixing. A separate host rerun confirmed
+each result. There were four attempted runs and zero failed/unmeasured attempts. Claude's combined
+reported cost is $0.1754642 at API list prices; calls authenticated with the subscription.
+
+Observed cost ratios are Claude **x0.9424** (5.76% lower) and Codex **x0.7720** (22.80% lower).
+Codex units use the existing benchmark table: uncached input 1, cached input 0.1, output 6;
+they are not dollars, current model-specific credit prices or a subscription bill. Raw counters
+remain in [the four result records](../bench/results/preparation-screen-20261005/). No confidence
+interval or general quality non-inferiority is established from one pair. No compaction occurred.
+
+Codex's first/last native five-hour readings moved 12→14 in control and 14→15 in preparation;
+both weekly readings stayed at 56. The first reading is already after a request, these values are
+account-wide rounded observations, and concurrent work was running. They do not establish
+attributable quota savings. Claude quota use was not measured in this screening.
+
+The local seven-day opportunity snapshot found 4921 recognized research calls and 2034
+research-only Claude request batches before the first edit, with 194 identical successful
+observations. These are candidate preparation opportunities, not measured avoidable work.
+Codex's wrapper-heavy logs classified only 18 of 4521 native calls as research; the report leaves
+the other 4503 calls visible as other/unclassified instead of interpreting arbitrary wrapper code.
+Recently modified logs can include older history; prompt spans are not completed tasks.
+
+Decision: retain explicit local preparation as experimental. A counterbalanced repeat across
+additional tasks, dependent-refactor acceptance, and usable quota resolution are required before
+claiming more accepted work per subscription. No dynamic controller, automatic profile selection,
+or installed-setting change is part of this screening. Exact prompts, native outputs, independent
+host verification and aggregate opportunity JSON are retained locally in
+`/tmp/cimrihook-bench/preparation-screen-20261005/`.
+
 ## Reproduce existing A/B studies
 
 ```bash

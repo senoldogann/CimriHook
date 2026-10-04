@@ -87,7 +87,7 @@ def test_step_without_model_requests_is_a_measurement_error(tmp_path: Path) -> N
 
 def spec(agent: Agent, protocol: Protocol, variant: Variant, window: int) -> RunSpec:
     """Minimal run definition for validation."""
-    task = Task("t", "repo", "ref", (), (), 0, "prompt", ())
+    task = Task("t", "repo", "ref", (), (), 0, "prompt", (), ())
     return RunSpec(task, protocol, agent, variant, "model", "medium", window, 1)
 
 

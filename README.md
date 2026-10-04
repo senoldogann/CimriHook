@@ -339,6 +339,51 @@ gives the point in base input units at list ratios instead.
 
 ## Evaluate with your real subscriptions
 
+### Local task preparation (experimental)
+
+```bash
+uv run cimrihook preparation-report --agent claude --days 7
+uv run cimrihook preparation-report --agent codex --days 7 --json
+uv run cimrihook prepare --root "$PWD" --request-file /tmp/task-request.txt \
+  --source src/cimrihook/preparation.py::build_packet \
+  --source tests/test_preparation.py:1:80
+```
+
+The report reads native logs locally and counts research calls, research before the first edit,
+and identical successful observations. Streaming/copy call IDs are deduplicated; parallel Claude
+tool calls share a request batch. These counts do not measure redundant reasoning, completed tasks
+or recoverable quota. Compound shell scripts and orchestration wrappers remain unclassified;
+in particular Codex sessions routed through an `exec` wrapper can have low classification coverage.
+Like `doctor`, the report selects recently modified logs, which can contain older events.
+
+`prepare` preserves the original UTF-8 request and adds literal, numbered source with full-file
+SHA-256 hashes and Git HEAD/status. A source is a relative file, `file:start:end` (inclusive), or
+`file::qualified.Python.symbol`. Optional repeatable `--evidence-file` inputs are literal supplied
+observations, not current passing-test claims. The builder executes no model or caller-provided
+commands, checks file freshness and Git state, and rejects outside-root paths and overlarge packets
+instead of silently trimming. The default `--max-bytes` is 48000; JSON output must fit it too.
+Pass the resulting text as the task prompt to the same agent/model/effort. Excerpts may omit
+dependencies, and the agent can read more and must verify its changes normally.
+
+The paired pilot gives both arms the same explicit source scope and observed failing-test tail;
+only the prepared arm receives the literal source packet. Targets are declared in task JSON,
+not derived by searching the injected edit. It is opt-in, uses isolated workspaces and unchanged
+tests, and does not change installed governor settings:
+
+```bash
+uv run cimrihook bench-run --name preparation-screen --tasks preparation-smoke \
+  --protocols single --agents claude,codex \
+  --variants targeted-governor,prepared-governor --reps 1 \
+  --window 183000 --concurrency 1 --timeout 180
+uv run cimrihook bench-report --name preparation-screen
+```
+
+Claude preparation calls have a 12-turn/$3 ceiling. Codex calls use the run timeout. Exact prompts
+and native stdout/stderr remain in the benchmark work directory. Failed preparation results are
+kept rather than automatically retried under the same result-set name. Small screening runs do
+not establish subscription savings or general quality; dependent refactors and decision retention
+need separate acceptance before recommending this beyond explicit-target fixes.
+
 ### Read current account limits
 
 ```bash

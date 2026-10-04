@@ -1,0 +1,49 @@
+{
+  "schema": 2,
+  "run_id": "preparation-smoke.single.claude.prepared-governor.r1",
+  "task_id": "preparation-smoke",
+  "protocol": "single",
+  "agent": "claude",
+  "variant": "prepared-governor",
+  "mechanism": "prepared-governor",
+  "model": "claude-opus-5-5[1m]",
+  "effort": "medium",
+  "window": 183000,
+  "effective_window": 183000,
+  "isolation": "allowlisted environment; --setting-sources project; --strict-mcp-config",
+  "agent_version": "2.1.289",
+  "repetition": 1,
+  "session_id": "18017426-1949-4a79-ac4c-bab388844062",
+  "success": true,
+  "steps": 1,
+  "steps_passed": 1,
+  "step_passed": [
+    true
+  ],
+  "tests_touched": false,
+  "agent_exit": 0,
+  "timed_out": false,
+  "duration_seconds": 16.176757207984338,
+  "provider": {
+    "cost_by_step": [
+      0.0851292
+    ],
+    "unit": "usd",
+    "price_sheet": "Claude Code total_cost_usd (includes compaction and auxiliary calls)",
+    "uncached": 4,
+    "cache_write": 8363,
+    "cache_read": 31446,
+    "output": 596
+  },
+  "requests": 2,
+  "compactions": 0,
+  "compaction_pre_tokens": [],
+  "max_context": 20246,
+  "mean_context": 19906.5,
+  "uncached": 4,
+  "cache_write": 8363,
+  "cache_read": 31446,
+  "output": 596,
+  "cost_base": 21282.3,
+  "error": null
+}

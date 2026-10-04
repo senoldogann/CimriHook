@@ -52,6 +52,15 @@ from cimrihook.guard import guard_prompt
 from cimrihook.install import apply_init, apply_remove, plan_init, plan_remove, render_plan
 from cimrihook.limits import LimitSample, limits_dir, read_samples
 from cimrihook.mods import mod_dir, write_mod
+from cimrihook.preparation import (
+    DEFAULT_PACKET_BYTES,
+    build_packet,
+    packet_json,
+    parse_target,
+    read_literal,
+    render_packet,
+)
+from cimrihook.preparation_report import diagnose_preparation, render_report, report_json
 from cimrihook.quota import quota_json, read_claude_quota, read_codex_quota
 from cimrihook.settings import (
     cache_ttl_settings,
@@ -158,6 +167,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     quota.add_argument("--agent", choices=("claude", "codex"), required=True)
     quota.add_argument("--timeout", type=float, default=25.0)
+    preparation = commands.add_parser(
+        "preparation-report", help="count local research opportunities without model calls"
+    )
+    preparation.add_argument("--agent", choices=("claude", "codex"), default="claude")
+    preparation.add_argument("--logs-dir", type=Path)
+    preparation.add_argument("--days", type=int, default=DEFAULT_DOCTOR_DAYS)
+    preparation.add_argument("--json", action="store_true")
+    prepare = commands.add_parser(
+        "prepare", help="assemble literal task context from explicit source targets, locally"
+    )
+    prepare.add_argument("--root", type=Path, required=True)
+    prepare.add_argument("--request-file", type=Path, required=True)
+    prepare.add_argument(
+        "--source",
+        action="append",
+        required=True,
+        help="relative file, file:start:end, or file::Python.symbol (repeatable)",
+    )
+    prepare.add_argument("--evidence-file", action="append", default=[])
+    prepare.add_argument("--max-bytes", type=int, default=DEFAULT_PACKET_BYTES)
+    prepare.add_argument("--json", action="store_true")
     closure = commands.add_parser(
         "closure-probe", help="run an isolated verified task closure pilot"
     )
@@ -248,8 +278,8 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument(
         "--variants",
         default="baseline,governor",
-        help="baseline, governor, rtk, rtk-governor, mask, boundary, meter, meter-governor "
-        "(all but baseline and governor: claude only)",
+        help="baseline, governor, targeted-governor, prepared-governor, rtk, rtk-governor, "
+        "mask, boundary, meter, meter-governor (preparation arms support both agents)",
     )
     bench.add_argument("--reps", type=int, default=1)
     bench.add_argument("--claude-model", default=DEFAULT_CLAUDE_MODEL)
@@ -486,6 +516,24 @@ def main() -> None:
                 else read_codex_quota(float(args.timeout))
             )
             print(quota_json(snapshot))
+        elif command == "preparation-report":
+            root = args.logs_dir or Path(DEFAULT_LOGS[str(args.agent)])
+            report = diagnose_preparation(
+                str(args.agent), root.expanduser(), int(args.days), time.time()
+            )
+            print(report_json(report) if args.json else render_report(report))
+        elif command == "prepare":
+            packet = build_packet(
+                args.root.resolve(),
+                read_literal(args.request_file),
+                tuple(parse_target(str(raw)) for raw in args.source),
+                tuple(str(path) for path in args.evidence_file),
+            )
+            sys.stdout.write(
+                packet_json(packet, int(args.max_bytes))
+                if args.json
+                else render_packet(packet, int(args.max_bytes))
+            )
         elif command == "closure-probe":
             print(
                 json.dumps(
