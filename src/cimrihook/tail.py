@@ -1,11 +1,11 @@
-"""Session state from the end of its transcript: last response time, cache lifetime, context.
+"""Transcript sonundan yanıt zamanı, cache süresi ve bağlamı oku.
 
-The cold-prompt guard uses the end of the transcript without reading all of it; the part read is
-grown until the last response is found (Claude Code can write large extra records after a
-response). The cache lifetime comes from the kind of the latest cache write (5 minutes / 1 hour);
-the lifetime is renewed on every request, so the cache goes cold that long after the last
-response. If a compaction boundary follows the last response, the context is no longer as large as
-in that response: the state counts as unknown.
+Guard tüm dosyayı okumaz; son yanıt bulunana kadar okunan kısmı büyütür. TTL son cache
+yazımının türünden gelir (5 dakika / 1 saat), fakat istek başlangıcından itibaren işler.
+Yanıtın transcript zaman damgası istek başlangıcını vermez: guard'ın yanıt yaşı kontrolü
+geç kalabilen temkinli bir soğuk-cache uyarısıdır, kesin sıcaklık ölçümü değildir.
+Son yanıttan sonra compact sınırı varsa eski bağlam boyutu artık geçersizdir ve durum
+bilinmiyor sayılır. Statusline, sağlayıcının kendi prompt_cache bilgisini kullanır.
 """
 
 import os

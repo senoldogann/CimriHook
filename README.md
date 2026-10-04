@@ -189,7 +189,9 @@ context size:
   minutes before the cache expires and its context is above 100k tokens
   (`CIMRIHOOK_MOD_MIN_TOKENS`), the mod compacts while the cache is still warm. The summary request
   reads the context at the cache-read price, and when you come back the first request writes the
-  short summary instead of re-caching the whole conversation. A toast says it happened.
+  short summary instead of re-caching the whole conversation. A toast says it happened. The timer
+  counts from the last observed cache-using request's start, including response generation time.
+  A resumed process waits for a new observed request; response age alone is not a cache deadline.
 - **Cold resume:** if the timer could not run (the machine slept), the cold-prompt guard can
   suggest `/compact` once before a large cold request. The mod does not compact inside
   `prompt.submit`: Claude Code refuses that call while the hook holds the incoming turn.

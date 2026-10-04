@@ -112,6 +112,36 @@ passed, and the Claude settings file stayed byte-identical. New sessions load th
 an existing session must reload its plugins or restart to use it. Python tests: 77 passed;
 Ruff passed; mypy passed for 44 files.
 
-Codex diagnosis remains the next small product extension: reuse existing parsing and quota probes.
-A dynamic controller, automatic model router, second handoff engine, centralized telemetry and
-new CI commands are deferred.
+## Cache prewarming decision
+
+Three mechanisms need separate measurements:
+
+- Cold prewarming moves a cache write before the user's request, mainly reducing latency.
+  Anthropic now documents `max_tokens: 0` prewarming with no generated output, but writes and
+  reads are still charged. It does not by itself avoid the initial write.
+- Refreshing a still-warm, unchanged prefix near expiry may avoid a later cold rewrite. It
+  requires matching cache identity and provider support; an independent API request has not
+  been shown to refresh a Claude subscription session. API rate limits and subscription
+  allowance are different measurements.
+- Warm compaction performs useful summarization before expiry and reduces later context, with
+  a quality tradeoff. This is CimriHook's existing optional mod behavior, not a keep-alive ping.
+
+[Anthropic prewarming and cache lifetime](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#pre-warming-the-cache).
+The existing five-minute keep-alive replay in [evaluation.md](evaluation.md#ideas-that-did-not-pay-off)
+was 3.9–70% more expensive than the one-hour baseline. It is a simulation of that policy, not a
+rejection of every possible refresh policy or a subscription measurement.
+
+The warm timer now uses the start of the latest main request with reported cache usage, rather
+than turn completion. It does not infer a request start from a resumed response's age. Hook-engine
+cases cover a 35-minute response (compact at request age 55 minutes), a response that outlasts
+the one-hour TTL (skip), and no cache usage (skip). These are controlled timing checks; live
+interactive warm-compaction savings remain unmeasured.
+Current checks: 20 hook scenarios and 77 Python tests pass; Ruff and mypy pass. The installed
+mod is refreshed with a backup; existing sessions need plugin reload or restart.
+
+Next: test whether a supported zero-output request can refresh the same subscription cache,
+then compare at most one refresh against the existing window policy on matched resumed work.
+Stop if cache identity cannot be verified. Count both refresh and resume usage, unchanged task
+acceptance, and account window observations. No persistent pings or new controller yet.
+Codex diagnosis remains the next product extension after this small cache feasibility check;
+reuse existing parsing and quota probes. Automatic routing and centralized telemetry are deferred.

@@ -28,7 +28,7 @@ function flagEnabled(value: string | undefined): boolean {
 export const register: Register = (on) => {
   const session = {
     running: false, compacted: false, compacting: false,
-    lastTurnEnd: undefined as number | undefined,
+    lastCacheUse: undefined as number | undefined,
     limits: undefined as { id: string; lines: string[] } | undefined,
     prefixRecorded: false,
   }
@@ -42,6 +42,12 @@ export const register: Register = (on) => {
   on('turn.step', async function* ($, e, next) {
     const started = await $.clock.now()
     const result = yield* next(e)
+    if (e.agentId === undefined) {
+      // TTL, yanıt sonunda değil cache'i okuyan/yazan isteğin başında yenilenir.
+      const usage = result.usage
+      session.lastCacheUse = usage !== null &&
+        (usage.cache_read_input_tokens > 0 || usage.cache_creation_input_tokens > 0) ? started : undefined
+    }
     if (e.agentId === undefined && await $.env.get('CIMRIHOOK_MOD_CLOSE_PROBE') === '1') {
       const base = `${await $.env.get('CIMRIHOOK_HOME')}/closure/${await $.session.id()}`
       const phase = await $.env.get('CIMRIHOOK_PROBE_PHASE')
@@ -56,7 +62,6 @@ export const register: Register = (on) => {
     const result = await next(e)
     if (e.agentId === undefined) {
       session.running = false
-      session.lastTurnEnd = await $.clock.now()
       session.compacted = false
       if (await $.env.get('CIMRIHOOK_MOD_CLOSE_PROBE') === '1') {
         const base = `${await $.env.get('CIMRIHOOK_HOME')}/closure/${await $.session.id()}`
@@ -99,14 +104,6 @@ export const register: Register = (on) => {
     return result
   })
 
-  on('classic.SessionStart', async ($, e, next) => {
-    if (e.source === 'resume' && typeof e.seconds_since_last_response === 'number') {
-      session.lastTurnEnd = (await $.clock.now()) - e.seconds_since_last_response * 1000
-      session.compacted = false
-    }
-    return next(e)
-  })
-
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     const minTokens = Number((await $.env.get('CIMRIHOOK_MOD_MIN_TOKENS')) ?? DEFAULT_MIN_TOKENS)
@@ -114,11 +111,11 @@ export const register: Register = (on) => {
     if ((await $.session.surfaces()).length === 0) return result
     $.clock.every(TICK_MS, () => {
       void (async () => {
-        if (session.running || session.compacted || session.compacting || session.lastTurnEnd === undefined) return
+        if (session.running || session.compacted || session.compacting || session.lastCacheUse === undefined) return
         if (flagEnabled(await $.env.get('DISABLE_AUTO_COMPACT')) ||
             flagEnabled(await $.env.get('DISABLE_COMPACT'))) return
         if ((await $.session.surfaces()).length === 0) return
-        const idle = (await $.clock.now()) - session.lastTurnEnd
+        const idle = (await $.clock.now()) - session.lastCacheUse
         if (idle < CACHE_LIFETIME_MS - WARM_MARGIN_MS || idle >= CACHE_LIFETIME_MS) return
         if (!worthCompacting(await $.session.usage(), minTokens)) return
         session.compacting = true
