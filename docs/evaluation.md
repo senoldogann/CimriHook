@@ -248,8 +248,8 @@ Measured before shipping, cheapest test first. None of these is in CimriHook.
   Cutting every unbounded read of a file over 400 lines to 120 lines and an outline, and
   assuming the agent never reads the rest, would have saved under 1%: the large reads were
   few, and the largest "reads" were PDF pages, which are billed by the page, not by their text.
-  The prefix above bare Claude Code was 8% of the spend; `doctor` now prices it and the mod
-  records what it is made of.
+  The first-request allocation above the historical bare baseline estimated 8% of the spend;
+  this is not measured recoverable savings. The mod records active context categories.
 
 ## What the numbers do not show
 
@@ -425,15 +425,92 @@ To reproduce an arm with a new private directory:
 uv run python bench/closure_ab.py --arm governor --close-every 5 \
   --output /tmp/cimrihook-closure-governor-new \
   --task bench/tasks/boltons-twenty-steps.json --model 'claude-opus-5-5[1m]' \
-  --effort medium --window 183000 --timeout 300
+  --effort medium --window 183000 --timeout 300 --steps 20 --tools Read,Edit,Bash,Glob,Grep
 uv run python bench/closure_ab.py --arm closure --close-every 5 \
   --output /tmp/cimrihook-closure-batch-new \
   --task bench/tasks/boltons-twenty-steps.json --model 'claude-opus-5-5[1m]' \
-  --effort medium --window 183000 --timeout 300
+  --effort medium --window 183000 --timeout 300 --steps 20 --tools Read,Edit,Bash,Glob,Grep
 ```
 
 `--close-every 1` reproduces the rejected per-task treatment. This cadence is an experiment
 parameter, not an automatic policy or the Anthropic Batch API.
+
+## Focused tool profile on real sequential tasks (2026-10-04)
+
+The next prefix experiment reused the sequential-task driver and existing governor. The first
+inspection found an active 29469-token MCP category in only **one of 19** recorded sessions;
+deferred tools are excluded. `doctor` now shows the number of sessions containing each category
+and labels its median as conditional on presence. A large rare category is not every session's
+prefix. Claude Code already defers MCP tools by default; this experiment tests the built-in
+tool profile, with no MCP servers connected. [Claude Code tool search](https://code.claude.com/docs/en/mcp#scale-with-mcp-tool-search).
+
+**Method.** Claude Code 2.1.289, `claude-opus-5-5[1m]`, medium effort, 183000 window, the same
+Boltons 26.2.0 reference and injected bugs as above. Both arms use the same private plugin,
+allowlisted environment, project settings only, empty strict MCP config, and automatic
+permissions for Read/Edit/Bash/Glob/Grep. Agent is denied in both. The changed parameter is
+`--tools default` versus `--tools Read,Edit,Bash,Glob,Grep`. The recorded default inventory has
+26 tools, including Glob/Grep; the focused inventory has five. Removing Skill also removes
+its skill listing, so this is a complete profile comparison, not just tool-schema bytes.
+
+Three-task screening ran default then focused. The default's first request was cold, while
+focused reused 4541 cached tokens. Its apparent 52% cost reduction is **not a balanced saving
+measurement**. A separate 20-task pair ran in the reverse order, focused then default, after
+both profiles had recently been used. Screening and confirmation are not pooled.
+
+| 20-task confirmation | Default profile | Five-tool profile |
+|---|---:|---:|
+| Host-verified fixes | 20/20 | 20/20 |
+| Tests per step; test files unchanged | 519; yes | 519; yes |
+| Final Python library files identical to reference | 30/30 | 30/30 |
+| Final active-category snapshot, excluding messages | 13332 tokens | 7016 tokens |
+| First-request input, including initial messages | 16902 tokens | 8048 tokens |
+| Main model requests | 83 | 82 |
+| Processed input, including cache reads | 3150028 tokens | 2510563 tokens |
+| New cache writes | 49201 tokens | 51437 tokens |
+| Generated output, including thinking | 12010 tokens | 13432 tokens |
+| Cumulative API-equivalent cost | $1.2546042 | $1.1725844 |
+| Whole pipeline time, including host tests/startup | 468.0 s | 369.0 s |
+
+The observed cost reduction is **6.54%**; processed input falls **20.30%** and the final active
+snapshot **47.37%**. Excluding the first task from both arms still gives **5.45%** lower
+incremental cost. Cache-read cost falls from $0.6201322 to $0.4917924, while cache-write cost
+rises from $0.393608 to $0.411496 and output cost from $0.2402 to $0.26864. Smaller input does
+not predict the net saving by itself. Provider counters, native transcript counters and the
+CLI cumulative cost agree; all writes use the one-hour TTL. The full screening and confirmation
+have a combined API-equivalent cost of $2.816986; the runs authenticated with the subscription.
+[Opus pricing](https://platform.claude.com/docs/en/about-claude/pricing).
+
+**Limits and decision.** This is one paired session in one repository/model/effort. Twenty
+dependent tasks are not twenty independent replicates; there is no population confidence
+interval or general quality guarantee. Native tool use remained within the five-tool profile
+in both arms. The governor did not trigger, and larger architectural tasks or tasks needing
+omitted tools were not evaluated. The shorter elapsed time is an observation including
+network/startup/test variation, not an isolated latency estimate.
+
+The five-hour account readings were 25→27 for focused and 27→30 for default; weekly readings
+were 52→52 and 52→53. These are account-wide rounded values during concurrent activity.
+They do not establish attributable subscription savings or a tasks-per-allowance multiplier.
+The existing governor benchmark already used the five-tool profile; this percentage cannot
+be added to its previous savings.
+
+Use the existing explicit tool flag for known tasks that fit this profile. Keep it opt-in;
+there is no measured reason to add a classifier, dynamic profile switching or a new product
+command. Global user settings are unchanged.
+[Measurements and quota snapshots](../bench/results/prefix-ab-20261004/report.json).
+Full workspaces, prompts, transcripts, the independent source/counter audit and the summary
+script remain private in `~/.cimrihook/experiments/prefix-ab-20261004/`.
+
+To reproduce a 20-task arm with a new private directory:
+
+```bash
+uv run python bench/closure_ab.py --arm governor --close-every 5 \
+  --output /tmp/cimrihook-prefix-focused-new \
+  --task bench/tasks/boltons-twenty-steps.json --model 'claude-opus-5-5[1m]' \
+  --effort medium --window 183000 --timeout 300 --steps 20 --tools Read,Edit,Bash,Glob,Grep
+```
+
+Use `--tools default` and another new directory for the control; `--steps 3` selects screening.
+No task closure occurs in the governor arm.
 
 ## Reproduce existing A/B studies
 

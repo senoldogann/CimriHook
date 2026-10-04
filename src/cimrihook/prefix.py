@@ -1,11 +1,8 @@
-"""What rides on every request: the context breakdown the mod records once per session.
+"""Mod'un tamamlanan turda kaydettiği etkin bağlam kategorileri.
 
-Claude Code's `/context` breaks the window down into system prompt, system tools, MCP tools,
-custom agents, memory files, skills and the messages. Everything but the messages is sent with
-every request of the session and re-cached with every cache rewrite. The mod records the
-breakdown of a session's first turn as `prefix/<session>.json` under CimriHook's home, and
-`cimrihook doctor` reports the median of each row over the recorded sessions, so that the
-prefix's cost can be put to the parts it is made of.
+Deferred araçlar, boş alan, buffer ve konuşma prefix toplamına katılmaz. Kategorinin medyanı
+yalnız bulunduğu kayıtlardan hesaplanır; kaç oturumda bulunduğu ayrıca gösterilir. Bu anlık
+kayıtlar her isteğin sabit prefix'i veya kaldırılabilecek maliyetin ölçümü değildir.
 """
 
 import json
@@ -42,10 +39,11 @@ class PrefixRecord:
 
 @dataclass(frozen=True, slots=True)
 class PrefixPart:
-    """The median tokens of one prefix row over the recorded sessions."""
+    """Bir kategorinin bulunduğu oturumlardaki medyanı ve kayıt sayısı."""
 
     name: str
     tokens: int
+    sessions: int
 
 
 def prefix_dir(home: Path) -> Path:
@@ -93,10 +91,17 @@ def prefix_parts(records: list[PrefixRecord]) -> list[PrefixPart]:
         for row in record.rows:
             if row.kind == USED and row.name != MESSAGES_ROW:
                 tokens[row.name].append(row.tokens)
-    parts = [PrefixPart(name, int(statistics.median(values))) for name, values in tokens.items()]
+    parts = [
+        PrefixPart(name, int(statistics.median(values)), len(values))
+        for name, values in tokens.items()
+    ]
     return sorted(parts, key=lambda part: part.tokens, reverse=True)
 
 
 def prefix_text(parts: list[PrefixPart]) -> str:
-    """The parts as one line: `System tools 12.0k, Skills 9.4k, ...`."""
-    return ", ".join(f"{part.name} {part.tokens / 1000:.1f}k" for part in parts)
+    """Seyrek kategori tüm oturumların yükü gibi görünmesin; kayıt sayısını yaz."""
+    return ", ".join(
+        f"{part.name} {part.tokens / 1000:.1f}k "
+        f"({part.sessions} {'session' if part.sessions == 1 else 'sessions'})"
+        for part in parts
+    )

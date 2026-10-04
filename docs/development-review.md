@@ -56,6 +56,13 @@ observed reduction in two pairs, whose interval includes no saving; subscription
 unestablished. Closure stays explicitly enabled only in the isolated experiment. Measurements
 and their limits are in [evaluation.md](evaluation.md#verified-closure-on-real-sequential-tasks-2026-10-04).
 
-The next small action is a manual prefix comparison using the existing
-breakdown. Codex diagnosis follows only after the savings path is evaluated. A dynamic
-controller, task classifier, centralized telemetry and new CI commands are deferred.
+The prefix comparison is complete: one separate 20-task pair observed 6.54% lower API-equivalent
+cost with Read/Edit/Bash/Glob/Grep, with identical final Python sources and all original tests
+passing. It is a small profile result, not the proposed general 8–15% or a subscription saving.
+Use the existing tool flag for known suitable tasks. The existing governor benchmark already
+used this profile, so its older savings and this result are not additive. `doctor` now reports
+category prevalence to avoid treating one session's large MCP category as universal.
+Details and limitations are in [evaluation.md](evaluation.md#focused-tool-profile-on-real-sequential-tasks-2026-10-04).
+
+Codex diagnosis is the next small product extension: reuse existing parsing and quota probes.
+A dynamic controller, task classifier, centralized telemetry and new CI commands are deferred.

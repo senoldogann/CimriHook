@@ -112,9 +112,10 @@ view, not an A/B test; spend per request and mean context depend least on how mu
 `doctor` prices every real request in your Claude Code transcripts at API list prices and splits
 the spend by the context size of the request, by token type, by cache rewrites over 100k tokens
 and their likely cause (idle past the cache lifetime, compaction, model switch), by main session
-and subagents, and by the static prefix every request carries, priced: the part of the prefix
-above bare Claude Code (plugins, skills, MCP servers, CLAUDE.md) is re-read with every request,
-and with the mod enabled `doctor` lists what it is made of, as `/context` counts it. It ends
+and subagents. It also estimates the input-cost share allocated above a historical bare-prefix
+baseline using first-request input, which includes initial messages; this is not measured
+recoverable savings. With the mod enabled, `doctor` shows active `/context` categories and how
+many recorded sessions contain each. It ends
 with what would change the largest items; the compaction-window estimate comes from `simulate`
 and is labelled as a simulation until an A/B run confirms it.
 
@@ -195,10 +196,11 @@ context size:
 - **Limit meter:** on a subscription, every turn appends the session's list-price spend and the
   use of the 5-hour and weekly windows to `~/.cimrihook/limits/`; `cimrihook limits` turns it into
   what a point of each window costs on your plan.
-- **Prefix record:** when a session's first turn ends, the context breakdown `/context` shows is
-  written to `~/.cimrihook/prefix/` (one token count per tool and memory file, as `/context`
-  makes them); `cimrihook doctor` reports the median over your sessions next to what the prefix
-  costs.
+- **Prefix record:** after a CLI process's first completed turn, the `/context` categories are
+  written to `~/.cimrihook/prefix/`. A resumed process updates the same session record.
+  `cimrihook doctor` shows each active category's median when present and its session count;
+  deferred tools, messages and reserved space are excluded. These snapshots do not measure
+  recoverable savings or establish that a category was present on every request.
 - **Boundary compaction (experimental, `CIMRIHOOK_MOD_BOUNDARY_TOKENS=N`):** a prompt that enters
   a conversation larger than N tokens is preceded by a compaction, so the summary closes a
   finished task instead of cutting into the middle of one; the window stays the backstop inside a
@@ -331,6 +333,23 @@ original tests passing and the library's Python sources restored exactly, but th
 includes no saving.
 Subscription savings are unestablished. Closure remains an isolated experiment.
 [Sequential-task results](docs/evaluation.md#verified-closure-on-real-sequential-tasks-2026-10-04).
+
+### Tool profile for known tasks
+
+For library bug fixes that need these five built-in tools, start a session with:
+
+```bash
+claude --tools "Read,Edit,Bash,Glob,Grep"
+```
+
+One matched 20-task pair with the same governor observed **6.54% lower API-equivalent cost**
+than the default tool profile, with all original tests passing and final Python sources
+identical to the reference. It is a small result for this task type; subscription savings and
+quality on tasks needing other tools are unestablished. The existing governor benchmark already
+used five tools, so the percentages are not additive. Choose required tools before the session;
+the flag changes built-in tools and does not disable MCP servers. No automatic selector is added.
+[Method, cost decomposition and reproduction](docs/evaluation.md#focused-tool-profile-on-real-sequential-tasks-2026-10-04).
+[CLI tool flag](https://code.claude.com/docs/en/cli-reference).
 
 Results so far, with the method and the corrections to earlier figures, are in
 [docs/evaluation.md](docs/evaluation.md).

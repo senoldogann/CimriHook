@@ -107,7 +107,7 @@ class Anatomy:
     compactions: int
     compaction_trigger: int | None  # median
     after_compaction_context: int | None  # context of the first request after a compaction, median
-    prefix_excess_usd: float  # input cost put to the part of each session's prefix above bare
+    prefix_excess_usd: float  # İlk istek inputu üzerinden tahmini maliyet payı; tasarruf değildir.
 
 
 def band(context: int) -> str:
@@ -210,11 +210,11 @@ def build_anatomy(scans: Sequence[TranscriptScan], days: int) -> Anatomy:
 
 
 def prefix_excess(scan: TranscriptScan) -> float:
-    """The input cost of a session put to the part of its prefix above bare Claude Code.
+    """İlk istek inputunun tarihsel bare eşiğini aşan kısmına tahmini input maliyeti ayır.
 
-    The prefix is the context of the session's first request; each request's input cost (reads,
-    writes and uncached input) is split in proportion to the context. Nothing is put to a session
-    whose first request is outside the window.
+    İlk istek kullanıcı mesajlarını da içerir. Her isteğin okuma/yazma/uncached maliyeti bu
+    miktarın bağlama oranıyla paylaştırılır; sonuç gerçek prefix veya kaldırılabilir tasarruf
+    ölçümü değildir. İlk isteği zaman aralığının dışında kalan oturuma maliyet atanmaz.
     """
     first = next((request for request in scan.requests if request.first), None)
     if first is None or context_of(first.usage) <= BARE_PREFIX_TOKENS:
@@ -244,7 +244,7 @@ class Diagnosis:
     bench_transcripts: int  # CimriHook A/B run transcripts that were left out
     setup: str  # window, guard and status line in the settings file
     lifetimes: tuple[LifetimeReplay, LifetimeReplay]  # main sessions and subagents
-    prefix_parts: tuple[PrefixPart, ...]  # median breakdown of the sessions the mod recorded
+    prefix_parts: tuple[PrefixPart, ...]  # Kategori varsa medyan token ve bulunduğu oturum sayısı.
     prefix_sessions: int
 
 
@@ -407,10 +407,10 @@ def render_doctor(diagnosis: Diagnosis) -> str:
             for share in anatomy.rewrites
             if share.count
         ),
-        f"Static prefix (first request of a session): main {tokens_text(anatomy.prefix_main)}, "
-        f"subagent {tokens_text(anatomy.prefix_subagent)} tokens; bare Claude Code is about "
-        f"{tokens_text(BARE_PREFIX_TOKENS)} (plugins, skills, MCP servers and CLAUDE.md add the "
-        "rest to every request)",
+        f"First-request input (prefix and initial messages): main "
+        f"{tokens_text(anatomy.prefix_main)}, subagent {tokens_text(anatomy.prefix_subagent)} "
+        f"tokens; historical bare Claude Code baseline {tokens_text(BARE_PREFIX_TOKENS)} "
+        "(version and environment dependent)",
         *prefix_lines(diagnosis),
         f"Compactions: {anatomy.compactions:,}; median trigger "
         f"{tokens_text(anatomy.compaction_trigger)} tokens, next request "
@@ -451,14 +451,15 @@ def prefix_lines(diagnosis: Diagnosis) -> list[str]:
     lines = []
     if anatomy.prefix_excess_usd > 0:
         lines.append(
-            f"  the part above bare cost about ${anatomy.prefix_excess_usd:,.0f} "
-            f"({percent(anatomy.prefix_excess_usd, anatomy.total_usd)} of the spend), re-read "
-            "with every request"
+            f"  estimated input-cost allocation above that baseline: "
+            f"${anatomy.prefix_excess_usd:,.0f} "
+            f"({percent(anatomy.prefix_excess_usd, anatomy.total_usd)} of the spend); "
+            "includes initial messages and is not measured recoverable savings"
         )
     if diagnosis.prefix_parts:
         lines.append(
-            f"  what it is (median of {diagnosis.prefix_sessions} sessions the mod recorded, "
-            f"as /context counts them): {prefix_text(list(diagnosis.prefix_parts))}"
+            f"  active categories ({diagnosis.prefix_sessions} recorded sessions; median when "
+            f"present, as /context counts them): {prefix_text(list(diagnosis.prefix_parts))}"
         )
     return lines
 
@@ -528,10 +529,9 @@ def recommendations(anatomy: Anatomy, simulation: SimulationResult | None) -> li
         )
     if anatomy.prefix_main is not None and anatomy.prefix_main > BARE_PREFIX_TOKENS:
         lines.append(
-            f"  trim the prefix: {tokens_text(anatomy.prefix_main - BARE_PREFIX_TOKENS)} tokens "
-            "above bare Claude Code ride along on every main request and every re-cache, about "
-            f"${anatomy.prefix_excess_usd:,.0f} "
-            f"({percent(anatomy.prefix_excess_usd, anatomy.total_usd)}); /context in Claude Code "
-            "lists what they are"
+            f"  inspect /context for optional active tools or instructions: first-request input "
+            f"is {tokens_text(anatomy.prefix_main - BARE_PREFIX_TOKENS)} tokens above the "
+            "historical baseline, including initial messages. Measure a matched task comparison "
+            "before claiming savings from a smaller profile"
         )
     return lines

@@ -1,0 +1,894 @@
+{
+  "date": "2026-10-04",
+  "base_commit": "a0e0ada",
+  "task": "boltons-twenty-steps",
+  "reference_tag": "26.2.0",
+  "reference_commit": "4332b35a278d694f30c99881faa61cde695c7a96",
+  "protocol": "Three-task screening default then focused; separate 20-task confirmation focused then default. No closure, synthetic observations or forced warmup.",
+  "isolation": "Same allowlisted environment, private plugin, project settings only, empty strict MCP config, model/effort/window and host tests. Only --tools changes; Agent denied in both arms.",
+  "sources": {
+    "price": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "cli": "https://code.claude.com/docs/en/cli-reference",
+    "tool_search": "https://code.claude.com/docs/en/mcp#scale-with-mcp-tool-search"
+  },
+  "discovery": {
+    "recorded_sessions": 19,
+    "used_mcp_tools_present": 1,
+    "used_mcp_tools_tokens_when_present": 29469,
+    "system_tools_median": 9710,
+    "deferred_included": false
+  },
+  "execution_order": [
+    "screen-default",
+    "screen-focused",
+    "focused-20",
+    "default-20"
+  ],
+  "runs": [
+    {
+      "name": "screen-default",
+      "session_id": "0a56dede-928b-414f-a7be-96eba82e9741",
+      "cli_version": "2.1.289",
+      "model": "claude-opus-5-5[1m]",
+      "effort": "medium",
+      "window": 183000,
+      "tools": "default",
+      "allowed_tools": "Read,Edit,Bash,Glob,Grep",
+      "disallowed_tools": "Agent",
+      "tool_inventory": [
+        "Bash",
+        "CronCreate",
+        "CronDelete",
+        "CronList",
+        "DesignSync",
+        "Edit",
+        "EnterWorktree",
+        "ExitWorktree",
+        "Glob",
+        "Grep",
+        "ListAgents",
+        "Monitor",
+        "NotebookEdit",
+        "PushNotification",
+        "Read",
+        "RemoteTrigger",
+        "ReportFindings",
+        "ScheduleWakeup",
+        "SendMessage",
+        "Skill",
+        "TaskStop",
+        "ToolSearch",
+        "WebFetch",
+        "WebSearch",
+        "Workflow",
+        "Write"
+      ],
+      "tool_calls": {
+        "Bash": 6,
+        "Grep": 2,
+        "Edit": 3
+      },
+      "success": true,
+      "steps_passed": 3,
+      "test_cases_per_step": 519,
+      "test_files_unchanged": true,
+      "reference_identical_python_sources": 30,
+      "cost_usd": 0.26361039999999997,
+      "cost_parts_usd": {
+        "uncached": 9.6e-05,
+        "cache_write": 0.179432,
+        "cache_read": 0.043482400000000004,
+        "output": 0.0406
+      },
+      "requests": 12,
+      "usage": {
+        "input_tokens": 24,
+        "cache_creation_input_tokens": 22429,
+        "cache_read_input_tokens": 217412,
+        "output_tokens": 2030
+      },
+      "processed_input_tokens": 239865,
+      "provider_reported_thinking_tokens": 26,
+      "cache_write_5m": 0,
+      "cache_write_1h": 22429,
+      "first_request_usage": {
+        "input_tokens": 2,
+        "output_tokens": 138,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 16901,
+        "model": "claude-opus-5-5"
+      },
+      "max_request_input": 22431,
+      "last_completed_turn_active_categories": [
+        {
+          "name": "System prompt",
+          "tokens": 2267,
+          "kind": "used"
+        },
+        {
+          "name": "System tools",
+          "tokens": 8054,
+          "kind": "used"
+        },
+        {
+          "name": "Memory files",
+          "tokens": 805,
+          "kind": "used"
+        },
+        {
+          "name": "Skills",
+          "tokens": 2207,
+          "kind": "used"
+        }
+      ],
+      "last_completed_turn_active_category_tokens": 13333,
+      "compactions": 0,
+      "duration_seconds": 59.97446062500239,
+      "quota_before": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T20:26:20.902139+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 24.0,
+            "resets_at": "2026-10-04T23:10:00.419424+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 51.0,
+            "resets_at": "2026-10-09T21:00:00.419452+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T21:00:00.419647+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "quota_after": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T20:27:20.865247+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 24.0,
+            "resets_at": "2026-10-04T23:10:00.419424+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 51.0,
+            "resets_at": "2026-10-09T21:00:00.419452+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T21:00:00.419647+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "steps": [
+        {
+          "step": 1,
+          "path": "boltons/strutils.py",
+          "cost_usd_cumulative": 0.175565,
+          "requests": 4
+        },
+        {
+          "step": 2,
+          "path": "boltons/dictutils.py",
+          "cost_usd_cumulative": 0.2218862,
+          "requests": 4
+        },
+        {
+          "step": 3,
+          "path": "boltons/mathutils.py",
+          "cost_usd_cumulative": 0.26361039999999997,
+          "requests": 4
+        }
+      ]
+    },
+    {
+      "name": "screen-focused",
+      "session_id": "d9ecf672-20da-4f87-b4ae-408655a6d0ab",
+      "cli_version": "2.1.289",
+      "model": "claude-opus-5-5[1m]",
+      "effort": "medium",
+      "window": 183000,
+      "tools": "Read,Edit,Bash,Glob,Grep",
+      "allowed_tools": "Read,Edit,Bash,Glob,Grep",
+      "disallowed_tools": "Agent",
+      "tool_inventory": [
+        "Bash",
+        "Edit",
+        "Glob",
+        "Grep",
+        "Read"
+      ],
+      "tool_calls": {
+        "Bash": 6,
+        "Grep": 2,
+        "Edit": 3
+      },
+      "success": true,
+      "steps_passed": 3,
+      "test_cases_per_step": 519,
+      "test_files_unchanged": true,
+      "reference_identical_python_sources": 30,
+      "cost_usd": 0.126187,
+      "cost_parts_usd": {
+        "uncached": 8.8e-05,
+        "cache_write": 0.069936,
+        "cache_read": 0.021983,
+        "output": 0.03418
+      },
+      "requests": 11,
+      "usage": {
+        "input_tokens": 22,
+        "cache_creation_input_tokens": 8742,
+        "cache_read_input_tokens": 109915,
+        "output_tokens": 1709
+      },
+      "processed_input_tokens": 118679,
+      "provider_reported_thinking_tokens": 18,
+      "cache_write_5m": 0,
+      "cache_write_1h": 8742,
+      "first_request_usage": {
+        "input_tokens": 2,
+        "output_tokens": 97,
+        "cache_read_input_tokens": 4541,
+        "cache_creation_input_tokens": 3508,
+        "model": "claude-opus-5-5"
+      },
+      "max_request_input": 13285,
+      "last_completed_turn_active_categories": [
+        {
+          "name": "System prompt",
+          "tokens": 2219,
+          "kind": "used"
+        },
+        {
+          "name": "System tools",
+          "tokens": 3993,
+          "kind": "used"
+        },
+        {
+          "name": "Memory files",
+          "tokens": 805,
+          "kind": "used"
+        }
+      ],
+      "last_completed_turn_active_category_tokens": 7017,
+      "compactions": 0,
+      "duration_seconds": 56.49404341599438,
+      "quota_before": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T20:27:55.540790+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 24.0,
+            "resets_at": "2026-10-04T23:10:00.270006+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 52.0,
+            "resets_at": "2026-10-09T21:00:00.270026+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T21:00:00.270184+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "quota_after": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T20:28:52.141240+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 24.0,
+            "resets_at": "2026-10-04T23:10:00.270006+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 52.0,
+            "resets_at": "2026-10-09T21:00:00.270026+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T21:00:00.270184+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "steps": [
+        {
+          "step": 1,
+          "path": "boltons/strutils.py",
+          "cost_usd_cumulative": 0.060601999999999996,
+          "requests": 4
+        },
+        {
+          "step": 2,
+          "path": "boltons/dictutils.py",
+          "cost_usd_cumulative": 0.09728279999999999,
+          "requests": 4
+        },
+        {
+          "step": 3,
+          "path": "boltons/mathutils.py",
+          "cost_usd_cumulative": 0.126187,
+          "requests": 3
+        }
+      ]
+    },
+    {
+      "name": "focused-20",
+      "session_id": "2f918e21-c023-43a3-a0fc-9bf560877aa2",
+      "cli_version": "2.1.289",
+      "model": "claude-opus-5-5[1m]",
+      "effort": "medium",
+      "window": 183000,
+      "tools": "Read,Edit,Bash,Glob,Grep",
+      "allowed_tools": "Read,Edit,Bash,Glob,Grep",
+      "disallowed_tools": "Agent",
+      "tool_inventory": [
+        "Bash",
+        "Edit",
+        "Glob",
+        "Grep",
+        "Read"
+      ],
+      "tool_calls": {
+        "Bash": 43,
+        "Grep": 18,
+        "Edit": 21,
+        "Read": 3
+      },
+      "success": true,
+      "steps_passed": 20,
+      "test_cases_per_step": 519,
+      "test_files_unchanged": true,
+      "reference_identical_python_sources": 30,
+      "cost_usd": 1.1725843999999999,
+      "cost_parts_usd": {
+        "uncached": 0.000656,
+        "cache_write": 0.411496,
+        "cache_read": 0.4917924,
+        "output": 0.26864
+      },
+      "requests": 82,
+      "usage": {
+        "input_tokens": 164,
+        "cache_creation_input_tokens": 51437,
+        "cache_read_input_tokens": 2458962,
+        "output_tokens": 13432
+      },
+      "processed_input_tokens": 2510563,
+      "provider_reported_thinking_tokens": 568,
+      "cache_write_5m": 0,
+      "cache_write_1h": 51437,
+      "first_request_usage": {
+        "input_tokens": 2,
+        "output_tokens": 97,
+        "cache_read_input_tokens": 4541,
+        "cache_creation_input_tokens": 3505,
+        "model": "claude-opus-5-5"
+      },
+      "max_request_input": 55980,
+      "last_completed_turn_active_categories": [
+        {
+          "name": "System prompt",
+          "tokens": 2218,
+          "kind": "used"
+        },
+        {
+          "name": "System tools",
+          "tokens": 3993,
+          "kind": "used"
+        },
+        {
+          "name": "Memory files",
+          "tokens": 805,
+          "kind": "used"
+        }
+      ],
+      "last_completed_turn_active_category_tokens": 7016,
+      "compactions": 0,
+      "duration_seconds": 369.0041162080015,
+      "quota_before": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T20:29:44.679213+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 25.0,
+            "resets_at": "2026-10-04T23:10:00.065595+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 52.0,
+            "resets_at": "2026-10-09T21:00:00.065613+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T21:00:00.065767+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "quota_after": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T20:35:53.586858+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 27.0,
+            "resets_at": "2026-10-04T23:10:00.454925+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 52.0,
+            "resets_at": "2026-10-09T21:00:00.454945+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T21:00:00.455098+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "steps": [
+        {
+          "step": 1,
+          "path": "boltons/strutils.py",
+          "cost_usd_cumulative": 0.067625,
+          "requests": 4
+        },
+        {
+          "step": 2,
+          "path": "boltons/dictutils.py",
+          "cost_usd_cumulative": 0.10475360000000002,
+          "requests": 4
+        },
+        {
+          "step": 3,
+          "path": "boltons/mathutils.py",
+          "cost_usd_cumulative": 0.13505760000000003,
+          "requests": 3
+        },
+        {
+          "step": 4,
+          "path": "boltons/setutils.py",
+          "cost_usd_cumulative": 0.18882980000000002,
+          "requests": 5
+        },
+        {
+          "step": 5,
+          "path": "boltons/iterutils.py",
+          "cost_usd_cumulative": 0.23160360000000002,
+          "requests": 4
+        },
+        {
+          "step": 6,
+          "path": "boltons/pathutils.py",
+          "cost_usd_cumulative": 0.2887596,
+          "requests": 5
+        },
+        {
+          "step": 7,
+          "path": "boltons/cacheutils.py",
+          "cost_usd_cumulative": 0.33268659999999994,
+          "requests": 4
+        },
+        {
+          "step": 8,
+          "path": "boltons/timeutils.py",
+          "cost_usd_cumulative": 0.37977039999999995,
+          "requests": 4
+        },
+        {
+          "step": 9,
+          "path": "boltons/funcutils.py",
+          "cost_usd_cumulative": 0.42946899999999993,
+          "requests": 4
+        },
+        {
+          "step": 10,
+          "path": "boltons/statsutils.py",
+          "cost_usd_cumulative": 0.4802861999999999,
+          "requests": 4
+        },
+        {
+          "step": 11,
+          "path": "boltons/queueutils.py",
+          "cost_usd_cumulative": 0.5323823999999998,
+          "requests": 4
+        },
+        {
+          "step": 12,
+          "path": "boltons/urlutils.py",
+          "cost_usd_cumulative": 0.5882025999999998,
+          "requests": 4
+        },
+        {
+          "step": 13,
+          "path": "boltons/tableutils.py",
+          "cost_usd_cumulative": 0.6714133999999997,
+          "requests": 5
+        },
+        {
+          "step": 14,
+          "path": "boltons/strutils.py",
+          "cost_usd_cumulative": 0.7298467999999997,
+          "requests": 4
+        },
+        {
+          "step": 15,
+          "path": "boltons/listutils.py",
+          "cost_usd_cumulative": 0.7787159999999997,
+          "requests": 3
+        },
+        {
+          "step": 16,
+          "path": "boltons/formatutils.py",
+          "cost_usd_cumulative": 0.8498953999999996,
+          "requests": 4
+        },
+        {
+          "step": 17,
+          "path": "boltons/jsonutils.py",
+          "cost_usd_cumulative": 0.9352161999999995,
+          "requests": 5
+        },
+        {
+          "step": 18,
+          "path": "boltons/iterutils.py",
+          "cost_usd_cumulative": 1.0140565999999995,
+          "requests": 4
+        },
+        {
+          "step": 19,
+          "path": "boltons/ioutils.py",
+          "cost_usd_cumulative": 1.0861751999999998,
+          "requests": 4
+        },
+        {
+          "step": 20,
+          "path": "boltons/fileutils.py",
+          "cost_usd_cumulative": 1.1725843999999999,
+          "requests": 4
+        }
+      ]
+    },
+    {
+      "name": "default-20",
+      "session_id": "05ce56a6-8af7-47fc-92a1-04bdaf8d6d45",
+      "cli_version": "2.1.289",
+      "model": "claude-opus-5-5[1m]",
+      "effort": "medium",
+      "window": 183000,
+      "tools": "default",
+      "allowed_tools": "Read,Edit,Bash,Glob,Grep",
+      "disallowed_tools": "Agent",
+      "tool_inventory": [
+        "Bash",
+        "CronCreate",
+        "CronDelete",
+        "CronList",
+        "DesignSync",
+        "Edit",
+        "EnterWorktree",
+        "ExitWorktree",
+        "Glob",
+        "Grep",
+        "ListAgents",
+        "Monitor",
+        "NotebookEdit",
+        "PushNotification",
+        "Read",
+        "RemoteTrigger",
+        "ReportFindings",
+        "ScheduleWakeup",
+        "SendMessage",
+        "Skill",
+        "TaskStop",
+        "ToolSearch",
+        "WebFetch",
+        "WebSearch",
+        "Workflow",
+        "Write"
+      ],
+      "tool_calls": {
+        "Bash": 48,
+        "Grep": 9,
+        "Edit": 22,
+        "Read": 5
+      },
+      "success": true,
+      "steps_passed": 20,
+      "test_cases_per_step": 519,
+      "test_files_unchanged": true,
+      "reference_identical_python_sources": 30,
+      "cost_usd": 1.2546042000000002,
+      "cost_parts_usd": {
+        "uncached": 0.000664,
+        "cache_write": 0.393608,
+        "cache_read": 0.6201322,
+        "output": 0.2402
+      },
+      "requests": 83,
+      "usage": {
+        "input_tokens": 166,
+        "cache_creation_input_tokens": 49201,
+        "cache_read_input_tokens": 3100661,
+        "output_tokens": 12010
+      },
+      "processed_input_tokens": 3150028,
+      "provider_reported_thinking_tokens": 333,
+      "cache_write_5m": 0,
+      "cache_write_1h": 49201,
+      "first_request_usage": {
+        "input_tokens": 2,
+        "output_tokens": 72,
+        "cache_read_input_tokens": 10809,
+        "cache_creation_input_tokens": 6091,
+        "model": "claude-opus-5-5"
+      },
+      "max_request_input": 60012,
+      "last_completed_turn_active_categories": [
+        {
+          "name": "System prompt",
+          "tokens": 2266,
+          "kind": "used"
+        },
+        {
+          "name": "System tools",
+          "tokens": 8054,
+          "kind": "used"
+        },
+        {
+          "name": "Memory files",
+          "tokens": 805,
+          "kind": "used"
+        },
+        {
+          "name": "Skills",
+          "tokens": 2207,
+          "kind": "used"
+        }
+      ],
+      "last_completed_turn_active_category_tokens": 13332,
+      "compactions": 0,
+      "duration_seconds": 467.9916731250123,
+      "quota_before": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T20:36:18.116625+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 27.0,
+            "resets_at": "2026-10-04T23:10:00.454925+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 52.0,
+            "resets_at": "2026-10-09T21:00:00.454945+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T21:00:00.455098+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "quota_after": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T20:44:06.228788+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 30.0,
+            "resets_at": "2026-10-04T23:09:59.753876+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 53.0,
+            "resets_at": "2026-10-09T20:59:59.753903+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T20:59:59.754113+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "steps": [
+        {
+          "step": 1,
+          "path": "boltons/strutils.py",
+          "cost_usd_cumulative": 0.08590160000000001,
+          "requests": 4
+        },
+        {
+          "step": 2,
+          "path": "boltons/dictutils.py",
+          "cost_usd_cumulative": 0.128048,
+          "requests": 4
+        },
+        {
+          "step": 3,
+          "path": "boltons/mathutils.py",
+          "cost_usd_cumulative": 0.19392779999999998,
+          "requests": 6
+        },
+        {
+          "step": 4,
+          "path": "boltons/setutils.py",
+          "cost_usd_cumulative": 0.2533228,
+          "requests": 4
+        },
+        {
+          "step": 5,
+          "path": "boltons/iterutils.py",
+          "cost_usd_cumulative": 0.29976919999999996,
+          "requests": 4
+        },
+        {
+          "step": 6,
+          "path": "boltons/pathutils.py",
+          "cost_usd_cumulative": 0.34744699999999995,
+          "requests": 4
+        },
+        {
+          "step": 7,
+          "path": "boltons/cacheutils.py",
+          "cost_usd_cumulative": 0.40142039999999996,
+          "requests": 4
+        },
+        {
+          "step": 8,
+          "path": "boltons/timeutils.py",
+          "cost_usd_cumulative": 0.46476019999999996,
+          "requests": 5
+        },
+        {
+          "step": 9,
+          "path": "boltons/funcutils.py",
+          "cost_usd_cumulative": 0.5199464,
+          "requests": 4
+        },
+        {
+          "step": 10,
+          "path": "boltons/statsutils.py",
+          "cost_usd_cumulative": 0.5756112000000001,
+          "requests": 4
+        },
+        {
+          "step": 11,
+          "path": "boltons/queueutils.py",
+          "cost_usd_cumulative": 0.6353404,
+          "requests": 4
+        },
+        {
+          "step": 12,
+          "path": "boltons/urlutils.py",
+          "cost_usd_cumulative": 0.696674,
+          "requests": 4
+        },
+        {
+          "step": 13,
+          "path": "boltons/tableutils.py",
+          "cost_usd_cumulative": 0.7618974,
+          "requests": 4
+        },
+        {
+          "step": 14,
+          "path": "boltons/strutils.py",
+          "cost_usd_cumulative": 0.8209677999999999,
+          "requests": 4
+        },
+        {
+          "step": 15,
+          "path": "boltons/listutils.py",
+          "cost_usd_cumulative": 0.8692884,
+          "requests": 3
+        },
+        {
+          "step": 16,
+          "path": "boltons/formatutils.py",
+          "cost_usd_cumulative": 0.9425094,
+          "requests": 4
+        },
+        {
+          "step": 17,
+          "path": "boltons/jsonutils.py",
+          "cost_usd_cumulative": 1.0295068,
+          "requests": 5
+        },
+        {
+          "step": 18,
+          "path": "boltons/iterutils.py",
+          "cost_usd_cumulative": 1.1030196,
+          "requests": 4
+        },
+        {
+          "step": 19,
+          "path": "boltons/ioutils.py",
+          "cost_usd_cumulative": 1.1717944000000002,
+          "requests": 4
+        },
+        {
+          "step": 20,
+          "path": "boltons/fileutils.py",
+          "cost_usd_cumulative": 1.2546042000000002,
+          "requests": 4
+        }
+      ]
+    }
+  ],
+  "confirmation": {
+    "paired_sessions": 1,
+    "cost_ratio_focused_over_default": 0.9346249598080412,
+    "observed_cost_reduction_percent": 6.537504019195883,
+    "work_per_api_equivalent_dollar_ratio": 1.0699478860540872,
+    "processed_input_ratio": 0.7969970425659708,
+    "confidence_interval": null,
+    "after_first_task_cost_ratio": 0.945458151628994,
+    "duration_ratio": 0.7884843628605145
+  },
+  "limitations": [
+    "The screening default first request was cold while focused had 4541 cached tokens. Screening savings are not a balanced cost result and are not pooled with the confirmation.",
+    "One 20-task pair in one repository/model/effort; no population confidence interval or general quality noninferiority claim. Steps within a session are not independent replicates.",
+    "Tool inventories differ deliberately. Removing Skill also removes its skill listing; this is a profile comparison, not a pure tool-schema byte intervention.",
+    "Prefix snapshots are recorded after the process first completed turn and overwritten on resume. The report labels the final snapshot; it is not every-request prefix history.",
+    "Five-tool profile was already used in the existing governor benchmark. This is not an additional percentage to add to its previous savings.",
+    "Account-wide quota observations are rounded and concurrent activity occurred; no attributable subscription saving or tasks-per-allowance multiplier is established.",
+    "No compaction threshold was reached. Quality covers sequential test-based library bugs, not architectural work or tasks requiring omitted tools.",
+    "Total duration includes CLI startup, network and host tests. It is not an isolated inference latency measure."
+  ],
+  "total_experiment_api_equivalent_usd": 2.816986,
+  "decision": "Use explicit tools for known tasks that fit the profile. Keep it opt-in; do not add an automatic classifier or change global settings.",
+  "private_artifacts": "/Users/dogan/.cimrihook/experiments/prefix-ab-20261004"
+}

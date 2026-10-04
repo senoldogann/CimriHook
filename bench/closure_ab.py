@@ -1,9 +1,9 @@
-"""Aynı 20 gerçek hatada governor ve doğrulanmış görev kapatmayı karşılaştır.
+"""Gerçek ardışık hatalarda pencere/kapatma ve araç profillerini ölç.
 
 Ürün komutu değildir. Hazır benchmark görevini, workspace/test/process yardımcılarını ve
 mevcut mod'u kullanır. Otomatik sınıflandırıcı veya özet modeli yoktur. Her kapatma öncesinde
-testler dışarıdan geçmeli ve test dosyaları değişmemiş olmalıdır. Her iki kol aynı plugin,
-model, effort, araçlar ve governor penceresiyle çalışır; yalnız kapatma kolu /compact gönderir.
+testler dışarıdan geçmeli ve test dosyaları değişmemiş olmalıdır. Model, effort, araç listesi,
+görev sayısı ve pencere açıkça seçilir; yalnız kapatma kolu /compact gönderir.
 """
 
 import argparse
@@ -13,7 +13,7 @@ import shutil
 import sys
 import time
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from cimrihook.bench import (
@@ -51,7 +51,14 @@ PROOF_PROMPT = (
 
 
 def call(
-    spec: RunSpec, output: Path, session: str, phase: str, prompt: str, index: int, timeout: int
+    spec: RunSpec,
+    output: Path,
+    session: str,
+    phase: str,
+    prompt: str,
+    index: int,
+    timeout: int,
+    tools: str,
 ) -> dict[str, object]:
     """İki kol için aynı provider çağrısı; ölçüm plugin'i mesajları kendiliğinden değiştirmez."""
     env = {key: os.environ[key] for key in ENV_ALLOWLIST if key in os.environ}
@@ -92,9 +99,11 @@ def call(
         "--max-budget-usd",
         "12",
         "--tools",
-        TOOLS,
+        tools,
         "--allowedTools",
         TOOLS,
+        "--disallowedTools",
+        "Agent",
         "--plugin-dir",
         str(output / "plugin"),
     )
@@ -176,7 +185,13 @@ def phase_requests(base: Path, phase: str) -> list[dict[str, object]]:
 
 
 def close_task(
-    spec: RunSpec, output: Path, session: str, step: int, fixed: dict[str, object], timeout: int
+    spec: RunSpec,
+    output: Path,
+    session: str,
+    step: int,
+    fixed: dict[str, object],
+    timeout: int,
+    tools: str,
 ) -> dict[str, object]:
     """Dış doğrulamadan sonra tam transcript arşivi ve gerçek araç kanıtıyla kapat."""
     base = output / "meter" / "closure" / session
@@ -207,7 +222,7 @@ def close_task(
     write_json(archive / "completed.json", completed)
     for suffix in ("anchor", "request"):
         shutil.copy2(Path(f"{base}.{suffix}.json"), archive / f"{suffix}.json")
-    compact = call(spec, output, session, f"compact-{step}", COMPACT, step * 2, timeout)
+    compact = call(spec, output, session, f"compact-{step}", COMPACT, step * 2, timeout, tools)
     if not Path(f"{base}.closed.json").exists():
         raise BenchError(f"task {step}: closure vetoed: {compact.get('result')}")
     summary_requests = Path(f"{base}.compact-{step}.requests.json")
@@ -226,8 +241,10 @@ def close_task(
     }
 
 
-def run(spec: RunSpec, output: Path, arm: str, close_every: int, timeout: int) -> dict[str, object]:
-    """Yeni ve özel dizinde tek bir 20 görev oturumu; başarısız adımda deney durur."""
+def run(
+    spec: RunSpec, output: Path, arm: str, close_every: int, timeout: int, tools: str
+) -> dict[str, object]:
+    """Yeni ve özel dizinde seçilen görevler; başarısız adımda deney durur."""
     output.mkdir(parents=True, mode=0o700, exist_ok=False)
     repo = ensure_repo(spec.task.repo, spec.task.ref, output.parent / "cache")
     workspace = output / "workspace"
@@ -246,6 +263,9 @@ def run(spec: RunSpec, output: Path, arm: str, close_every: int, timeout: int) -
         "model": spec.model,
         "effort": spec.effort,
         "window": spec.window,
+        "tools": tools,
+        "allowed_tools": TOOLS,
+        "disallowed_tools": "Agent",
         "close_every": close_every if arm == "closure" else None,
         "protocol": "sequential; no synthetic observation or forced repository warmup",
         "quota_scope": "account-wide observations; other activity and integer rounding apply",
@@ -266,7 +286,7 @@ def run(spec: RunSpec, output: Path, arm: str, close_every: int, timeout: int) -
                 write_json(Path(f"{base}.armed.json"), {"sessionId": session})
             prompt = (FIRST_BUG_PROMPT if step == 1 else NEXT_BUG_PROMPT) + PROOF_PROMPT
             phase = f"fix-{step}"
-            fixed = call(spec, output, session, phase, prompt, step * 2 - 1, timeout)
+            fixed = call(spec, output, session, phase, prompt, step * 2 - 1, timeout, tools)
             verified = run_suite(spec.task, workspace)
             touched = touched_test_files(workspace, repo)
             requests = phase_requests(base, phase)
@@ -299,7 +319,7 @@ def run(spec: RunSpec, output: Path, arm: str, close_every: int, timeout: int) -
                 raise BenchError(f"task {step}: external tests failed or tests changed: {touched}")
             # Son görevin kapatılması tasarruf sağlayacak sonraki istek olmadığı için yapılmaz.
             if arm == "closure" and step % close_every == 0 and step < len(spec.task.mutations):
-                row["closure"] = close_task(spec, output, session, step, fixed, timeout)
+                row["closure"] = close_task(spec, output, session, step, fixed, timeout, tools)
                 write_json(output / "result.json", report)
         report["success"] = True
         report["cli_version"] = claude_version(claude_transcript(session))
@@ -325,12 +345,17 @@ def main() -> int:
     parser.add_argument("--window", type=int, required=True)
     parser.add_argument("--close-every", type=int, choices=(1, 5), required=True)
     parser.add_argument("--timeout", type=int, required=True)
+    parser.add_argument("--tools", choices=("default", TOOLS), required=True)
+    parser.add_argument("--steps", type=int, required=True)
     args = parser.parse_args()
     if args.timeout <= 0 or not 100_000 <= args.window <= 1_000_000:
         parser.error("timeout must be positive and window must be in [100000,1000000]")
+    task = load_task(args.task)
+    if not 1 <= args.steps <= len(task.mutations):
+        parser.error(f"steps must be in [1,{len(task.mutations)}]")
     os.umask(0o077)
     spec = RunSpec(
-        load_task(args.task),
+        replace(task, mutations=task.mutations[: args.steps]),
         Protocol.SEQUENTIAL,
         Agent.CLAUDE,
         Variant.METER_GOVERNOR,
@@ -340,7 +365,14 @@ def main() -> int:
         1,
     )
     try:
-        run(spec, args.output.expanduser().resolve(), args.arm, args.close_every, args.timeout)
+        run(
+            spec,
+            args.output.expanduser().resolve(),
+            args.arm,
+            args.close_every,
+            args.timeout,
+            args.tools,
+        )
     except CimriHookError as error:
         print(str(error), file=sys.stderr)
         return 1
