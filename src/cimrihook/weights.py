@@ -33,7 +33,7 @@ SINGULAR_RATIO: Final = 1e-9  # a pivot this small next to the matrix scale is a
 
 @dataclass(frozen=True, slots=True)
 class SpendCurve:
-    """Cumulative list-price spend of one session at its readings."""
+    """Cumulative list-price spend of one session at its readings, from its first reading."""
 
     times: tuple[float, ...]
     usd: tuple[float, ...]
@@ -89,9 +89,15 @@ def sessions_of(samples: Sequence[LimitSample]) -> list[list[LimitSample]]:
 
 
 def spend_curve(samples: Sequence[LimitSample]) -> SpendCurve:
-    """The spend curve of one session's measurements, which must not be empty."""
+    """Spend since the first reading of one session, which must have at least one.
+
+    A session's spend before its first reading is left out: a resumed session or a mod enabled
+    mid-session already carries spend that never filled the window during the readings.
+    """
     ordered = sorted(samples, key=lambda sample: sample.time)
-    return SpendCurve(tuple(s.time for s in ordered), tuple(s.usd for s in ordered))
+    return SpendCurve(
+        tuple(s.time for s in ordered), tuple(s.usd - ordered[0].usd for s in ordered)
+    )
 
 
 def spend_at(curve: SpendCurve, moment: float) -> float:

@@ -98,8 +98,8 @@ files.
 
 | Arm | Cost (geometric mean) | Compactions per run | Points per list-price dollar [95% CI] | 5-hour window per run |
 |---|---|---|---|---|
-| meter | $12.95 | 0 | 0.175 [0.132-0.218] | 2.3 points |
-| meter-governor | $7.08 | 3 | 0.170 [0.111-0.228] | 1.2 points |
+| meter | $12.95 | 0 | 0.176 [0.132-0.219] | 2.3 points |
+| meter-governor | $7.08 | 3 | 0.170 [0.111-0.229] | 1.2 points |
 
 - **Raw points mislead.** The runs moved the 5-hour window by 3.8 (meter) and 2.6 (governor)
   points on average, but other sessions on the same account ran meanwhile and spent about as much
@@ -112,17 +112,17 @@ files.
   cumulative spend (linear between readings), and the points are regressed on those three spends
   through the origin: 32 spans, 29 degrees of freedom, residual SD 0.22 points
   (`cimrihook.weights`).
-- **One point of the 5-hour window was about $4.8 of list-price spend** ($4.40-5.20, one weight for
+- **One point of the 5-hour window was about $4.8 of list-price spend** ($4.38-5.18, one weight for
   every recorded session). The governed weight over the ungoverned one is 0.97 [0.69-1.36]: no
   sign that the window counts a governed dollar differently, though the interval cannot exclude a
   difference of about a third.
 - **Window use per task.** The weight ratio times the cost ratio (x0.547 [0.477-0.626]) is x0.53:
   the governed session takes about half the 5-hour window of the ungoverned one, 2.3 against 1.2
   points for this task. The interval of the weight ratio is not carried into this product.
-- **The other sessions weigh more per recorded dollar** (0.288 [0.208-0.368]). Use that no session
+- **The other sessions weigh more per recorded dollar** (0.290 [0.208-0.371]). Use that no session
   records (claude.ai, sessions without the mod) and a different model mix are folded into that
   class. Leaving them out of the fit raises the arms' weights to 0.27 and 0.30, because the arms
-  absorb the other use, and keeps the ratio near one (1.13 [0.80-1.59]).
+  absorb the other use, and keeps the ratio near one (1.13 [0.80-1.60]).
 - **The weekly window** moved one point per ungoverned run and 0.2 per governed run: too coarse
   for a fit.
 
