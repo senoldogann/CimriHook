@@ -2,24 +2,65 @@ import AppKit
 import CimriHookBarCore
 import SwiftUI
 
-/// The panel that opens from the menu bar: one card per provider, then the gain.
+/// A page of the panel, chosen in the rail on its left.
+enum PanelTab: Hashable {
+    case claude, codex, gain
+}
+
+/// The panel that opens from the menu bar: a rail of tabs on the left, the chosen page on the right.
 struct PanelView: View {
     let store: PanelStore
+    @State private var tab: PanelTab = .claude
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            ProviderCard(logo: .claude, title: "Claude Code", reading: store.claude) {
-                EmptyView()
+            HStack(alignment: .top, spacing: 10) {
+                VStack(spacing: 6) {
+                    RailButton(selection: $tab, tab: .claude, shortcut: "1", caption: railPercent(store.claude)) {
+                        logoMark(.claude)
+                    }
+                    RailButton(selection: $tab, tab: .codex, shortcut: "2", caption: railPercent(store.codex)) {
+                        logoMark(.openAI)
+                    }
+                    RailButton(selection: $tab, tab: .gain, shortcut: "3", caption: "Gain") {
+                        Image(systemName: "chart.line.downtrend.xyaxis").font(.system(size: 14, weight: .medium))
+                    }
+                }
+                page
             }
-            ProviderCard(logo: .openAI, title: "Codex", reading: store.codex) {
-                PointCostLines(reading: store.codexCost)
-            }
-            Card { GainSection(reading: store.gain) }
             footer
         }
         .padding(12)
-        .frame(width: 320)
+        .frame(width: 340)
+    }
+
+    @ViewBuilder
+    private var page: some View {
+        switch tab {
+        case .claude:
+            ProviderCard(logo: .claude, title: "Claude Code", reading: store.claude) {
+                EmptyView()
+            }
+        case .codex:
+            ProviderCard(logo: .openAI, title: "Codex", reading: store.codex) {
+                PointCostLines(reading: store.codexCost)
+            }
+        case .gain:
+            Card { GainSection(reading: store.gain) }
+        }
+    }
+
+    private func logoMark(_ logo: ProviderLogo) -> some View {
+        Image(nsImage: logo.image).renderingMode(.template)
+            .resizable()
+            .frame(width: 16, height: 16)
+            .foregroundStyle(logo.tint)
+    }
+
+    private func railPercent(_ reading: Loaded<QuotaSnapshot>) -> String {
+        guard case .loaded(let snapshot) = reading, let fullest = fullestPercent(snapshot) else { return "–" }
+        return "\(Int(fullest.rounded()))%"
     }
 
     private var header: some View {
@@ -55,6 +96,36 @@ struct PanelView: View {
         .font(.caption)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 4)
+    }
+}
+
+/// A tab in the rail: its mark over a short caption, filled while it is chosen.
+struct RailButton<Mark: View>: View {
+    @Binding var selection: PanelTab
+    let tab: PanelTab
+    let shortcut: KeyEquivalent
+    let caption: String
+    @ViewBuilder let mark: Mark
+
+    var body: some View {
+        Button {
+            selection = tab
+        } label: {
+            VStack(spacing: 3) {
+                mark.frame(height: 18)
+                Text(caption)
+                    .font(.system(size: 10, weight: .medium).monospacedDigit())
+                    .foregroundStyle(selection == tab ? .primary : .secondary)
+            }
+            .frame(width: 44, height: 46)
+            .background(
+                selection == tab ? AnyShapeStyle(.fill.secondary) : AnyShapeStyle(.clear),
+                in: .rect(cornerRadius: 9, style: .continuous)
+            )
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(shortcut)
     }
 }
 
