@@ -6,9 +6,9 @@
 // price, and when the person comes back the first request writes the short summary instead of the
 // whole conversation.
 //
-// Cold fallback: when the timer could not run (the machine slept), the first prompt sent into an
-// idle session whose cache has expired is preceded by a compaction; that request was going to
-// rewrite the whole context anyway.
+// Cold fallback: when the timer could not run (the machine slept, or the session was resumed after a
+// restart), the first prompt sent into an idle session whose cache has expired is preceded by a
+// compaction; that request was going to rewrite the whole context anyway.
 //
 // Mask-first (opt-in, CIMRIHOOK_MOD_MASK=1): an automatic compaction of the main conversation keeps
 // every message and replaces older tool results with a short placeholder instead of an LLM summary.
@@ -45,6 +45,16 @@ export const register: Register = (on) => {
       session.compacted = false
     }
     return result
+  })
+
+  // A resumed session starts with no turn of its own: take the last response's time from the
+  // SessionStart hook input, so the cold fallback also works hours after a restart.
+  on('classic.SessionStart', async ($, e, next) => {
+    if (e.source === 'resume' && typeof e.seconds_since_last_response === 'number') {
+      session.lastTurnEnd = (await $.clock.now()) - e.seconds_since_last_response * 1000
+      session.compacted = false
+    }
+    return next(e)
   })
 
   on('session.start', async ($, e, next) => {
