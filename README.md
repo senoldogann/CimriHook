@@ -37,6 +37,17 @@ RTK shrinks command output as it enters the context. In these sessions most of t
 from file reads and the agent's own messages, which stay in the context and are re-read on every
 request; CimriHook decides how long they stay. The two work together without conflict.
 
+`cimrihook doctor` starts with one line about your own last week (the author's, here):
+
+```text
+CimriHook doctor (Claude Code, last 7 days): 527 transcripts, 22,688 API requests, $2,631 at API list prices
+Bottom line: about $1,049 (39%) was avoidable by compacting above 200.0k (simulated), plus $131 of
+re-caching after an hour idle; apply with `cimrihook init --compact-window 233000`
+```
+
+The estimate replays your sessions under each window; against the A/B runs above, such replays
+have been 0-11 points optimistic.
+
 ## Install
 
 ```bash
