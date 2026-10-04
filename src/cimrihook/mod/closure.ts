@@ -7,6 +7,7 @@ export type ClosureRequest = {
   sessionId: string
   anchor: Projection[]
   completed: Projection[]
+  originalPrefixLength: number
   files: Record<string, string>
   proof: { exit_code: number; tests_unchanged: boolean; command: string[] }
   receipt: string
@@ -57,15 +58,20 @@ function messages(value: unknown): value is Projection[] {
 export function validRequest(value: unknown): value is ClosureRequest {
   return object(value) && typeof value.sessionId === 'string' &&
     messages(value.anchor) && messages(value.completed) &&
+    typeof value.originalPrefixLength === 'number' && Number.isInteger(value.originalPrefixLength) &&
+    value.originalPrefixLength >= 0 && value.originalPrefixLength <= value.anchor.length &&
     typeof value.receipt === 'string' && value.receipt.length > 0 &&
     Array.isArray(value.evidenceToolUseIds) && value.evidenceToolUseIds.length >= 2 &&
     value.evidenceToolUseIds.every((id) => typeof id === 'string' && id.length > 0) &&
-    object(value.files) && Object.keys(value.files).sort().join(',') === 'calc.py,test_calc.py' &&
+    object(value.files) && Object.keys(value.files).length > 0 &&
+    Object.keys(value.files).every((path) => /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(path) &&
+      path.split('/').every((part) => part !== '.' && part !== '..')) &&
     Object.values(value.files).every((content) => typeof content === 'string') &&
     object(value.proof) && value.proof.exit_code === 0 && value.proof.tests_unchanged === true &&
     Array.isArray(value.proof.command) && value.proof.command.length === 4 &&
     value.proof.command.every((item) => typeof item === 'string' && item.length > 0) &&
-    value.proof.command.slice(1).join(' ') === '-m unittest -q'
+    (value.proof.command.slice(1).join(' ') === '-m unittest -q' ||
+      value.proof.command.join(' ') === '.venv/bin/python -m pytest -q')
 }
 
 /** Başarılı işin kullanıcı girdileri ve son yanıtı korunur, araç gözlemleri çıkarılır. */
@@ -90,7 +96,11 @@ export function closeMessages(current: readonly SessionMessage[], closure: Closu
       ...(outputs.length === 0 ? {} : { toolResults: outputs }),
     }]
   })
-  return [...current.slice(0, closure.anchor.length), ...users, ...project(evidence), {
+  // Daha önce yeniden kurulan kayıtlardaki handle'ları tekrar kullanmak resume'da UUID çoğaltır.
+  // Yalnız hiç yeniden kurulmamış ortak prefiks engine handle'larını korur.
+  const original = current.slice(0, closure.originalPrefixLength)
+  const previousReceipts = project(current.slice(closure.originalPrefixLength, closure.anchor.length))
+  return [...original, ...previousReceipts, ...users, ...project(evidence), {
     role: 'assistant', toolUses: [],
     text: `${last.text}\n\n[CimriHook externally verified task receipt]\n${closure.receipt}`,
   }]

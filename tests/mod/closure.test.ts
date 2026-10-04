@@ -32,6 +32,7 @@ for (const failure of ['none', 'manual', 'verification', 'prefix', 'file', 'arch
     const base = '/probe/closure/session-1'
     const closure = {
       sessionId: 'session-1', anchor: project(prefix), completed: project(current),
+      originalPrefixLength: prefix.length,
       evidenceToolUseIds: failure === 'evidence' ? ['edit-1', 'missing'] : ['edit-1', 'test-1'],
       files: { 'calc.py': 'fixed', 'test_calc.py': 'tests' },
       proof: { exit_code: failure === 'verification' ? 1 : 0, tests_unchanged: true,

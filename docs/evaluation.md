@@ -306,9 +306,8 @@ Projected messages went from 18 to 11; character counts are not treated as token
 
 Raw Claude utilization remained **5% five-hour / 48% weekly** before and after the pilot.
 This does not imply zero consumption: the CLI returned whole account-wide percentages.
-The next useful evaluation is an interleaved comparison against the existing governor on
-real multi-task fixtures, with unchanged tests, rework/refetch tracking and enough activity
-to resolve limit changes. This pilot does not establish general quality or subscription savings.
+The real sequential-task comparison below tests cost against the existing governor. This pilot
+alone does not establish general quality or subscription savings.
 
 API findings from the attempts leading to the full-read pilot:
 
@@ -319,7 +318,8 @@ API findings from the attempts leading to the full-read pilot:
   control message is excluded from the completed-boundary comparison.
 - Decoded tool `result` bodies may be cleared after a turn and restored on resume. Comparison
   uses stable visible text, tool identities/inputs and error flags; opaque handles are never
-  persisted. Returned prefix objects use handles from the current compact event.
+  persisted. Only the original unmodified shared prefix uses current-event handles; previously
+  rebuilt task receipts are reconstructed without handles.
 - An earlier successful run sampled the observation and reduced context only about 8%.
   The final driver rejects sampling and requires a full successful `Read` before closure.
 - The first full-read run removed all task tool evidence. It preserved the number and
@@ -352,6 +352,88 @@ cimrihook quota --agent claude
 cimrihook quota --agent codex
 uv run python tests/run_mod_tests.py
 ```
+
+## Verified closure on real sequential tasks (2026-10-04)
+
+Claude Code **2.1.289**, **Opus 5.5 1M / medium**, window **183000**, Boltons **26.2.0**
+(`4332b35a278d694f30c99881faa61cde695c7a96`). Each session fixes the same 20 injected bugs
+in order. There is no synthetic observation or forced repository warmup. Both arms use the
+same private measurement plugin, tools (Read/Edit/Bash/Glob/Grep), settings and environment;
+closure is the only treatment. The ordinary sessions stay below the governor's automatic
+compaction threshold, so this comparison concerns shorter sessions.
+
+The host verifies that each injected bug fails tests, seals its history, and runs the full
+original test suite after every fix. All five measured sessions passed **20/20 fixes** with
+**519 original tests** per fix and no changed test files. All library Python files were
+restored **byte for byte** to the reference repository in every session. Successful native
+Edit and pytest records and all original user prompts are retained at closure. There was no
+extra Read repetition in any arm; tool counts are in the report.
+
+| Arm | First session, API-equivalent USD | Reverse-order repeat, USD | Fixes passed |
+|---|---|---|---|
+| Existing governor | $1.227217 | $1.1624804 | 40/40 |
+| Governor + closure every five verified tasks | $1.1684188 | $1.1241478 | 40/40 |
+| Governor + closure after every verified task | $2.4834028 | Not repeated | 20/20 |
+
+The five-task treatment closes after tasks 5, 10 and 15. Closing the final task would have no
+subsequent request to save. The paired order is governor then treatment, followed by treatment
+then governor. All closures made **zero summary model requests** and left the cumulative
+provider cost unchanged during the control command.
+
+### Cost and cache result
+
+- **Closing every task costs more.** Against the first governor it costs **102.4% more**,
+  even though total processed input falls **45.7%**. Newly written cache tokens grow from
+  **50,889 to 241,633** (4.75 times). Cache-read cost falls from $0.5161 to $0.2372, but
+  cache-write cost rises from $0.4071 to $1.9331. Removing context did not repay the rewrites.
+- **Five-task closure has a small observed benefit.** Costs fall **4.79%** and **3.30%** in
+  the two pairs; the geometric mean saving is **4.05%**. The 95% paired log-cost t interval
+  is **x0.869–1.059** (two run pairs, one degree of freedom). It includes no saving and
+  a cost increase. This is a candidate for more evidence, not an established population benefit.
+- **Use full provider counters.** Per-request input counters and native cache TTL splits,
+  combined with full `turn.step` output counters, reproduce every reported final cumulative cost
+  exactly at the published model prices. SDK transcript output counters underreport the full
+  output; their difference is not treated as an exact reasoning-token count.
+- **Subscription saving remains unknown.** The quota snapshots are account-wide integers;
+  a Fable-specific window also advanced during Opus-only runs. Concurrent or delayed account
+  use and coarse observations prevent attribution. No percentage of extra subscription work
+  is inferred from the API-equivalent saving. Elapsed time includes tests and CLI startup,
+  and is reported separately from cost.
+
+### Reliability and decision
+
+Repeated closure exposed a resume defect: reusing handles for already reconstructed task
+records duplicated their tool IDs and messages on subsequent resumes. Only the untouched
+original prefix now retains handles; previous receipts are rebuilt without them. The benchmark
+rejects duplicate native tool IDs. The failed setup attempts are archived and explicitly
+excluded from the comparison, with their consumed provider costs recorded.
+
+The repeated five-task experiment remains isolated and explicitly enabled. **Do not enable
+per-task automatic closure.** Keep the existing governor as the product default. There is no
+dynamic window controller, task classifier, centralized telemetry or new product command.
+Quality here covers these test-based bug fixes; architectural work, dependent refactors and
+automatic compaction occurring within a pending task group have not been evaluated.
+
+[Measurements, raw quota snapshots, cost decomposition and excluded attempts](../bench/results/closure-ab-20261004/report.json).
+Full transcripts, workspaces, verification records and closure archives are retained privately
+in `~/.cimrihook/experiments/closure-ab-20261004/`. The plan review and priorities are in
+[development-review.md](development-review.md).
+
+To reproduce an arm with a new private directory:
+
+```bash
+uv run python bench/closure_ab.py --arm governor --close-every 5 \
+  --output /tmp/cimrihook-closure-governor-new \
+  --task bench/tasks/boltons-twenty-steps.json --model 'claude-opus-5-5[1m]' \
+  --effort medium --window 183000 --timeout 300
+uv run python bench/closure_ab.py --arm closure --close-every 5 \
+  --output /tmp/cimrihook-closure-batch-new \
+  --task bench/tasks/boltons-twenty-steps.json --model 'claude-opus-5-5[1m]' \
+  --effort medium --window 183000 --timeout 300
+```
+
+`--close-every 1` reproduces the rejected per-task treatment. This cadence is an experiment
+parameter, not an automatic policy or the Anthropic Batch API.
 
 ## Reproduce existing A/B studies
 

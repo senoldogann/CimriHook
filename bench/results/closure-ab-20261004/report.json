@@ -1,0 +1,753 @@
+{
+  "date": "2026-10-04",
+  "base_commit": "c180f07",
+  "task": "boltons-twenty-steps",
+  "reference_tag": "26.2.0",
+  "reference_commit": "4332b35a278d694f30c99881faa61cde695c7a96",
+  "protocol": "20 sequential injected bugs; no synthetic observation or forced warmup; unchanged whole-suite host tests each step",
+  "isolation": "allowlisted environment, project settings only, empty strict MCP config, private plugin and workspace; same Read/Edit/Bash/Glob/Grep tools",
+  "runs": [
+    {
+      "name": "governor-1",
+      "arm": "governor",
+      "close_every": null,
+      "session_id": "d9b7bb95-38bc-4fce-8a96-2638d9b23c51",
+      "cli_version": "2.1.289",
+      "model": "claude-opus-5-5[1m]",
+      "effort": "medium",
+      "window": 183000,
+      "recorded_configuration": [
+        [
+          "claude-opus-5-5[1m]",
+          "medium",
+          "claude-opus-5-5"
+        ]
+      ],
+      "success": true,
+      "steps_passed": 20,
+      "test_cases_per_step": 519,
+      "test_files_unchanged": true,
+      "cost_usd": 1.227217,
+      "cost_parts_usd": {
+        "uncached": 0.000688,
+        "cache_write": 0.407112,
+        "cache_read": 0.516097,
+        "output": 0.30332
+      },
+      "requests": 86,
+      "processed_input_tokens": 2631546,
+      "usage": {
+        "input_tokens": 172,
+        "cache_creation_input_tokens": 50889,
+        "cache_read_input_tokens": 2580485,
+        "output_tokens": 15166
+      },
+      "cache_write_5m": 0,
+      "cache_write_1h": 50889,
+      "max_request_input": 55432,
+      "tool_calls": {
+        "Bash": 44,
+        "Grep": 17,
+        "Edit": 22,
+        "Read": 5
+      },
+      "read_repetitions": 0,
+      "duration_seconds": 386.05439137501526,
+      "closure_boundaries": [],
+      "quota_before": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T19:32:58.421582+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 16.0,
+            "resets_at": "2026-10-04T23:10:00.048119+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 50.0,
+            "resets_at": "2026-10-09T21:00:00.048144+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T21:00:00.048356+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "quota_after": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T19:39:24.480481+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 17.0,
+            "resets_at": "2026-10-04T23:10:00.144876+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 50.0,
+            "resets_at": "2026-10-09T21:00:00.144897+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T21:00:00.145057+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "library_python_sources_restored_byte_for_byte": true
+    },
+    {
+      "name": "closure-batch5",
+      "arm": "closure",
+      "close_every": 5,
+      "session_id": "3f963fa1-b2be-4f8b-b81a-6ef725de6581",
+      "cli_version": "2.1.289",
+      "model": "claude-opus-5-5[1m]",
+      "effort": "medium",
+      "window": 183000,
+      "recorded_configuration": [
+        [
+          "claude-opus-5-5[1m]",
+          "medium",
+          "claude-opus-5-5"
+        ]
+      ],
+      "success": true,
+      "steps_passed": 20,
+      "test_cases_per_step": 519,
+      "test_files_unchanged": true,
+      "cost_usd": 1.1684187999999995,
+      "cost_parts_usd": {
+        "uncached": 0.000664,
+        "cache_write": 0.577552,
+        "cache_read": 0.28308279999999997,
+        "output": 0.30712
+      },
+      "requests": 83,
+      "processed_input_tokens": 1487774,
+      "usage": {
+        "input_tokens": 166,
+        "cache_creation_input_tokens": 72194,
+        "cache_read_input_tokens": 1415414,
+        "output_tokens": 15356
+      },
+      "cache_write_5m": 0,
+      "cache_write_1h": 72194,
+      "max_request_input": 29104,
+      "tool_calls": {
+        "Bash": 42,
+        "Grep": 18,
+        "Edit": 21,
+        "Read": 5
+      },
+      "read_repetitions": 0,
+      "duration_seconds": 406.0820776250039,
+      "closure_boundaries": [
+        {
+          "after_step": 5,
+          "first_before_cache_read": 17751,
+          "first_after_cache_read": 6183,
+          "no_model_summary_request": true,
+          "messages_after": 18
+        },
+        {
+          "after_step": 10,
+          "first_before_cache_read": 19174,
+          "first_after_cache_read": 6183,
+          "no_model_summary_request": true,
+          "messages_after": 38
+        },
+        {
+          "after_step": 15,
+          "first_before_cache_read": 23761,
+          "first_after_cache_read": 6183,
+          "no_model_summary_request": true,
+          "messages_after": 58
+        }
+      ],
+      "quota_before": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T19:39:43.746961+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 17.0,
+            "resets_at": "2026-10-04T23:10:00.144876+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 50.0,
+            "resets_at": "2026-10-09T21:00:00.144897+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T21:00:00.145057+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "quota_after": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T19:46:29.778527+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 18.0,
+            "resets_at": "2026-10-04T23:09:59.850356+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 50.0,
+            "resets_at": "2026-10-09T20:59:59.850385+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T20:59:59.850663+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "library_python_sources_restored_byte_for_byte": true
+    },
+    {
+      "name": "closure-batch5-r2",
+      "arm": "closure",
+      "close_every": 5,
+      "session_id": "2463fc00-1e61-41f8-b55d-c79f4b8e7466",
+      "cli_version": "2.1.289",
+      "model": "claude-opus-5-5[1m]",
+      "effort": "medium",
+      "window": 183000,
+      "recorded_configuration": [
+        [
+          "claude-opus-5-5[1m]",
+          "medium",
+          "claude-opus-5-5"
+        ]
+      ],
+      "success": true,
+      "steps_passed": 20,
+      "test_cases_per_step": 519,
+      "test_files_unchanged": true,
+      "cost_usd": 1.1241477999999998,
+      "cost_parts_usd": {
+        "uncached": 0.000664,
+        "cache_write": 0.552856,
+        "cache_read": 0.2776478,
+        "output": 0.29298
+      },
+      "requests": 83,
+      "processed_input_tokens": 1457512,
+      "usage": {
+        "input_tokens": 166,
+        "cache_creation_input_tokens": 69107,
+        "cache_read_input_tokens": 1388239,
+        "output_tokens": 14649
+      },
+      "cache_write_5m": 0,
+      "cache_write_1h": 69107,
+      "max_request_input": 28898,
+      "tool_calls": {
+        "Bash": 42,
+        "Grep": 16,
+        "Edit": 21,
+        "Read": 4
+      },
+      "read_repetitions": 0,
+      "duration_seconds": 468.6513726669946,
+      "closure_boundaries": [
+        {
+          "after_step": 5,
+          "first_before_cache_read": 16546,
+          "first_after_cache_read": 6186,
+          "no_model_summary_request": true,
+          "messages_after": 18
+        },
+        {
+          "after_step": 10,
+          "first_before_cache_read": 18823,
+          "first_after_cache_read": 6186,
+          "no_model_summary_request": true,
+          "messages_after": 38
+        },
+        {
+          "after_step": 15,
+          "first_before_cache_read": 22316,
+          "first_after_cache_read": 6186,
+          "no_model_summary_request": true,
+          "messages_after": 58
+        }
+      ],
+      "quota_before": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T19:47:34.613006+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 18.0,
+            "resets_at": "2026-10-04T23:10:00.503787+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 50.0,
+            "resets_at": "2026-10-09T21:00:00.503809+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T21:00:00.503977+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "quota_after": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T19:55:23.363490+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 19.0,
+            "resets_at": "2026-10-04T23:10:00.039043+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 51.0,
+            "resets_at": "2026-10-09T21:00:00.039065+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T21:00:00.039232+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "library_python_sources_restored_byte_for_byte": true
+    },
+    {
+      "name": "governor-2",
+      "arm": "governor",
+      "close_every": null,
+      "session_id": "19482428-1966-43da-a942-d5fec6cd5519",
+      "cli_version": "2.1.289",
+      "model": "claude-opus-5-5[1m]",
+      "effort": "medium",
+      "window": 183000,
+      "recorded_configuration": [
+        [
+          "claude-opus-5-5[1m]",
+          "medium",
+          "claude-opus-5-5"
+        ]
+      ],
+      "success": true,
+      "steps_passed": 20,
+      "test_cases_per_step": 519,
+      "test_files_unchanged": true,
+      "cost_usd": 1.1624804,
+      "cost_parts_usd": {
+        "uncached": 0.000656,
+        "cache_write": 0.40676,
+        "cache_read": 0.4938844,
+        "output": 0.26118
+      },
+      "requests": 82,
+      "processed_input_tokens": 2520431,
+      "usage": {
+        "input_tokens": 164,
+        "cache_creation_input_tokens": 50845,
+        "cache_read_input_tokens": 2469422,
+        "output_tokens": 13059
+      },
+      "cache_write_5m": 0,
+      "cache_write_1h": 50845,
+      "max_request_input": 55388,
+      "tool_calls": {
+        "Bash": 41,
+        "Grep": 18,
+        "Edit": 20,
+        "Read": 4
+      },
+      "read_repetitions": 0,
+      "duration_seconds": 365.412313458015,
+      "closure_boundaries": [],
+      "quota_before": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T19:55:31.413842+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 19.0,
+            "resets_at": "2026-10-04T23:10:00.340203+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 51.0,
+            "resets_at": "2026-10-09T21:00:00.340221+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T21:00:00.340352+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "quota_after": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T20:01:36.905735+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 20.0,
+            "resets_at": "2026-10-04T23:09:59.745314+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 51.0,
+            "resets_at": "2026-10-09T20:59:59.745334+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T20:59:59.745541+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "library_python_sources_restored_byte_for_byte": true
+    },
+    {
+      "name": "closure-1c",
+      "arm": "closure",
+      "close_every": 1,
+      "session_id": "131e8cfb-a39d-4183-8dee-777043e47424",
+      "cli_version": "2.1.289",
+      "model": "claude-opus-5-5[1m]",
+      "effort": "medium",
+      "window": 183000,
+      "recorded_configuration": [
+        [
+          "claude-opus-5-5[1m]",
+          "medium",
+          "claude-opus-5-5"
+        ]
+      ],
+      "success": true,
+      "steps_passed": 20,
+      "test_cases_per_step": 519,
+      "test_files_unchanged": true,
+      "cost_usd": 2.4834028000000004,
+      "cost_parts_usd": {
+        "uncached": 0.000656,
+        "cache_write": 1.933064,
+        "cache_read": 0.23718280000000003,
+        "output": 0.3125
+      },
+      "requests": 82,
+      "processed_input_tokens": 1427711,
+      "usage": {
+        "input_tokens": 164,
+        "cache_creation_input_tokens": 241633,
+        "cache_read_input_tokens": 1185914,
+        "output_tokens": 15625
+      },
+      "cache_write_5m": 0,
+      "cache_write_1h": 241633,
+      "max_request_input": 26888,
+      "tool_calls": {
+        "Bash": 41,
+        "Grep": 16,
+        "Edit": 21,
+        "Read": 5
+      },
+      "read_repetitions": 0,
+      "duration_seconds": 417.6161961250182,
+      "closure_boundaries": [
+        {
+          "after_step": 1,
+          "first_before_cache_read": 4541,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 6
+        },
+        {
+          "after_step": 2,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 14
+        },
+        {
+          "after_step": 3,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 22
+        },
+        {
+          "after_step": 4,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 30
+        },
+        {
+          "after_step": 5,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 38
+        },
+        {
+          "after_step": 6,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 46
+        },
+        {
+          "after_step": 7,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 54
+        },
+        {
+          "after_step": 8,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 62
+        },
+        {
+          "after_step": 9,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 70
+        },
+        {
+          "after_step": 10,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 78
+        },
+        {
+          "after_step": 11,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 86
+        },
+        {
+          "after_step": 12,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 94
+        },
+        {
+          "after_step": 13,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 102
+        },
+        {
+          "after_step": 14,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 110
+        },
+        {
+          "after_step": 15,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 118
+        },
+        {
+          "after_step": 16,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 126
+        },
+        {
+          "after_step": 17,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 134
+        },
+        {
+          "after_step": 18,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 142
+        },
+        {
+          "after_step": 19,
+          "first_before_cache_read": 6182,
+          "first_after_cache_read": 6182,
+          "no_model_summary_request": true,
+          "messages_after": 150
+        }
+      ],
+      "quota_before": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T19:25:38.410996+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 13.0,
+            "resets_at": "2026-10-04T23:10:00.330663+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 49.0,
+            "resets_at": "2026-10-09T21:00:00.330681+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 4.0,
+            "resets_at": "2026-10-09T21:00:00.330827+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "quota_after": {
+        "provider": "claude",
+        "observed_at": "2026-10-04T19:32:36.033331+00:00",
+        "available": true,
+        "account_fingerprint": null,
+        "windows": [
+          {
+            "id": "five_hour",
+            "used_percent": 16.0,
+            "resets_at": "2026-10-04T23:10:00.048119+00:00",
+            "duration_minutes": 300
+          },
+          {
+            "id": "seven_day",
+            "used_percent": 50.0,
+            "resets_at": "2026-10-09T21:00:00.048144+00:00",
+            "duration_minutes": 10080
+          },
+          {
+            "id": "seven_day_model:Fable",
+            "used_percent": 5.0,
+            "resets_at": "2026-10-09T21:00:00.048356+00:00",
+            "duration_minutes": 10080
+          }
+        ]
+      },
+      "library_python_sources_restored_byte_for_byte": true
+    }
+  ],
+  "batch_pairs": [
+    {
+      "governor": "governor-1",
+      "closure": "closure-batch5",
+      "ratio": 0.952088180004025,
+      "change_percent": -4.791181999597505
+    },
+    {
+      "governor": "governor-2",
+      "closure": "closure-batch5-r2",
+      "ratio": 0.9670251644672889,
+      "change_percent": -3.2974835532711078
+    }
+  ],
+  "batch_ratio_geometric_mean": 0.9595276071357999,
+  "batch_saving_percent_observed": 4.047239286420012,
+  "batch_paired_log_t_95_interval": [
+    0.8691739005361959,
+    1.0592739016758046
+  ],
+  "interval_scope": "paired run log-cost ratios, df=1, one repository; includes 1.0; no population or subscription saving established",
+  "every_task_ratio_against_first_governor": 2.02360527926194,
+  "quota_verdict": "not attributable: whole account integer percentages and concurrent/delayed Fable use; no subscription percentage inferred",
+  "quality_scope": "100/100 injected bug fixes, 519 original tests per fix, all library sources restored exactly; no claim about architectural or refactor tasks",
+  "output_accounting": "full output from turn.step; SDK transcript output counters underreport full billed output and are not used to derive an exact reasoning split",
+  "price_sheet": {
+    "scope": "API-equivalent USD, not subscription bill",
+    "opus_5_5_usd_per_million": {
+      "uncached": 4,
+      "write_5m": 5,
+      "write_1h": 8,
+      "read": 0.2,
+      "output": 20
+    },
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "reconciles_reported_cumulative_cost": true
+  },
+  "excluded_attempts": [
+    {
+      "name": "closure-1",
+      "error": "fix-1: expected a JSON object",
+      "included_in_comparison": false,
+      "last_reported_cumulative_cost_usd": 0.09679159999999999
+    },
+    {
+      "name": "closure-1b",
+      "error": "closure requires native Edit and passing whole-suite pytest evidence",
+      "included_in_comparison": false,
+      "last_reported_cumulative_cost_usd": 2.167947
+    }
+  ],
+  "private_artifacts": "~/.cimrihook/experiments/closure-ab-20261004/",
+  "execution_order": [
+    "closure-1c",
+    "governor-1",
+    "closure-batch5",
+    "closure-batch5-r2",
+    "governor-2"
+  ]
+}

@@ -399,6 +399,9 @@ def run_probe(output: Path, model: str, effort: str, timeout: int) -> dict[str, 
                     {
                         "sessionId": session_id,
                         "anchor": read_json(Path(f"{base}.anchor.json")),
+                        "originalPrefixLength": len(
+                            request_rows(read_json(Path(f"{base}.anchor.json")))
+                        ),
                         "completed": completed,
                         "evidenceToolUseIds": evidence_ids(completed, workspace),
                         "files": {

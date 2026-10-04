@@ -325,6 +325,13 @@ on the first request after closure. That is a feasibility result on
 one small fixture, not a measured subscription saving or general quality result.
 [Measurements and API constraints](docs/evaluation.md#verified-task-closure-pilot-2026-10-04).
 
+The real 20-task comparison found per-task closure more expensive than the governor. Closing
+every five verified tasks showed about 4% lower API-equivalent cost in two pairs, with all
+original tests passing and the library's Python sources restored exactly, but the interval
+includes no saving.
+Subscription savings are unestablished. Closure remains an isolated experiment.
+[Sequential-task results](docs/evaluation.md#verified-closure-on-real-sequential-tasks-2026-10-04).
+
 Results so far, with the method and the corrections to earlier figures, are in
 [docs/evaluation.md](docs/evaluation.md).
 
