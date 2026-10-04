@@ -1,0 +1,30 @@
+CimriHook bench: 10 runs, 0 unmeasured, 0 without a provider cost
+Primary cost: Claude = total_cost_usd reported by Claude Code (USD); Codex = per-response usage records priced with the sheet below (base input units). Both include compaction requests; 'transcript' excludes them.
+  price sheet: Claude Code total_cost_usd (includes compaction and auxiliary calls)
+  agent version: claude 2.1.289 (10 runs)
+Cells (geometric mean of costs, medians of the rest):
+  agent   scenario                         mechanism  n runs ok   steps       cost transcript  req  max ctx mean ctx compact  trigger   window   min
+  claude  boltons-twenty-steps/deeper      meter      5     5/5 100/100    $12.953  3,238,141  140  453,931  351,547       0        -        -   9.8
+  claude  boltons-twenty-steps/deeper      meter-governor  5     5/5 100/100     $7.079  1,677,170  146  149,513   79,069      15  150,634   183000  11.4
+A/B per scenario vs baseline: provider cost as a ratio of geometric means with a 95% Welch t interval on log cost (none when an arm has fewer than two costed runs or no variation); run success over every measured run, so a run without a provider cost still counts; steps are descriptive only (the steps of a run are dependent):
+A/B per agent and mechanism: cost is the equal-weight mean of balanced scenarios with two 95% intervals (across scenarios, which generalises beyond them, and within these scenarios); non-inferiority uses the Newcombe interval of the run success difference:
+Cumulative provider cost at step checkpoints (ratio of geometric means vs baseline):
+Codex price-sheet sensitivity (pooled ratio over cached x0.1/0.25 and output x4/6/8):
+Limit use of the meter arms (points a run moved the subscription's windows: the percentage at its last reading minus its first, in one window period, whole percents):
+  claude  boltons-twenty-steps/deeper      5-hour window
+    meter           4 of 5 runs  points 3.8 (3-6)  spend $12.73  $3.39 per point
+    meter-governor  5 of 5 runs  points 2.6 (2-4)  spend $7.03  too coarse per run
+    meter-governor vs meter: none (under 3 points per run: whole percents are too coarse)
+    weights from 32 spans between whole-percent crossings (29 degrees of freedom, residual 0.22 points; 17 other sessions recorded meanwhile): points = weight x list-price spend
+      meter           0.175 points per $ [95% 0.132-0.218] = $5.72 per point [95% $4.60-$7.59]
+      meter-governor  0.170 points per $ [95% 0.111-0.228] = $5.90 per point [95% $4.39-$9.00]
+      other sessions  0.288 points per $ [95% 0.208-0.368] = $3.47 per point [95% $2.72-$4.81]
+      pooled          0.210 points per $ [95% 0.192-0.227] = $4.77 per point [95% $4.40-$5.20] (one weight for every session)
+    meter-governor vs meter: weight x0.971 [0.693-1.359]; provider cost x0.547 [0.477-0.626]; window use x0.530 (weight x cost)
+    per run (weight x mean list-price spend): meter 2.3 points, meter-governor 1.2 points
+  claude  boltons-twenty-steps/deeper      weekly window
+    meter           5 of 5 runs  points 1.0 (1-1)  spend $12.97  too coarse per run
+    meter-governor  5 of 5 runs  points 0.2 (0-1)  spend $7.03  too coarse per run
+    meter-governor vs meter: none (under 3 points per run: whole percents are too coarse)
+    weights: none (5 spans between whole-percent crossings are too few or too alike to tell the arms and the other sessions apart)
+  Raw points include use outside these runs; the weights set the recorded sessions apart (--background), but use no session records (claude.ai, sessions without the mod) still raises them.

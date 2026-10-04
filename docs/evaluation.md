@@ -87,6 +87,50 @@ against the same five baselines (`deeper-183`).
   `deep-233`, `deeper` and `deeper-183`: 30 runs, 600 steps) no run failed; the one-sided 95%
   upper bound on the run failure rate is 9.5%.
 
+### What a task costs in window points (`limits-deeper`, Claude Code)
+
+On a subscription there is no bill: usage fills a 5-hour and a weekly window, shown in whole
+percents. The `meter` and `meter-governor` arms run the `deeper` task without and with window
+183000 and load the CimriHook mod only to record the windows after every turn. Claude Code
+2.1.289, `claude-opus-5-5[1m]`, effort medium, runs interleaved on one subscription account. Five pairs
+ran: six were planned, but the launcher hit its time limit in the sixth, which left no result
+files.
+
+| Arm | Cost (geometric mean) | Compactions per run | Points per list-price dollar [95% CI] | 5-hour window per run |
+|---|---|---|---|---|
+| meter | $12.95 | 0 | 0.175 [0.132-0.218] | 2.3 points |
+| meter-governor | $7.08 | 3 | 0.170 [0.111-0.228] | 1.2 points |
+
+- **Raw points mislead.** The runs moved the 5-hour window by 3.8 (meter) and 2.6 (governor)
+  points on average, but other sessions on the same account ran meanwhile and spent about as much
+  as the runs themselves, and the percentages are whole numbers. The report prints the raw points
+  and does not compare them when a run moves a window by less than three points on average.
+- **Method.** Between two consecutive whole-percent crossings the window moved by an exact number
+  of points. The readings of the runs and of the other recorded sessions are merged, so each
+  crossing is bracketed by the readings on either side. Over each span between crossings the
+  list-price spend of the meter runs, the governed runs and all other sessions is read off their
+  cumulative spend (linear between readings), and the points are regressed on those three spends
+  through the origin: 32 spans, 29 degrees of freedom, residual SD 0.22 points
+  (`cimrihook.weights`).
+- **One point of the 5-hour window was about $4.8 of list-price spend** ($4.40-5.20, one weight for
+  every recorded session). The governed weight over the ungoverned one is 0.97 [0.69-1.36]: no
+  sign that the window counts a governed dollar differently, though the interval cannot exclude a
+  difference of about a third.
+- **Window use per task.** The weight ratio times the cost ratio (x0.547 [0.477-0.626]) is x0.53:
+  the governed session takes about half the 5-hour window of the ungoverned one, 2.3 against 1.2
+  points for this task. The interval of the weight ratio is not carried into this product.
+- **The other sessions weigh more per recorded dollar** (0.288 [0.208-0.368]). Use that no session
+  records (claude.ai, sessions without the mod) and a different model mix are folded into that
+  class. Leaving them out of the fit raises the arms' weights to 0.27 and 0.30, because the arms
+  absorb the other use, and keeps the ratio near one (1.13 [0.80-1.59]).
+- **The weekly window** moved one point per ungoverned run and 0.2 per governed run: too coarse
+  for a fit.
+
+One account and plan, one task, one model, five pairs. Spend is interpolated linearly between
+readings, which blurs when it happened and pulls weights toward zero a little; use no session
+records raises them. Read the figures as "the saving in dollars carries over to the window"
+(roughly, with a wide interval), not as a conversion rate for other plans.
+
 ### Mask-first compaction (`deeper`, pilot of one run)
 
 The `mask` arm adds the CimriHook mod with `CIMRIHOOK_MOD_MASK=1` to the same window: automatic
@@ -203,6 +247,9 @@ Measured before shipping, cheapest test first. None of these is in CimriHook.
   Tasks that depend on details read long ago may suffer more from compaction; the bench measured
   no such task.
 - **One model and one effort level** for the deep result (Opus 5.5 with a 1M context, medium).
+- **Window points on other plans.** The conversion from list-price dollars to window points
+  comes from one account, one task and five pairs; the weights separate the sessions that
+  recorded their readings, not claude.ai or sessions without the mod.
 - **Idle gaps.** Bench sessions run without pauses, so the prompt cache never expires there: the
   cold-prompt guard is not part of these numbers.
 - **Your workload.** The saving depends on how far your sessions grow. `cimrihook doctor` replays
@@ -243,3 +290,18 @@ cimrihook bench-run --name deeper --tasks boltons-twenty-steps --protocols deepe
 
 Every result file in `bench/results/<set>/` keeps the run's model, effort, window, agent version
 and per-step costs; `cimrihook bench-remeasure` recomputes a set from the agents' logs.
+
+The window-points set needs a subscription and an otherwise quiet account; the readings of
+your other sessions come from the mod's ledger (`~/.cimrihook/limits`) unless you point
+`--background` at a directory of `*.jsonl` files:
+
+```bash
+cimrihook bench-run --name limits-deeper --tasks boltons-twenty-steps --protocols deeper \
+  --agents claude --variants meter,meter-governor --window 183000 --reps 6 --concurrency 1
+cimrihook bench-report --name limits-deeper
+```
+
+`bench/results/limits-deeper/background/` holds the slice of the author's ledger for the
+hours of the runs (sessions renamed `other-NN`); `cimrihook bench-report --name limits-deeper
+--background bench/results/limits-deeper/background` reproduces
+`bench/results/limits-deeper.report.txt`.

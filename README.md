@@ -38,6 +38,14 @@ RTK shrinks command output as it enters the context. In these sessions most of t
 from file reads and the agent's own messages, which stay in the context and are re-read on every
 request; CimriHook decides how long they stay. The two work together without conflict.
 
+**In usage-limit terms** (a subscription account, the same 20-step task, five interleaved pairs
+without and with the 183000 window, [details](docs/evaluation.md)): the session that costs
+$12.95 at list prices takes about 2.3 points of the 5-hour window, the governed one ($7.08)
+about 1.2. One point was worth about $4.8 of list-price spend ($4.4-5.2), and nothing suggests
+the window counts a dollar of either arm differently (weight ratio 0.97 [0.69-1.36]). It is one
+account and one task: it shows that the saving in dollars carries over to the window, not the
+exact conversion for your plan; `cimrihook limits` measures that on your own sessions.
+
 `cimrihook doctor` starts with one line about your own last week (the author's, here):
 
 ```text
@@ -307,6 +315,13 @@ Codex CLI (`codex exec`) in one arm per mechanism:
 The `codec`, `combined` and `brief` arms of earlier result sets belong to mechanisms that were
 removed from CimriHook (the code is at the git tag `pre-trim`). They can no longer be run, but
 `bench-report` still reads their recorded results.
+
+The `meter` arms record how many points of your 5-hour and weekly windows a task takes.
+Whatever else runs on your account meanwhile moves the same windows, so `bench-report` also
+reads the readings of your other sessions (`--background DIR`; by default the mod's ledger,
+`~/.cimrihook/limits`) and fits how many points a list-price dollar moves the window in each
+arm and in those sessions. Keep claude.ai and sessions without the mod quiet during the
+runs: use that no session records still raises the weights.
 
 - **Isolation:** every run gets its own workspace and virtual environment. Agents get only an
   allowlisted environment (no inherited `CLAUDE_CODE_*`/`ANTHROPIC_*` variables). Claude Code
