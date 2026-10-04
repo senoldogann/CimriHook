@@ -1,5 +1,13 @@
 # CimriHook
 
+[![ci](https://github.com/senoldogann/CimriHook/actions/workflows/ci.yml/badge.svg)](https://github.com/senoldogann/CimriHook/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)
+![Claude Code and Codex CLI](https://img.shields.io/badge/agents-Claude%20Code%20%C2%B7%20Codex%20CLI-8A63D2.svg)
+
+<img src="docs/images/menu-bar-panel.png" align="right" width="300"
+     alt="CimriHook's macOS menu bar panel: Claude Code and Codex windows, what a Codex point costs, and the gain since init">
+
 > *cimri* (Turkish): miser. CimriHook stops AI coding agents from paying again and again for
 > context they no longer need.
 
@@ -11,10 +19,10 @@ context; CimriHook manages how long it stays there, through the agents' own sett
 
 | Part | What it does | How |
 |---|---|---|
-| Measure | where your spend goes and what each compaction window would cost on your own sessions | `cimrihook doctor`, `simulate`, `gain` |
+| Measure | where your spend goes and what each compaction window would cost on your own sessions | `cimrihook doctor`, `simulate`, `gain`, also `--agent codex` |
 | Govern | sets the compaction window your data calls for, with the agent's own setting | `cimrihook init --compact-window N`, also `--agent codex` |
 | Guard | asks once before an idle session re-caches its whole context | `UserPromptSubmit` hook |
-| Show | context, prompt-cache warmth, next-request cost and usage limits | status line |
+| Show | context, prompt-cache warmth, next-request cost and usage limits | status line, macOS menu bar panel |
 | Evaluate | A/B runs on your own subscriptions, with honest statistics | `cimrihook bench-run` |
 
 **Measured** (Claude Code with Opus 5.5 and a 1M context, 5 runs per arm,
