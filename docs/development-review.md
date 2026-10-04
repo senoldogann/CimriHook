@@ -139,9 +139,25 @@ interactive warm-compaction savings remain unmeasured.
 Current checks: 20 hook scenarios and 77 Python tests pass; Ruff and mypy pass. The installed
 mod is refreshed with a backup; existing sessions need plugin reload or restart.
 
-Next: test whether a supported zero-output request can refresh the same subscription cache,
-then compare at most one refresh against the existing window policy on matched resumed work.
-Stop if cache identity cannot be verified. Count both refresh and resume usage, unchanged task
-acceptance, and account window observations. No persistent pings or new controller yet.
+Feasibility (5 October 2026, from the 2.1.289 plugin API, no request sent): `$.model.fork`
+re-sends the main thread's last request (model, system prompt, tools, messages) with one added
+user message, so the provider serves that prefix from the session's own cache; its usage reports
+how much was read. A short reply is unavoidable, since the call has no output cap. This is the
+supported refresh path; `$.model.complete` has no history and cannot reach the session's cache.
+
+Value, replayed on this machine's main-session transcripts (no request sent): one fork at 55 minutes
+of idle, priced as a cache read of the previous context plus 50 output tokens, against the cold
+rewrite the next request actually paid when it came within the extended hour.
+
+| Period | Gaps over 55 min | Rewrite avoided | Net of refresh cost | Share of main spend |
+|---|---|---|---|---|
+| 30 days, mostly before the governor | 67 | 21 | $53–61 | 2.4–2.7% |
+| 0.95 days since `cimrihook init` | 5 | 2 | $0.50–1.25 | 0.2–0.5% |
+
+The lower bound also refreshes after every session's last request. With the governor, contexts are
+small and an idle rewrite is cheap; `gain` shows idle re-caching fell from $20 to $3 in the same
+period. Decision: do not build a refresh mod or spend allowance on a live test now. Revisit if
+`doctor` shows idle rewrites growing again. The replay cannot see behaviour changes and assumes
+each refresh reads the whole previous context.
 Codex diagnosis remains the next product extension after this small cache feasibility check;
 reuse existing parsing and quota probes. Automatic routing and centralized telemetry are deferred.
