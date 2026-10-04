@@ -21,5 +21,9 @@ class TranscriptError(CimriHookError):
     """A transcript could not be read or its record is not in the expected format."""
 
 
+class PreparationError(CimriHookError):
+    """An explicit task packet cannot be assembled faithfully within its budget."""
+
+
 class LedgerError(CimriHookError):
     """The ledger database could not be accessed (lock, permissions or a corrupt file)."""

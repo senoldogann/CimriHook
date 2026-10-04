@@ -6,7 +6,7 @@
 ![Claude Code and Codex CLI](https://img.shields.io/badge/agents-Claude%20Code%20%C2%B7%20Codex%20CLI-8A63D2.svg)
 
 <img src="docs/images/menu-bar-panel.png" align="right" width="300"
-     alt="CimriHook's macOS menu bar panel: Claude Code and Codex windows, what a Codex point costs, and the gain since init">
+     alt="CimriHook's macOS menu bar panel on its Claude Code tab: each window's use, reset and pace">
 
 > *cimri* (Turkish): miser. CimriHook stops AI coding agents from paying again and again for
 > context they no longer need.
@@ -294,6 +294,12 @@ Claude Code and Codex with the time left until it resets and the reset's clock t
 fills before then at the rate it has filled since it opened, what a point of each Codex window
 cost over the last 30 days with the spans and points behind the fit, and everything
 `cimrihook gain` measures: each before/after figure and the compaction receipt.
+
+<p>
+  <img src="docs/images/menu-bar-panel.png" width="32%" alt="Claude Code tab: each window's use, reset and pace">
+  <img src="docs/images/menu-bar-codex.png" width="32%" alt="Codex tab: windows and what a point of each costs">
+  <img src="docs/images/menu-bar-gain.png" width="32%" alt="Gain tab: before/after figures and the compaction receipt">
+</p>
 
 ```bash
 macos/build-app.sh                      # builds macos/build/CimriHook Bar.app
