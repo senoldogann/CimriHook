@@ -19,7 +19,8 @@ const CACHE_LIFETIME_MS = 60 * 60 * 1000 // main conversation on a subscription
 const WARM_MARGIN_MS = 5 * 60 * 1000 // compact this long before the cache expires
 const TICK_MS = 60 * 1000
 const DEFAULT_MIN_TOKENS = 100_000 // below this a cold rewrite is cheap
-const KEEP_RECENT_MESSAGES = 12 // mask-first leaves the newest messages whole
+const KEEP_RECENT_MESSAGES = 12 // mask-first looks this far back for tool results to keep whole
+const RECENT_RESULTS_SHARE = 0.1 // ...as long as they stay within this share of the context
 const MASK_MIN_CHARS = 500 // shorter tool results stay
 const MAX_KEPT_SHARE = 0.6 // mask-first must remove at least 40% or the summary runs
 
@@ -89,11 +90,19 @@ export const register: Register = (on) => {
     return next(e)
   })
 
-  on('session.compact', { trigger: 'auto' }, async ($, e, next) => {
-    if (e.agentId !== undefined || (await $.env.get('CIMRIHOOK_MOD_MASK')) !== '1') return next(e)
-    const masked = maskOlderResults(e.messages)
-    if (size(masked) > MAX_KEPT_SHARE * size(e.messages)) return next(e)
-    return { messages: masked }
+  // Every compaction of the main conversation counts, not only the mod's own: after Claude Code's
+  // automatic or idle compaction or a manual /compact the context is small again, so neither the
+  // warm compaction nor the cold fallback runs before the next turn ends.
+  on('session.compact', async ($, e, next) => {
+    const main = e.agentId === undefined
+    const mask = main && e.trigger === 'auto' && (await $.env.get('CIMRIHOOK_MOD_MASK')) === '1'
+    const masked = mask ? maskOlderResults(e.messages) : undefined
+    const result =
+      masked !== undefined && size(masked) <= MAX_KEPT_SHARE * size(e.messages)
+        ? { messages: masked }
+        : await next(e)
+    if (main && e.trigger !== 'precompute' && result.skip === undefined) session.compacted = true
+    return result
   })
 }
 
@@ -119,7 +128,7 @@ async function worthCompacting(
  * held only thinking are left out, since a rebuilt message cannot carry thinking.
  */
 function maskOlderResults(messages: readonly SessionMessage[]): SessionMessage[] {
-  const cut = Math.max(0, messages.length - KEEP_RECENT_MESSAGES)
+  const whole = wholeResultsStart(messages)
   const last = lastAssistantRows(messages)
   return messages.flatMap((message, index) => {
     if (message.role === 'assistant') {
@@ -127,8 +136,33 @@ function maskOlderResults(messages: readonly SessionMessage[]): SessionMessage[]
       return message.text === '' && message.toolUses.length === 0 ? [] : [rebuilt(message, [])]
     }
     if (message.toolResults === undefined) return [message]
-    return [rebuilt(message, index >= cut ? message.toolResults : message.toolResults.map(masked))]
+    return [rebuilt(message, index >= whole ? message.toolResults : message.toolResults.map(masked))]
   })
+}
+
+/**
+ * Where whole tool results begin: the newest message with tool results always stays whole (the
+ * agent is working with it), older ones within KEEP_RECENT_MESSAGES while all kept results stay
+ * within RECENT_RESULTS_SHARE of the context. A compaction that kept large recent results would
+ * leave the context close to the trigger, and Claude Code stops a turn whose context refills
+ * within three turns of a compaction.
+ */
+function wholeResultsStart(messages: readonly SessionMessage[]): number {
+  const budget = RECENT_RESULTS_SHARE * size(messages)
+  const floor = Math.max(0, messages.length - KEEP_RECENT_MESSAGES)
+  const newest = messages.findLastIndex((message) => message.toolResults !== undefined)
+  let kept = 0
+  let start = newest < 0 ? messages.length : newest
+  for (let index = messages.length - 1; index >= floor; index -= 1) {
+    kept += resultChars(messages[index])
+    if (index < start && kept > budget) break
+    start = Math.min(start, index)
+  }
+  return start
+}
+
+function resultChars(message: SessionMessage | undefined): number {
+  return (message?.toolResults ?? []).reduce((sum, result) => sum + result.text.length, 0)
 }
 
 /**
@@ -167,7 +201,7 @@ function size(messages: readonly SessionMessage[]): number {
       total +
       message.text.length +
       JSON.stringify(message.toolUses.map((use) => use.input)).length +
-      (message.toolResults ?? []).reduce((sum, result) => sum + result.text.length, 0),
+      resultChars(message),
     0,
   )
 }
