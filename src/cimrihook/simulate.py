@@ -65,8 +65,13 @@ class PriceSheet:
 
 # Anthropic: önbellek okuma 0.1, yazma 1.25 (5 dk) / 2.0 (1 saat), çıktı 5 kat.
 ANTHROPIC: Final = PriceSheet("Anthropic", 0.1, 1.25, 2.0, 1.0, 5.0)
-# Opus 5.x önbellek okumayı 0.05, Fable 5.1 0.025 çarpanıyla fiyatlar; diğer Claude modelleri 0.1.
-CLAUDE_READ_WEIGHTS: Final = (("claude-opus-5", 0.05), ("claude-fable", 0.025))
+# Opus 5.5 önbellek okumayı 0.05, Fable 5.1 ve Mythos 5.1 0.025 çarpanıyla fiyatlar; diğer Claude
+# modelleri (Opus 5, Fable 5 dahil) 0.1 (platform.claude.com/docs/en/about-claude/pricing, 2026-10).
+CLAUDE_READ_WEIGHTS: Final = (
+    ("claude-opus-5-5", 0.05),
+    ("claude-fable-5-1", 0.025),
+    ("claude-mythos-5-1", 0.025),
+)
 # OpenAI GPT-5.x/6.x: önbellekli girdi %90 indirimli; 5.6 ve sonrası önbellek yazımını 1.25 katla
 # faturalar (eski modeller yazım raporlamaz); çıktı yaklaşık 6 kat (GPT-5.5: 6, GPT-5.6-sol: 5).
 OPENAI: Final = PriceSheet("OpenAI", 0.1, 1.25, 1.25, 1.0, 6.0)
@@ -285,7 +290,12 @@ def observed_median(observed: Sequence[int], override: int | None, flag: str) ->
 # Önbellek ve çıktı çarpanları claude_prices'tan gelir; listede olmayan modeller
 # fiyatlandırılmaz ve raporda ayrıca sayılır.
 USD_PER_MTOK: Final = (
-    ("claude-opus-5", 4.0),
+    ("claude-fable", 10.0),
+    ("claude-mythos", 10.0),
+    ("claude-opus-5-5", 4.0),
+    ("claude-opus-5", 5.0),
+    ("claude-opus-4-1", 15.0),
+    ("claude-opus-4-2025", 15.0),  # Opus 4 (claude-opus-4-20250514)
     ("claude-opus-4", 5.0),
     ("claude-sonnet-5", 2.0),
     ("claude-sonnet-4", 3.0),

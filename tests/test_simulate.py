@@ -7,8 +7,10 @@ from cimrihook.simulate import (
     Policy,
     PriceSheet,
     SessionTrace,
+    claude_prices,
     is_cold,
     simulate_trace,
+    usd_per_token,
 )
 
 PRICES = PriceSheet("test", read=0.1, write_5m=1.25, write_1h=2.0, uncached=1.0, output=5.0)
@@ -49,3 +51,16 @@ def test_a_warm_request_that_adds_much_new_content_is_not_cold() -> None:
     assert not is_cold(grown, 42_910)
     expired = Usage(uncached=0, write_5m=0, write_1h=110_000, read=20_000, output=100)
     assert is_cold(expired, 120_000)
+
+
+def test_model_prices_follow_the_official_table() -> None:
+    """Önek eşleşmesi sıraya bağlıdır: Opus 5 ve Fable 5 sonraki sürümlerden farklı fiyatlıdır."""
+    assert usd_per_token("claude-opus-5-5[1m]") == 4.0 / 1e6
+    assert usd_per_token("claude-opus-5") == 5.0 / 1e6
+    assert usd_per_token("claude-opus-4-8") == 5.0 / 1e6
+    assert usd_per_token("claude-opus-4-1-20250805") == 15.0 / 1e6
+    assert usd_per_token("claude-fable-5-1") == 10.0 / 1e6
+    assert claude_prices("claude-opus-5-5").read == 0.05
+    assert claude_prices("claude-opus-5").read == 0.1
+    assert claude_prices("claude-fable-5-1").read == 0.025
+    assert claude_prices("claude-fable-5").read == 0.1
