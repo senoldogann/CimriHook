@@ -2,7 +2,10 @@
 
 Codex hooks cannot change tool output and the lifetime of OpenAI's cache is not documented, so
 on Codex CimriHook's lever is the compaction threshold: `model_auto_compact_token_limit` (Codex
-caps it at 90% of the model's window and applies it to the whole context). Python's standard
+caps it at 90% of the model's window). By default Codex counts the threshold against the whole
+context; `model_auto_compact_token_limit_scope = "body_after_prefix"` counts it after the stable
+prompt prefix instead. CimriHook's simulation replays the whole context, so it sets the threshold
+only under the default scope. Python's standard
 library cannot write TOML: the file is edited as text with the smallest change (only the line
 of this key) and is not written until the result, read back with tomllib, shows that only this
 key changed. The previous value is kept in the install record per settings file; removal puts
@@ -31,6 +34,9 @@ from cimrihook.install import (
 )
 
 KEY: Final = "model_auto_compact_token_limit"
+SCOPE_KEY: Final = "model_auto_compact_token_limit_scope"
+WHOLE_CONTEXT_SCOPE: Final = "total"
+SCOPES: Final = (WHOLE_CONTEXT_SCOPE, "body_after_prefix")
 TABLE_HEADER: Final = re.compile(r"^\s*\[")
 KEY_LINE: Final = re.compile(rf"^\s*{KEY}\s*=")
 
@@ -54,7 +60,15 @@ def plan_codex_window(path: Path, window: int, home: Path) -> CodexPlan:
         raise ConfigError(f"--compact-window must be positive, got {window}")
     before = read_config(path)
     earlier = load_record(home, path)
-    current = top_level_integer(parse_toml(before, path), path)
+    table = parse_toml(before, path)
+    scope = threshold_scope(table, path)
+    if scope != WHOLE_CONTEXT_SCOPE:
+        raise ConfigError(
+            f"{path}: {SCOPE_KEY} is {scope!r}, so Codex counts the threshold after the stable "
+            f"prompt prefix while CimriHook's simulation counts the whole context; set {KEY} by "
+            f"hand or set the scope to {WHOLE_CONTEXT_SCOPE!r}"
+        )
+    current = top_level_integer(table, path)
     ours = next((change for change in earlier.settings if change.key == KEY), None)
     previous = ours.previous if ours is not None and ours.value == current else current
     after = checked_edit(before, window, path)
@@ -95,6 +109,14 @@ def top_level_integer(table: TomlTable, path: Path) -> int | None:
         return None
     if isinstance(value, bool) or not isinstance(value, int):
         raise ConfigError(f"{path}: {KEY} is {value!r}; set it by hand or remove it first")
+    return value
+
+
+def threshold_scope(table: TomlTable, path: Path) -> str:
+    """What Codex counts the threshold against: `total` unless config.toml says otherwise."""
+    value = table.get(SCOPE_KEY, WHOLE_CONTEXT_SCOPE)
+    if not isinstance(value, str) or value not in SCOPES:
+        raise ConfigError(f"{path}: {SCOPE_KEY} is {value!r}; expected one of {', '.join(SCOPES)}")
     return value
 
 

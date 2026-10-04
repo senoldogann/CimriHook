@@ -24,7 +24,13 @@ from pathlib import Path
 from typing import Final
 
 from cimrihook.claude import JsonObject
-from cimrihook.codex_config import parse_toml, read_config, top_level_integer
+from cimrihook.codex_config import (
+    WHOLE_CONTEXT_SCOPE,
+    parse_toml,
+    read_config,
+    threshold_scope,
+    top_level_integer,
+)
 from cimrihook.doctor import BANDS, TOP_BAND, percent, tokens_text
 from cimrihook.errors import ConfigError
 from cimrihook.limits import LimitSample, WindowUse
@@ -120,6 +126,7 @@ class CodexDiagnosis:
     median_trigger: int | None
     context_window: int | None
     threshold: int | None  # model_auto_compact_token_limit in config.toml
+    threshold_scope: str  # model_auto_compact_token_limit_scope, `total` by default
     windows: tuple[WindowCost, ...]
 
 
@@ -129,6 +136,7 @@ def diagnose_codex(sessions_dir: Path, config_path: Path, days: int, now: float)
     requests = [request for rollout in rollouts for request in rollout.requests]
     triggers = [tokens for rollout in rollouts for tokens in rollout.compaction_triggers]
     windows = [rollout.context_window for rollout in rollouts if rollout.context_window]
+    config = parse_toml(read_config(config_path), config_path)
     return CodexDiagnosis(
         days=days,
         sessions=len([rollout for rollout in rollouts if rollout.requests]),
@@ -141,7 +149,8 @@ def diagnose_codex(sessions_dir: Path, config_path: Path, days: int, now: float)
         compactions=len(triggers),
         median_trigger=int(statistics.median(triggers)) if triggers else None,
         context_window=int(statistics.median(windows)) if windows else None,
-        threshold=top_level_integer(parse_toml(read_config(config_path), config_path), config_path),
+        threshold=top_level_integer(config, config_path),
+        threshold_scope=threshold_scope(config, config_path),
         windows=tuple(window_cost(rollouts, kind) for kind in WINDOW_KINDS.values()),
     )
 
@@ -393,6 +402,13 @@ def compaction_line(diagnosis: CodexDiagnosis) -> str:
         if diagnosis.median_trigger is not None
         else ""
     )
+    if diagnosis.threshold_scope != WHOLE_CONTEXT_SCOPE:
+        return (
+            f"Compactions: {diagnosis.compactions}{trigger}; {threshold}{window}, counted with "
+            f"scope {diagnosis.threshold_scope} (after the stable prompt prefix). "
+            "`cimrihook simulate --agent codex` replays the whole context, so its thresholds do "
+            "not apply to this scope."
+        )
     return (
         f"Compactions: {diagnosis.compactions}{trigger}; {threshold}{window}. "
         "`cimrihook simulate --agent codex` replays other thresholds."

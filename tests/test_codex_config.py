@@ -60,3 +60,12 @@ def test_a_non_integer_value_is_left_to_the_user(tmp_path: Path) -> None:
     path.write_text('model_auto_compact_token_limit = "auto"\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="set it by hand"):
         plan_codex_window(path, 100_000, tmp_path / "home")
+
+
+def test_a_threshold_counted_after_the_prefix_is_left_to_the_user(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    original = 'model_auto_compact_token_limit_scope = "body_after_prefix"\n'
+    path.write_text(original, encoding="utf-8")
+    with pytest.raises(ConfigError, match="after the stable prompt prefix"):
+        plan_codex_window(path, 100_000, tmp_path / "home")
+    assert path.read_text(encoding="utf-8") == original
