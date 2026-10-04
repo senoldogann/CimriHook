@@ -35,6 +35,14 @@ from cimrihook.codex_config import (
     plan_codex_window,
     render_codex_plan,
 )
+from cimrihook.codex_doctor import (
+    WINDOW_KINDS,
+    diagnose_codex,
+    recent_rollouts,
+    render_codex_doctor,
+    render_codex_limits,
+    window_cost,
+)
 from cimrihook.config import load_config
 from cimrihook.doctor import diagnose_claude, render_doctor
 from cimrihook.errors import BenchError, CimriHookError, ConfigError
@@ -123,9 +131,12 @@ def build_parser() -> argparse.ArgumentParser:
         "guard", help="UserPromptSubmit hook: ask once before re-caching a cold, large session"
     )
     doctor = commands.add_parser(
-        "doctor", help="where your Claude Code spend goes and what would change it"
+        "doctor", help="where your Claude Code or Codex spend goes and what would change it"
     )
+    doctor.add_argument("--agent", choices=("claude", "codex"), default="claude")
     doctor.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
+    doctor.add_argument("--sessions-dir", default=DEFAULT_LOGS["codex"])
+    doctor.add_argument("--codex-config", default=DEFAULT_CODEX_CONFIG_PATH)
     doctor.add_argument("--settings", default=DEFAULT_SETTINGS_PATH)
     doctor.add_argument("--days", type=int, default=DEFAULT_DOCTOR_DAYS)
     gain = commands.add_parser(
@@ -134,9 +145,12 @@ def build_parser() -> argparse.ArgumentParser:
     gain.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
     gain.add_argument("--settings", default=DEFAULT_SETTINGS_PATH)
     gain.add_argument("--json", action="store_true", help="print the measurement as JSON")
-    commands.add_parser(
+    limits = commands.add_parser(
         "limits", help="what a point of your 5-hour and weekly windows costs in usage"
     )
+    limits.add_argument("--agent", choices=("claude", "codex"), default="claude")
+    limits.add_argument("--sessions-dir", default=DEFAULT_LOGS["codex"])
+    limits.add_argument("--days", type=int, default=DEFAULT_DOCTOR_DAYS)
     quota = commands.add_parser(
         "quota", help="read current account-wide subscription windows without a model request"
     )
@@ -421,6 +435,17 @@ def main() -> None:
             sys.stdout.write(status_or_error(sys.stdin.read(), config, time.time()))
         elif command == "guard":
             sys.stdout.write(guard_prompt(sys.stdin.read(), config, time.time()))
+        elif command == "doctor" and args.agent == "codex":
+            print(
+                render_codex_doctor(
+                    diagnose_codex(
+                        Path(str(args.sessions_dir)).expanduser(),
+                        Path(str(args.codex_config)).expanduser(),
+                        int(args.days),
+                        time.time(),
+                    )
+                )
+            )
         elif command == "doctor":
             print(
                 render_doctor(
@@ -441,6 +466,13 @@ def main() -> None:
                 time.time(),
             )
             print(gain_json(measured) if args.json else render_gain(measured))
+        elif command == "limits" and args.agent == "codex":
+            rollouts = recent_rollouts(
+                Path(str(args.sessions_dir)).expanduser(), int(args.days), time.time()
+            )
+            print(
+                render_codex_limits([window_cost(rollouts, kind) for kind in WINDOW_KINDS.values()])
+            )
         elif command == "limits":
             samples = read_samples(limits_dir(config.home))
             print(render_limits(samples))
@@ -452,8 +484,12 @@ def main() -> None:
             )
             print(quota_json(snapshot))
         elif command == "closure-probe":
-            print(json.dumps(run_probe(args.output, str(args.model), str(args.effort),
-                                       int(args.timeout)), indent=2))
+            print(
+                json.dumps(
+                    run_probe(args.output, str(args.model), str(args.effort), int(args.timeout)),
+                    indent=2,
+                )
+            )
         elif command == "simulate":
             agent: str = args.agent
             logs_dir = DEFAULT_LOGS[agent] if args.logs_dir is None else str(args.logs_dir)

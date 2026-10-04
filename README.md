@@ -296,6 +296,8 @@ probes send no model request. A provider that cannot be read shows its error in 
 ## Codex CLI
 
 ```bash
+cimrihook doctor --agent codex --days 7                 # where your Codex spend goes, what a window point costs
+cimrihook limits --agent codex --days 30                # the window cost alone, over more readings
 cimrihook simulate --agent codex --days 7               # cost of each compaction limit on your rollouts
 cimrihook init --agent codex --compact-window 100000    # sets model_auto_compact_token_limit
 cimrihook init --agent codex --remove                   # puts your previous value back
@@ -308,6 +310,14 @@ The standard library cannot write TOML, so `init` changes only that one line of
 `~/.codex/config.toml`, reads the result back and refuses to write if anything else would change.
 It keeps a backup and the file's permissions, prints the changed line without context lines, and
 remembers your previous value for `--remove`.
+
+Codex writes the account's window readings next to every request in its rollouts, so the Codex
+`doctor` and `limits` need no mod. Between consecutive whole-percent crossings of a window they
+regress the points moved on the input (uncached plus 0.1 x cached) and the output tokens of all
+recorded rollouts. On the author's last 30 days, one point of the 5-hour window was about 99k
+input or 5k output tokens: an output token counted about 20 uncached input tokens, and output
+moved 38% of the points. When the two cannot be told apart (the weekly window so far), the report
+gives the point in base input units at list ratios instead.
 
 ## Evaluate with your real subscriptions
 
