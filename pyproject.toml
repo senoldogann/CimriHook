@@ -19,6 +19,10 @@ classifiers = [
 ]
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/senoldogann/CimriHook"
+Issues = "https://github.com/senoldogann/CimriHook/issues"
+
 [project.scripts]
 cimrihook = "cimrihook.cli:main"
 

@@ -60,7 +60,7 @@ have been 0-11 points optimistic.
 ## Install
 
 ```bash
-uv tool install /path/to/CimriHook
+uv tool install git+https://github.com/senoldogann/CimriHook
 cimrihook doctor                                # where the spend goes and the window it suggests
 cimrihook init --compact-window 233000 --dry-run  # show the change to ~/.claude/settings.json
 cimrihook init --compact-window 233000          # guard, status line and the window from doctor
@@ -82,7 +82,7 @@ The hook and status line commands run Python with `-I`: they run in your project
 outside Claude Code's permission prompts, and without `-I` a `json.py` or `statistics.py` in that
 directory would run in CimriHook's place. Everything CimriHook writes under `~/.cimrihook` is
 readable by you only. After changing the source of an installed copy, reinstall it with
-`uv tool install --force --reinstall --refresh /path/to/CimriHook`: the version number does not
+`uv tool install --force --reinstall --refresh /path/to/your/checkout`: the version number does not
 change, so uv would otherwise reuse the old build.
 
 ## Measure
