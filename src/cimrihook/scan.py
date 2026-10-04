@@ -17,6 +17,7 @@ from cimrihook.simulate import (
     claude_prices,
     compact_metadata_tokens,
     content_text,
+    is_api_usage,
 )
 
 
@@ -92,6 +93,7 @@ def scan_transcript(path: Path, subagent: bool) -> TranscriptScan:
                 or not isinstance(model, str)
                 or model == SYNTHETIC_MODEL
                 or usage is None
+                or not is_api_usage(usage)
             ):
                 continue
             if message_id not in usages:

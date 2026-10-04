@@ -383,6 +383,7 @@ def read_claude_trace(path: Path, skip: Set[str]) -> tuple[SessionTrace, frozens
                 or not isinstance(model, str)
                 or model == SYNTHETIC_MODEL  # API'ye gitmeyen yerel mesaj; bağlamı 0 gösterir
                 or usage is None
+                or not is_api_usage(usage)
             ):
                 continue
             ids.add(message_id)
@@ -568,6 +569,12 @@ def total_usage(requests: Sequence[Usage]) -> Usage:
 def context_of(usage: Usage) -> int:
     """İstekte modele giden toplam girdi."""
     return usage.uncached + usage.write_5m + usage.write_1h + usage.read
+
+
+def is_api_usage(usage: Usage) -> bool:
+    """Kullanım bir API yanıtının mı? Bir eklentinin sıkıştırmasından sonra transcript'e yeniden
+    yazılan satırlar aynı mesaj kimliğini sıfır kullanımla taşır; onlar istek sayılmaz."""
+    return context_of(usage) + usage.output > 0
 
 
 def written_of(usage: Usage) -> int:

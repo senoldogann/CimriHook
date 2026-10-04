@@ -105,11 +105,14 @@ function maskOlderResults(messages: readonly SessionMessage[]): SessionMessage[]
 }
 
 function masked(message: SessionMessage, results: readonly ToolResultSummary[]): SessionMessage {
+  // The tool's stored record (`result`) is left out: Claude Code rebuilds a resumed conversation's
+  // tool results from it, which would bring the whole output back.
   const kept = results.map((result) =>
     result.isError || result.text.length < MASK_MIN_CHARS
       ? result
       : {
-          ...result,
+          tool_use_id: result.tool_use_id,
+          isError: result.isError,
           text:
             `[CimriHook removed this ${result.text.split('\n').length}-line tool result to keep the ` +
             'context small; run the tool again if you need it]',
