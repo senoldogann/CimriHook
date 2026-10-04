@@ -29,6 +29,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/cimrihook"]
 
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "docs/evaluation.md", "README.md", "LICENSE", "pyproject.toml"]
+
 [dependency-groups]
 dev = ["pytest>=8", "mypy>=1.13", "ruff>=0.8"]
 
