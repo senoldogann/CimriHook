@@ -351,6 +351,7 @@ def render_doctor(diagnosis: Diagnosis) -> str:
             if diagnosis.bench_transcripts
             else ""
         ),
+        bottom_line(anatomy, simulation),
         f"  main sessions ${anatomy.main_usd:,.0f} ({percent(anatomy.main_usd, total)}), "
         f"subagents ${anatomy.subagent_usd:,.0f} ({percent(anatomy.subagent_usd, total)})",
         "Spend by the context size of the request (every request re-reads the whole conversation):",
@@ -388,6 +389,26 @@ def render_doctor(diagnosis: Diagnosis) -> str:
         diagnosis.guard_check,
     ]
     return "\n".join(lines)
+
+
+def bottom_line(anatomy: Anatomy, simulation: SimulationResult | None) -> str:
+    """Raporun tek sayısı: harcamanın ne kadarı önlenebilirdi (tahmin) ve nasıl."""
+    idle = next(share for share in anatomy.rewrites if share.label == IDLE_HOUR)
+    found = None if simulation is None else recommended_window(simulation)
+    chosen = None if found is None else found[0]
+    window = None if chosen is None else chosen.policy.window
+    if simulation is None or chosen is None or window is None:
+        return (
+            f"Bottom line: ${idle.usd:,.0f} went to re-caching sessions after an hour idle; no "
+            "compaction window lowers the simulated cost of these logs"
+        )
+    saving = simulation.outcomes[0].cost - chosen.cost
+    share = saving / simulation.outcomes[0].cost
+    return (
+        f"Bottom line: about ${saving:,.0f} ({100 * share:.0f}%) was avoidable by compacting "
+        f"above {tokens_text(window)} (simulated), plus ${idle.usd:,.0f} of re-caching after an "
+        f"hour idle; apply with {claude_hint(window)}"
+    )
 
 
 def lifetime_line(replay: LifetimeReplay) -> str:
