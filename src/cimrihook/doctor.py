@@ -15,12 +15,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from cimrihook.audit import (
-    SECONDS_PER_DAY,
-    average_write_weight,
-    bench_transcripts,
-    recent_transcripts,
-)
 from cimrihook.errors import TranscriptError
 from cimrihook.install import MARKER, WINDOW_ENV, env_of, hooks_of, is_ours, load_settings
 from cimrihook.lifetime import (
@@ -55,6 +49,12 @@ from cimrihook.simulate import (
     written_of,
 )
 from cimrihook.tail import FIVE_MINUTES, ONE_HOUR, read_session_tail
+from cimrihook.transcripts import (
+    SECONDS_PER_DAY,
+    average_write_weight,
+    bench_transcripts,
+    recent_transcripts,
+)
 
 BANDS: Final = ((100_000, "up to 100k"), (200_000, "100k-200k"), (400_000, "200k-400k"))
 TOP_BAND: Final = "over 400k"

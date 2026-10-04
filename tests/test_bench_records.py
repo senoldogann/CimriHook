@@ -93,42 +93,25 @@ def spec(agent: Agent, protocol: Protocol, variant: Variant, window: int) -> Run
 
 def test_run_matrix_rejects_arms_the_agent_cannot_apply() -> None:
     sequential = Protocol.SEQUENTIAL
-    assert spec_problem(spec(Agent.CODEX, sequential, Variant.CODEC, 60_000)) is not None
-    assert spec_problem(spec(Agent.CODEX, sequential, Variant.BRIEF, 60_000)) is not None
     assert spec_problem(spec(Agent.CODEX, Protocol.DEEP, Variant.GOVERNOR, 60_000)) is not None
     assert spec_problem(spec(Agent.CODEX, Protocol.DEEPER, Variant.GOVERNOR, 60_000)) is not None
     assert spec_problem(spec(Agent.CLAUDE, sequential, Variant.GOVERNOR, 40_000)) is not None
-    assert spec_problem(spec(Agent.CLAUDE, sequential, Variant.COMBINED, 100_000)) is None
-    assert spec_problem(spec(Agent.CLAUDE, Protocol.DEEP, Variant.BRIEF, 183_000)) is None
+    assert spec_problem(spec(Agent.CLAUDE, sequential, Variant.GOVERNOR, 100_000)) is None
     assert spec_problem(spec(Agent.CODEX, sequential, Variant.GOVERNOR, 60_000)) is None
 
 
-def test_brief_arm_sets_the_window_and_the_compaction_brief_only() -> None:
-    run_dir = Path("/runs/r1")
-    settings = claude_settings(spec(Agent.CLAUDE, Protocol.DEEP, Variant.BRIEF, 183_000), run_dir)
-    assert settings["env"] == {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "183000"}
-    hooks = settings["hooks"]
-    assert isinstance(hooks, dict) and list(hooks) == ["PreCompact"]
-    assert "-m cimrihook brief && echo >> /runs/r1/brief-calls" in json.dumps(hooks["PreCompact"])
+def test_retired_arms_cannot_be_planned() -> None:
+    for variant in (Variant.CODEC, Variant.COMBINED, Variant.BRIEF):
+        problem = spec_problem(spec(Agent.CLAUDE, Protocol.DEEP, variant, 183_000))
+        assert problem is not None and "retired" in problem
 
 
 def test_rtk_arms_add_rtks_bash_hook_and_only_the_governor_one_sets_a_window() -> None:
-    rtk = claude_settings(spec(Agent.CLAUDE, Protocol.DEEP, Variant.RTK, 233_000), Path("/r"))
-    both = claude_settings(
-        spec(Agent.CLAUDE, Protocol.DEEP, Variant.RTK_GOVERNOR, 233_000), Path("/r")
-    )
+    rtk = claude_settings(spec(Agent.CLAUDE, Protocol.DEEP, Variant.RTK, 233_000))
+    both = claude_settings(spec(Agent.CLAUDE, Protocol.DEEP, Variant.RTK_GOVERNOR, 233_000))
     assert "rtk hook claude" in json.dumps(rtk["hooks"]) and "env" not in rtk
     assert both["env"] == {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "233000"}
     assert spec_problem(spec(Agent.CODEX, Protocol.SEQUENTIAL, Variant.RTK, 60_000)) is not None
-
-
-def test_an_arm_whose_hook_never_ran_is_not_measured(tmp_path: Path) -> None:
-    brief = spec(Agent.CLAUDE, Protocol.DEEP, Variant.BRIEF, 183_000)
-    assert arm_problem(brief, tmp_path, 2) == "the brief hook succeeded 0 times for 2 compactions"
-    (tmp_path / "brief-calls").write_text("\n\n", encoding="utf-8")
-    assert arm_problem(brief, tmp_path, 2) is None
-    codec = spec(Agent.CLAUDE, Protocol.SEQUENTIAL, Variant.CODEC, 100_000)
-    assert arm_problem(codec, tmp_path, 0) is not None
 
 
 def test_task_definitions_cannot_inject_options_or_paths(tmp_path: Path) -> None:
@@ -161,8 +144,8 @@ def test_meter_arms_keep_their_readings_in_the_run_and_must_record_some(tmp_path
         spec(Agent.CLAUDE, Protocol.DEEPER, Variant.GOVERNOR, 183_000), tmp_path, base
     )
     assert spec_problem(spec(Agent.CODEX, Protocol.SEQUENTIAL, Variant.METER, 60_000)) is not None
-    assert arm_problem(meter, tmp_path, 0) == "the mod recorded no usage-window reading in the run"
+    assert arm_problem(meter, tmp_path) == "the mod recorded no usage-window reading in the run"
     limits = tmp_path / "meter" / "limits"
     limits.mkdir(parents=True)
     (limits / "session.jsonl").write_text('{"t":1,"usd":0.1,"limits":[]}\n', encoding="utf-8")
-    assert arm_problem(meter, tmp_path, 0) is None
+    assert arm_problem(meter, tmp_path) is None

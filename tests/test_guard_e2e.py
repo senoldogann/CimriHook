@@ -8,8 +8,6 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from cimrihook.guard import COMPACTION_BRIEF
-
 
 def response(idle_seconds: float, context: int) -> dict[str, object]:
     """`idle_seconds` önce gelmiş, 1 saatlik önbellekle yazılmış bir API yanıtı satırı."""
@@ -85,18 +83,6 @@ def test_commands_warm_caches_small_sessions_and_the_switch_pass(tmp_path: Path)
     assert run("guard", prompt(warm, "go on"), home, "") == ""
     small = transcript(tmp_path, idle_seconds=2 * 3_600, context=50_000)
     assert run("guard", prompt(small, "go on"), home, "") == ""
-
-
-def test_brief_is_appended_to_compaction(tmp_path: Path) -> None:
-    payload: dict[str, object] = {
-        "session_id": "s",
-        "transcript_path": str(tmp_path / "t.jsonl"),
-        "cwd": str(tmp_path),
-        "hook_event_name": "PreCompact",
-        "trigger": "auto",
-        "custom_instructions": "",
-    }
-    assert run("brief", payload, tmp_path / "home", "") == COMPACTION_BRIEF
 
 
 def test_prompts_nobody_can_send_again_are_never_stopped(tmp_path: Path) -> None:

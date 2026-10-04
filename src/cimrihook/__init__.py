@@ -1,6 +1,7 @@
-"""CimriHook: yapay zeka kodlama ajanları için bağlam codec'i.
+"""CimriHook: context lifetime manager for Claude Code and Codex CLI.
 
-Ajan aynı bilgi için iki kez token ödemez.
+Measures where long sessions spend, sets the compaction window your own data calls for and guards
+cold prompt caches.
 """
 
 __version__ = "0.1.0"

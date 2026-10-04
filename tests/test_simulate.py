@@ -1,6 +1,5 @@
 """Simülatörün maliyet muhasebesi saf bir dönüşümdür; elle hesaplanmış küçük bir oturumla test."""
 
-from cimrihook.audit import Usage
 from cimrihook.simulate import (
     OBSERVED,
     CostModel,
@@ -12,6 +11,7 @@ from cimrihook.simulate import (
     simulate_trace,
     usd_per_token,
 )
+from cimrihook.transcripts import Usage
 
 PRICES = PriceSheet("test", read=0.1, write_5m=1.25, write_1h=2.0, uncached=1.0, output=5.0)
 MODEL = CostModel(

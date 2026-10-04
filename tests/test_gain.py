@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from cimrihook.codec import estimate_tokens
 from cimrihook.errors import ConfigError
 from cimrihook.gain import measure_gain, render_gain
 from cimrihook.install import INSTALL_RECORD, InstallRecord, save_record
+from cimrihook.transcripts import estimate_tokens
 
 T0 = 1_791_000_000.0
 

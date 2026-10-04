@@ -1,5 +1,5 @@
-"""Komut satırı: hook | statusline | guard | brief | report | doctor | gain | audit | simulate |
-init | settings | bench-run | bench-report | bench-remeasure | bench-calibrate."""
+"""Command line: statusline | guard | doctor | gain | limits | simulate | init | settings |
+bench-run | bench-report | bench-remeasure | bench-calibrate."""
 
 import argparse
 import json
@@ -9,7 +9,6 @@ import time
 from pathlib import Path
 from typing import Final, NoReturn
 
-from cimrihook.audit import audit_transcripts, render_audit
 from cimrihook.bench import (
     Agent,
     Protocol,
@@ -30,23 +29,18 @@ from cimrihook.codex_config import (
     plan_codex_window,
     render_codex_plan,
 )
-from cimrihook.config import Config, load_config
+from cimrihook.config import load_config
 from cimrihook.doctor import diagnose_claude, render_doctor
 from cimrihook.errors import BenchError, CimriHookError, ConfigError
 from cimrihook.gain import measure_gain, render_gain
-from cimrihook.guard import compaction_brief, guard_prompt
-from cimrihook.hook import ledger_path, run_hook
+from cimrihook.guard import guard_prompt
 from cimrihook.install import apply_init, apply_remove, plan_init, plan_remove, render_plan
-from cimrihook.ledger import BUSY_TIMEOUT_SECONDS, Ledger
 from cimrihook.limits import limits_dir, read_samples, render_limits, window_rates
 from cimrihook.mods import mod_dir, write_mod
-from cimrihook.report import render_savings
 from cimrihook.settings import (
-    brief_settings,
     cache_ttl_settings,
     governor_settings,
     guard_settings,
-    hook_settings,
     merge_settings,
     mod_settings,
     statusline_settings,
@@ -67,7 +61,7 @@ from cimrihook.simulate import (
 from cimrihook.statusline import run_chained_statusline, status_or_error
 
 DEFAULT_PROJECTS_DIR: Final = "~/.claude/projects"
-DEFAULT_AUDIT_DAYS: Final = 30
+DEFAULT_SIMULATE_DAYS: Final = 30
 DEFAULT_DOCTOR_DAYS: Final = 7
 DEFAULT_SETTINGS_PATH: Final = "~/.claude/settings.json"
 DEFAULT_CODEX_CONFIG_PATH: Final = "~/.codex/config.toml"
@@ -106,7 +100,6 @@ def build_parser() -> argparse.ArgumentParser:
     """Alt komutlarıyla argüman ayrıştırıcı."""
     parser = CliParser(prog="cimrihook", description="Context economics for AI coding agents.")
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("hook", help="process one Claude Code hook payload from stdin")
     statusline = commands.add_parser(
         "statusline", help="print the Claude Code status line from its JSON input on stdin"
     )
@@ -116,9 +109,6 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "guard", help="UserPromptSubmit hook: ask once before re-caching a cold, large session"
     )
-    commands.add_parser("brief", help="PreCompact hook: ask for a short, structured summary")
-    report = commands.add_parser("report", help="show token savings recorded by the live hook")
-    report.add_argument("--session", help="limit the report to one Claude Code session id")
     doctor = commands.add_parser(
         "doctor", help="where your Claude Code spend goes and what would change it"
     )
@@ -133,17 +123,12 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "limits", help="what a point of your 5-hour and weekly windows costs in usage"
     )
-    audit = commands.add_parser(
-        "audit", help="replay past Claude Code transcripts and estimate what CimriHook would save"
-    )
-    audit.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
-    audit.add_argument("--days", type=int, default=DEFAULT_AUDIT_DAYS)
     simulate = commands.add_parser(
         "simulate", help="replay past sessions under compaction policies and compare their cost"
     )
     simulate.add_argument("--agent", choices=sorted(SIMULATORS), default="claude")
     simulate.add_argument("--logs-dir", help="default: ~/.claude/projects or ~/.codex/sessions")
-    simulate.add_argument("--days", type=int, default=DEFAULT_AUDIT_DAYS)
+    simulate.add_argument("--days", type=int, default=DEFAULT_SIMULATE_DAYS)
     simulate.add_argument(
         "--summary-tokens",
         type=int,
@@ -182,10 +167,8 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--settings", default=DEFAULT_SETTINGS_PATH)
     init.add_argument("--codex-config", default=DEFAULT_CODEX_CONFIG_PATH)
     init.add_argument("--compact-window", type=int, help="also set the auto-compact window")
-    init.add_argument("--brief", action="store_true", help="also ask compactions for brevity")
     init.add_argument("--cache-ttl", choices=("5m", "1h"), help="main conversation cache lifetime")
     init.add_argument("--subagent-cache-ttl", choices=("5m", "1h"), help="subagent cache lifetime")
-    init.add_argument("--codec", action="store_true", help="also re-encode tool results")
     init.add_argument(
         "--mod",
         action="store_true",
@@ -202,12 +185,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="also set the auto-compact window; Claude Code compacts 33000 tokens below it "
         "(minimum 100000)",
-    )
-    settings.add_argument(
-        "--brief", action="store_true", help="also ask compactions for a short, structured summary"
-    )
-    settings.add_argument(
-        "--codec", action="store_true", help="also re-encode tool results (REF/DELTA/OUTLINE)"
     )
     settings.add_argument("--cache-ttl", choices=("5m", "1h"), help="main conversation cache")
     settings.add_argument("--mod", action="store_true", help="also load the CimriHook mod")
@@ -229,8 +206,8 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument(
         "--variants",
         default="baseline,governor",
-        help="baseline, governor, codec, combined, brief, rtk, rtk-governor, mask, boundary, "
-        "meter, meter-governor (all but baseline and governor: claude only)",
+        help="baseline, governor, rtk, rtk-governor, mask, boundary, meter, meter-governor "
+        "(all but baseline and governor: claude only)",
     )
     bench.add_argument("--reps", type=int, default=1)
     bench.add_argument("--claude-model", default=DEFAULT_CLAUDE_MODEL)
@@ -240,7 +217,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--window",
         type=int,
         default=DEFAULT_WINDOW,
-        help="compaction window of the governor, combined and brief arms (claude: at least 100000)",
+        help="compaction window of the arms that set one (claude: at least 100000)",
     )
     bench.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY)
     bench.add_argument(
@@ -267,20 +244,8 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def live_report(config: Config, session: str | None) -> str:
-    """Defterdeki canlı kararların raporu."""
-    with Ledger(ledger_path(config.home), BUSY_TIMEOUT_SECONDS) as ledger:
-        if session is None:
-            return render_savings("CimriHook live savings (all sessions)", ledger.savings_all())
-        return render_savings(
-            f"CimriHook live savings (session {session})", ledger.savings_for_session(session)
-        )
-
-
 def run_codex_init(args: argparse.Namespace, home: Path, now: float) -> str:
-    """Codex'in sıkıştırma eşiğini ayarlar ya da (--remove) geri alır; Codex'te hook yok."""
-    if args.brief or args.codec:
-        raise ConfigError("--brief and --codec are Claude Code hooks; Codex has no equivalent")
+    """Sets Codex's compaction limit or (--remove) takes it out; Codex has no hooks to install."""
     path = Path(str(args.codex_config)).expanduser()
     if args.remove:
         plan = plan_codex_remove(path, home)
@@ -298,7 +263,7 @@ def run_codex_init(args: argparse.Namespace, home: Path, now: float) -> str:
 
 
 def selected_blocks(args: argparse.Namespace, home: Path) -> list[dict[str, object]]:
-    """Seçilen bileşenlerin ayar blokları: koruma ve durum satırı her zaman, diğerleri seçilince."""
+    """Settings blocks of the selected parts: guard and status line always, the rest when asked."""
     window = optional_int(args.compact_window)
     if window is not None and not CLAUDE_MIN_COMPACT_WINDOW <= window <= CLAUDE_MAX_COMPACT_WINDOW:
         raise ConfigError(
@@ -310,8 +275,6 @@ def selected_blocks(args: argparse.Namespace, home: Path) -> list[dict[str, obje
     return [
         guard_settings(python),
         statusline_settings(python),
-        *([brief_settings(python)] if args.brief else []),
-        *([hook_settings(python)] if args.codec else []),
         *([] if window is None else [governor_settings(window)]),
         *(
             []
@@ -353,7 +316,7 @@ def parse_protocols(raw: str) -> tuple[Protocol, ...]:
 
 
 def parse_variants(raw: str) -> tuple[Variant, ...]:
-    """Varyant listesi (baseline, governor, codec, combined, brief)."""
+    """List of A/B arms (see `Variant`)."""
     allowed = {variant.value for variant in Variant}
     values = split_csv(raw)
     unknown = [value for value in values if value not in allowed]
@@ -397,20 +360,13 @@ def main() -> None:
         args = build_parser().parse_args()
         command: str = args.command
         config = load_config(os.environ)
-        if command == "hook":
-            sys.stdout.write(run_hook(sys.stdin.read(), config))
-        elif command == "statusline" and args.after is not None:
+        if command == "statusline" and args.after is not None:
             raw = sys.stdin.read()
             sys.stdout.write(run_chained_statusline(raw, config, time.time(), str(args.after)))
         elif command == "statusline":
             sys.stdout.write(status_or_error(sys.stdin.read(), config, time.time()))
         elif command == "guard":
             sys.stdout.write(guard_prompt(sys.stdin.read(), config, time.time()))
-        elif command == "brief":
-            sys.stdout.write(compaction_brief(sys.stdin.read()))
-        elif command == "report":
-            session: str | None = args.session
-            print(live_report(config, session))
         elif command == "doctor":
             print(
                 render_doctor(
@@ -436,13 +392,6 @@ def main() -> None:
         elif command == "limits":
             samples = read_samples(limits_dir(config.home))
             print(render_limits(samples, window_rates(samples)))
-        elif command == "audit":
-            projects_dir: str = args.projects_dir
-            days: int = args.days
-            result = audit_transcripts(
-                Path(projects_dir).expanduser(), days, config.codec, time.time()
-            )
-            print(render_audit(result))
         elif command == "simulate":
             agent: str = args.agent
             logs_dir = DEFAULT_LOGS[agent] if args.logs_dir is None else str(args.logs_dir)

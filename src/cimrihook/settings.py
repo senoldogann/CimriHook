@@ -8,7 +8,6 @@ import shlex
 from collections.abc import Sequence
 from typing import Final
 
-HOOK_MATCHER: Final = "Read|Bash|Edit|Write|MultiEdit|NotebookEdit"
 HOOK_TIMEOUT_SECONDS: Final = 10
 
 
@@ -31,26 +30,9 @@ def handler(python: str, subcommand: str) -> dict[str, object]:
     }
 
 
-def hook_settings(python: str) -> dict[str, object]:
-    """Codec hook'ları: araç sonuçlarını yeniden kodlar, bağlam kuşaklarını izler."""
-    codec = handler(python, "hook")
-    return {
-        "hooks": {
-            "SessionStart": [{"hooks": [codec]}],
-            "PreCompact": [{"hooks": [codec]}],
-            "PostToolUse": [{"matcher": HOOK_MATCHER, "hooks": [codec]}],
-        }
-    }
-
-
 def guard_settings(python: str) -> dict[str, object]:
     """Soğuk istem koruması: önbelleği soğumuş büyük oturuma istemden önce bir kez sorar."""
     return {"hooks": {"UserPromptSubmit": [{"hooks": [handler(python, "guard")]}]}}
-
-
-def brief_settings(python: str) -> dict[str, object]:
-    """Sıkıştırma özeti: Claude Code'un özetleme isteğine kısa ve yapılandırılmış özet talimatı."""
-    return {"hooks": {"PreCompact": [{"hooks": [handler(python, "brief")]}]}}
 
 
 def statusline_settings(python: str) -> dict[str, object]:

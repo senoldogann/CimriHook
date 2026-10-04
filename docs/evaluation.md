@@ -202,10 +202,10 @@ Measured before shipping, cheapest test first. None of these is in CimriHook.
 
 ## Corrections to earlier figures
 
-- The thesis proposal (`docs/opinnaytetyo-ehdotus.md`) cites Codex -24% (CI 16-33%) and Claude
-  Code -8% (6-11%). Those came from a bootstrap over the transcript-only cost, which leaves the
-  compaction requests out and favours the treatment. On the provider-billed cost the same runs give
-  Codex x0.799 and Claude Code x0.950, with the intervals in the table above.
+- Cost is the provider-billed total, which includes the compaction requests. A transcript-only
+  cost leaves them out and favours the treatment: a bootstrap over it gave Codex -24% (CI 16-33%)
+  and Claude Code -8% (6-11%), where the provider-billed cost of the same runs gives Codex x0.799
+  and Claude Code x0.950, with the intervals in the table above.
 - "The simulator differs from billing by less than 1.1%" described the replay identity check (the
   observed sessions priced twice), not the prediction error, which is in the calibration table.
 - `bench/results/long.log` and `pilot.log` print `reported_usd` as the sum of cumulative totals;

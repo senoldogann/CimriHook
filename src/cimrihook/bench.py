@@ -21,18 +21,17 @@ Varyantlar (mekanizma ablasyonu):
 - baseline: ajanın varsayılan davranışı.
 - governor: yalnızca sıkıştırma penceresi (Claude Code: CLAUDE_CODE_AUTO_COMPACT_WINDOW, en az
   100000; Codex: model_auto_compact_token_limit).
-- codec: yalnızca codec hook'ları (yalnızca Claude Code; Codex hook'ları araç çıktısını
-  değiştiremez).
-- combined: pencere ve codec birlikte (yalnızca Claude Code).
-- brief: pencere ve sıkıştırma özeti talimatı (PreCompact) birlikte (yalnızca Claude Code).
 - rtk ve rtk-governor: RTK'nın Bash komut çıktısı sıkıştırması (PreToolUse hook'u, `rtk hook
-  claude`), tek başına ve pencereyle birlikte (yalnızca Claude Code). Tezdeki 2×2 tasarım: RTK var
-  ya da yok, pencere var ya da yok.
+  claude`), tek başına ve pencereyle birlikte (yalnızca Claude Code): RTK var ya da yok, pencere
+  var ya da yok.
 - mask: pencere ve CimriHook mod'u (`--plugin-dir`), önce maskeleme açık: otomatik sıkıştırmada
   LLM özeti yerine eski araç sonuçları yer tutucuyla değişir (yalnızca Claude Code).
 - boundary: pencere ve CimriHook mod'u görev sınırında sıkıştırmayla: bağlam BOUNDARY_TOKENS'ı
   geçtiyse yeni istemden önce sıkıştırılır; pencere görevin içindeki yedektir (yalnızca Claude
   Code).
+- codec, combined ve brief: emekliye ayrıldı (araç sonucu yeniden kodlama ve sıkıştırma özeti
+  talimatı ürünün parçası değil; kodları `pre-trim` etiketinde). Bu kolların kayıtlı sonuçları
+  okunur ve raporlanır, yeni çalıştırma planlanamaz.
 - meter ve meter-governor: baseline ve governor gibi davranır, ama CimriHook mod'u yalnızca
   limit ölçeri olarak yüklenir: her turdan sonra aboneliğin 5 saatlik ve haftalık pencerelerinin
   kullanım yüzdesi koşunun yanına `<koşu>.limits.jsonl` olarak yazılır (yalnızca Claude Code,
@@ -53,35 +52,23 @@ import json
 import math
 import os
 import re
-import shlex
 import shutil
 import signal
-import sqlite3
 import statistics
 import subprocess
-import sys
 import time
 import uuid
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import closing
 from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Final
 
-from cimrihook.audit import Usage, average_write_weight, parse_line
 from cimrihook.errors import BenchError
-from cimrihook.hook import LEDGER_FILE
 from cimrihook.mods import MOD_NAME, write_mod
-from cimrihook.settings import (
-    HOOK_TIMEOUT_SECONDS,
-    command,
-    governor_env,
-    hook_settings,
-    merge_settings,
-)
+from cimrihook.settings import governor_env, merge_settings
 from cimrihook.simulate import (
     CLAUDE_MIN_COMPACT_WINDOW,
     OBSERVED,
@@ -106,6 +93,7 @@ from cimrihook.stats import (
     rate_difference,
     ratio_estimate,
 )
+from cimrihook.transcripts import Usage, average_write_weight, parse_line
 
 RESULT_SCHEMA: Final = 2
 MAX_TURNS: Final = 400
@@ -142,7 +130,6 @@ ENV_ALLOWLIST: Final = (
     "LC_CTYPE",
 )
 REQUIRED_ENV: Final = ("PATH", "HOME")
-BRIEF_CALLS: Final = "brief-calls"  # özet hook'unun her başarılı çalışması bir satır ekler
 TEST_TAIL_CHARS: Final = 1_500  # hata iletisine eklenen test çıktısı
 SAFE_NAME: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")  # görev kimliği ve sürüm
 SAFE_PACKAGE: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\[\],<>=!~-]*")
@@ -200,9 +187,9 @@ class Variant(StrEnum):
 
     BASELINE = "baseline"
     GOVERNOR = "governor"
-    CODEC = "codec"
-    COMBINED = "combined"
-    BRIEF = "brief"
+    CODEC = "codec"  # retired: kept so recorded results stay readable
+    COMBINED = "combined"  # retired: window and codec
+    BRIEF = "brief"  # retired: window and a summary instruction
     RTK = "rtk"
     RTK_GOVERNOR = "rtk-governor"
     MASK = "mask"
@@ -233,8 +220,9 @@ METER_DIR: Final = "meter"  # CIMRIHOOK_HOME of a mod arm, inside the run direct
 BOUNDARY_TOKENS: Final = 100_000  # boundary arm: compact before a prompt above this context
 RTK_VARIANTS: Final = frozenset({Variant.RTK, Variant.RTK_GOVERNOR})
 RTK_HOOK_COMMAND: Final = "rtk hook claude"  # RTK 0.51'in Claude Code kurulumundaki komut
-CODEC_VARIANTS: Final = frozenset({Variant.CODEC, Variant.COMBINED})
-BRIEF_VARIANTS: Final = frozenset({Variant.BRIEF})
+# Arms of the codec and the summary instruction, which are no longer part of the product. Their
+# results from earlier sets are still loaded and reported; new runs cannot be planned.
+RETIRED_VARIANTS: Final = frozenset({Variant.CODEC, Variant.COMBINED, Variant.BRIEF})
 CODEX_VARIANTS: Final = frozenset({Variant.BASELINE, Variant.GOVERNOR})
 # Önceki şemanın tek tedavi kolu: Claude Code'da pencere ve codec, Codex'te yalnızca pencere.
 LEGACY_VARIANT: Final = "cimrihook"
@@ -576,6 +564,11 @@ def plan_runs(
 
 def spec_problem(spec: RunSpec) -> str | None:
     """Ajanın bu kolu ya da pencereyi uygulayamamasının nedeni; uygulayabiliyorsa None."""
+    if spec.variant in RETIRED_VARIANTS:
+        return (
+            f"variant {spec.variant.value!r} is retired: its mechanism was removed from CimriHook "
+            "(the code is at the git tag pre-trim); its recorded results can still be reported"
+        )
     if spec.agent is Agent.CODEX and spec.variant not in CODEX_VARIANTS:
         return (
             f"codex cannot run variant {spec.variant.value!r}: only the compaction window is "
@@ -732,7 +725,7 @@ def execute_run(spec: RunSpec, repo_dir: Path, work_dir: Path, timeout: int) -> 
         logs = read_agent_logs(
             spec.agent, outcome.session_id, outcome.reported, len(outcome.step_passed)
         )
-        problem = arm_problem(spec, run_dir, logs.measurement.compactions)
+        problem = arm_problem(spec, run_dir)
         if problem is not None:
             raise BenchError(problem)
     except BenchError as error:
@@ -766,16 +759,9 @@ def execute_run(spec: RunSpec, repo_dir: Path, work_dir: Path, timeout: int) -> 
     )
 
 
-def arm_problem(spec: RunSpec, run_dir: Path, compactions: int) -> str | None:
-    """Kolun mekanizması gerçekten çalıştı mı? Hook hata verirse Claude Code devam eder; sessizce
-    baseline gibi çalışmış bir kol ölçülmüş sayılmaz."""
-    if spec.variant in BRIEF_VARIANTS:
-        marker = run_dir / BRIEF_CALLS
-        calls = len(marker.read_text(encoding="utf-8").splitlines()) if marker.exists() else 0
-        if calls < compactions:
-            return f"the brief hook succeeded {calls} times for {compactions} compactions"
-    if spec.variant in CODEC_VARIANTS and codec_steps(run_dir / "ledger" / LEDGER_FILE) == 0:
-        return "the codec hooks recorded no tool result in the run's ledger"
+def arm_problem(spec: RunSpec, run_dir: Path) -> str | None:
+    """Did the arm's mechanism really run? Claude Code carries on when a hook or the mod fails; an
+    arm that silently ran like baseline does not count as measured."""
     if spec.variant in METER_VARIANTS and not meter_lines(run_dir):
         return "the mod recorded no usage-window reading in the run"
     return None
@@ -788,15 +774,6 @@ def meter_lines(run_dir: Path) -> tuple[str, ...]:
         line for file in files for line in file.read_text(encoding="utf-8").splitlines() if line
     ]
     return tuple(sorted(lines, key=lambda line: int(json.loads(line)["t"])))
-
-
-def codec_steps(ledger: Path) -> int:
-    """Codec hook'larının defterde kaydettiği araç adımı sayısı; defter yoksa 0."""
-    if not ledger.exists():
-        return 0
-    with closing(sqlite3.connect(f"file:{ledger}?mode=ro", uri=True)) as db:
-        row = db.execute("SELECT count(*) FROM steps").fetchone()
-    return int(row[0])
 
 
 def measured_result(identity: RunIdentity, behaviour: RunBehaviour, logs: AgentLogs) -> RunResult:
@@ -1218,7 +1195,7 @@ def claude_call(
         "project",
         "--strict-mcp-config",
         "--settings",
-        json.dumps(claude_settings(spec, run_dir)),
+        json.dumps(claude_settings(spec)),
         "--permission-mode",
         "acceptEdits",
         "--max-turns",
@@ -1255,13 +1232,10 @@ def claude_failure(stdout: str, timed_out: bool) -> str | None:
     return None
 
 
-def claude_settings(spec: RunSpec, run_dir: Path) -> dict[str, object]:
-    """Varyantın Claude Code ayarları: codec kollarında codec hook'ları, özet kollarında sıkıştırma
-    özeti hook'u, pencere kollarında pencere."""
+def claude_settings(spec: RunSpec) -> dict[str, object]:
+    """Varyantın Claude Code ayarları: RTK kollarında RTK hook'u, pencere kollarında pencere."""
     return merge_settings(
         [
-            *([hook_settings(sys.executable)] if spec.variant in CODEC_VARIANTS else []),
-            *([counted_brief_settings(run_dir)] if spec.variant in BRIEF_VARIANTS else []),
             *([rtk_settings()] if spec.variant in RTK_VARIANTS else []),
             *([governor_env(spec.window)] if spec.variant in WINDOW_VARIANTS else []),
         ]
@@ -1282,23 +1256,11 @@ def rtk_settings() -> dict[str, object]:
     }
 
 
-def counted_brief_settings(run_dir: Path) -> dict[str, object]:
-    """Özet hook'u; her başarılı çalışması çalıştırma dizinine bir satır ekler, böylece kolun
-    gerçekten uygulandığı sonradan doğrulanır. Özet metni yine hook'un tek çıktısıdır."""
-    marker = shlex.quote(str(run_dir / BRIEF_CALLS))
-    handler = {
-        "type": "command",
-        "command": f"{command(sys.executable, 'brief')} && echo >> {marker}",
-        "timeout": HOOK_TIMEOUT_SECONDS,
-    }
-    return {"hooks": {"PreCompact": [{"hooks": [handler]}]}}
-
-
 def agent_env(spec: RunSpec, run_dir: Path, base: Mapping[str, str]) -> dict[str, str]:
     """Ajan sürecinin ortamı: izin listesindeki değişkenler ve kolun kendi ayarları.
 
     Claude Code'da pencere, ayarlardaki env bloğuna ek olarak doğrudan ortam değişkeniyle de
-    verilir; codec kollarında defter çalıştırmanın kendi dizinindedir.
+    verilir; mod kollarında CimriHook'un ev dizini çalıştırmanın kendi dizinindedir.
     """
     missing = [key for key in REQUIRED_ENV if key not in base]
     if missing:
@@ -1311,7 +1273,6 @@ def agent_env(spec: RunSpec, run_dir: Path, base: Mapping[str, str]) -> dict[str
         if spec.variant in WINDOW_VARIANTS
         else {}
     )
-    ledger = {"CIMRIHOOK_HOME": str(run_dir / "ledger")} if spec.variant in CODEC_VARIANTS else {}
     meter = {"CIMRIHOOK_HOME": str(run_dir / METER_DIR)} if spec.variant in MOD_VARIANTS else {}
     mask = {"CIMRIHOOK_MOD_MASK": "1"} if spec.variant is Variant.MASK else {}
     boundary = (
@@ -1319,7 +1280,7 @@ def agent_env(spec: RunSpec, run_dir: Path, base: Mapping[str, str]) -> dict[str
         if spec.variant is Variant.BOUNDARY
         else {}
     )
-    return allowed | window | ledger | meter | mask | boundary
+    return allowed | window | meter | mask | boundary
 
 
 def plugin_args(spec: RunSpec, run_dir: Path) -> tuple[str, ...]:

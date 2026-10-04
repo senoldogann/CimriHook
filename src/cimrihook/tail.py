@@ -12,10 +12,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from cimrihook.audit import Usage, entry_time, message_usage, parse_line
 from cimrihook.claude import JsonObject
 from cimrihook.errors import TranscriptError
 from cimrihook.simulate import SYNTHETIC_MODEL, context_of
+from cimrihook.transcripts import Usage, entry_time, message_usage, parse_line
 
 # Son yanıtı ve önbellek yazımını bulmak için transcript'in okunan son kısmı, adım adım büyür.
 TAIL_CHUNKS: Final = (262_144, 1_048_576, 4_194_304)

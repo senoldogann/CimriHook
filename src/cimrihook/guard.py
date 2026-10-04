@@ -1,45 +1,31 @@
-"""Soğuk istem koruması ve sıkıştırma özeti talimatı.
+"""Cold-prompt guard (UserPromptSubmit).
 
-Soğuk istem koruması (UserPromptSubmit): önbellek ömrü dolduğunda bir sonraki istek konuşmanın
-tamamını yeniden önbelleğe yazar; büyük bir oturumda bu tek istek birkaç dolar tutar. Koruma istemi
-bu boşluk döneminde bir kez durdurur, maliyeti söyler ve önce /compact önerir; kullanıcı istemi
-yeniden gönderirse geçer. Bir hata istemi durdurmaz: CLI çıkış kodu 1 ile biter, Claude Code bunu
-engellemeyen bir hata sayar.
+When the cache lifetime has run out, the next request writes the whole conversation to the cache
+again; in a large session that single request costs several dollars. The guard stops the prompt
+once in this idle period, states the cost and suggests /compact first; if the user sends the
+prompt again it goes through. An error does not stop the prompt: the CLI exits with code 1, which
+Claude Code treats as a non-blocking error.
 
-Durdurulan istemi yalnızca bir insan yeniden gönderebilir; Claude Code'un kendi ilettiği istemler
-(arka plan bildirimleri, döngüler, alt ajanlar) durdurulursa düşer. Claude Code 2.1.288 istemin
-kaynağını hook'a vermez, bu yüzden insan dışı olduğu belli istemler hiç durdurulmaz: alt ajan
-istemleri (agent_id), eğik çizgiyle başlayan komutlar (/compact, /loop), etiketle başlayan
-iletiler (<task-notification> gibi) ve sistem bildirimleri. Düz metin olarak gelen zamanlanmış
-istemler insan isteminden ayırt edilemez.
-
-Sıkıştırma özeti (PreCompact): hook'un çıktısı Claude Code'un özetleme isteğine ek talimat olarak
-eklenir. Talimat özeti kısa ve yapılandırılmış tutar: kod gövdeleri yerine dosya yolları ve satır
-referansları, bitmiş işler yerine güncel durum ve sıradaki adım. Kısa özet daha az çıktı tokenı
-üretir ve sıkıştırmadan sonraki her istekte daha az bağlam taşınır.
+Only a human can send a stopped prompt again; prompts Claude Code sends itself (background
+notifications, loops, subagents) are dropped if stopped. Claude Code 2.1.288 does not tell the hook
+where a prompt comes from, so prompts that are evidently not from a human are never stopped:
+subagent prompts (agent_id), commands that start with a slash (/compact, /loop), messages that
+start with a tag (such as <task-notification>) and system notifications. Scheduled prompts that
+arrive as plain text cannot be told apart from a human's.
 """
 
 import json
 from dataclasses import dataclass
 from typing import Final
 
-from cimrihook.claude import as_object, require_str
+from cimrihook.claude import as_object, optional_str, require_str
 from cimrihook.config import Config
 from cimrihook.errors import HookPayloadError
-from cimrihook.hook import ledger_path
-from cimrihook.ledger import claim_guard
+from cimrihook.ledger import claim_guard, ledger_path
 from cimrihook.simulate import claude_prices, usd_per_token
 from cimrihook.statusline import compact_tokens
 from cimrihook.tail import ONE_HOUR, SessionTail, read_session_tail
 
-COMPACTION_BRIEF: Final = """\
-Keep this summary compact: it is re-read on every later request.
-- Goal: the user's current request and the constraints they set, in a few lines.
-- Done: decisions made and what changed, one line per file path.
-- State: the last step, current errors or test results, and the exact next step.
-- Open: unanswered questions.
-Refer to code by file path and line numbers instead of pasting it; files can be read again.
-Leave out tool outputs and finished side tasks."""
 # Claude Code'un otomatik ilettiği istemlerin başı: bildirimler, etiketli iletiler, komutlar.
 AUTOMATED_PREFIXES: Final = ("[SYSTEM NOTIFICATION", "<", "/")
 GUARD_BUSY_TIMEOUT_SECONDS: Final = 2.0  # hook zaman aşımının (10 s) çok altında
@@ -91,14 +77,6 @@ def parse_prompt_event(raw: str) -> PromptEvent:
     )
 
 
-def optional_str(payload: dict[str, object], key: str, where: str) -> str | None:
-    """İsteğe bağlı metin alanı: yoksa None, varsa metin olmalı."""
-    value = payload.get(key)
-    if value is None or isinstance(value, str):
-        return value
-    raise HookPayloadError(f"{where}.{key}: expected a string, got {type(value).__name__}")
-
-
 def parse_payload(raw: str, event: str) -> dict[str, object]:
     """Hook yükünü çözer ve beklenen olay adını doğrular."""
     try:
@@ -140,9 +118,3 @@ def guard_reason(tail: SessionTail, now: float) -> str:
 def idle_text(seconds: float) -> str:
     """Boşta geçen sürenin kısa hali (ör. 74 min, 3.5 h)."""
     return f"{seconds / 60:.0f} min" if seconds < 2 * ONE_HOUR else f"{seconds / ONE_HOUR:.1f} h"
-
-
-def compaction_brief(raw: str) -> str:
-    """PreCompact hook yanıtı: Claude Code'un özetleme isteğine eklenen talimat."""
-    parse_payload(raw, "PreCompact")
-    return COMPACTION_BRIEF
