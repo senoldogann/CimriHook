@@ -38,6 +38,7 @@ from cimrihook.guard import compaction_brief, guard_prompt
 from cimrihook.hook import ledger_path, run_hook
 from cimrihook.install import apply_init, apply_remove, plan_init, plan_remove, render_plan
 from cimrihook.ledger import BUSY_TIMEOUT_SECONDS, Ledger
+from cimrihook.limits import limits_dir, read_samples, render_limits, window_rates
 from cimrihook.mods import mod_dir, write_mod
 from cimrihook.report import render_savings
 from cimrihook.settings import (
@@ -129,6 +130,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     gain.add_argument("--projects-dir", default=DEFAULT_PROJECTS_DIR)
     gain.add_argument("--settings", default=DEFAULT_SETTINGS_PATH)
+    commands.add_parser(
+        "limits", help="what a point of your 5-hour and weekly windows costs in usage"
+    )
     audit = commands.add_parser(
         "audit", help="replay past Claude Code transcripts and estimate what CimriHook would save"
     )
@@ -225,8 +229,8 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument(
         "--variants",
         default="baseline,governor",
-        help="baseline, governor, codec, combined, brief, rtk, rtk-governor, mask (all but "
-        "baseline and governor: claude only)",
+        help="baseline, governor, codec, combined, brief, rtk, rtk-governor, mask, boundary (all "
+        "but baseline and governor: claude only)",
     )
     bench.add_argument("--reps", type=int, default=1)
     bench.add_argument("--claude-model", default=DEFAULT_CLAUDE_MODEL)
@@ -429,6 +433,9 @@ def main() -> None:
                     )
                 )
             )
+        elif command == "limits":
+            samples = read_samples(limits_dir(config.home))
+            print(render_limits(samples, window_rates(samples)))
         elif command == "audit":
             projects_dir: str = args.projects_dir
             days: int = args.days

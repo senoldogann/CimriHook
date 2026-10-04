@@ -30,6 +30,9 @@ Varyantlar (mekanizma ablasyonu):
   ya da yok, pencere var ya da yok.
 - mask: pencere ve CimriHook mod'u (`--plugin-dir`), önce maskeleme açık: otomatik sıkıştırmada
   LLM özeti yerine eski araç sonuçları yer tutucuyla değişir (yalnızca Claude Code).
+- boundary: pencere ve CimriHook mod'u görev sınırında sıkıştırmayla: bağlam BOUNDARY_TOKENS'ı
+  geçtiyse yeni istemden önce sıkıştırılır; pencere görevin içindeki yedektir (yalnızca Claude
+  Code).
 
 Ölçüm:
 - Birincil maliyet sağlayıcı düzeyindedir ve sıkıştırma ile yardımcı çağrıları içerir. Claude Code
@@ -199,12 +202,21 @@ class Variant(StrEnum):
     RTK = "rtk"
     RTK_GOVERNOR = "rtk-governor"
     MASK = "mask"
+    BOUNDARY = "boundary"
 
 
 WINDOW_VARIANTS: Final = frozenset(
-    {Variant.GOVERNOR, Variant.COMBINED, Variant.BRIEF, Variant.RTK_GOVERNOR, Variant.MASK}
+    {
+        Variant.GOVERNOR,
+        Variant.COMBINED,
+        Variant.BRIEF,
+        Variant.RTK_GOVERNOR,
+        Variant.MASK,
+        Variant.BOUNDARY,
+    }
 )
-MOD_VARIANTS: Final = frozenset({Variant.MASK})
+MOD_VARIANTS: Final = frozenset({Variant.MASK, Variant.BOUNDARY})
+BOUNDARY_TOKENS: Final = 100_000  # boundary arm: compact before a prompt above this context
 RTK_VARIANTS: Final = frozenset({Variant.RTK, Variant.RTK_GOVERNOR})
 RTK_HOOK_COMMAND: Final = "rtk hook claude"  # RTK 0.51'in Claude Code kurulumundaki komut
 CODEC_VARIANTS: Final = frozenset({Variant.CODEC, Variant.COMBINED})
@@ -1265,8 +1277,13 @@ def agent_env(spec: RunSpec, run_dir: Path, base: Mapping[str, str]) -> dict[str
         else {}
     )
     ledger = {"CIMRIHOOK_HOME": str(run_dir / "ledger")} if spec.variant in CODEC_VARIANTS else {}
-    mask = {"CIMRIHOOK_MOD_MASK": "1"} if spec.variant in MOD_VARIANTS else {}
-    return allowed | window | ledger | mask
+    mask = {"CIMRIHOOK_MOD_MASK": "1"} if spec.variant is Variant.MASK else {}
+    boundary = (
+        {"CIMRIHOOK_MOD_BOUNDARY_TOKENS": str(BOUNDARY_TOKENS)}
+        if spec.variant is Variant.BOUNDARY
+        else {}
+    )
+    return allowed | window | ledger | mask | boundary
 
 
 def plugin_args(spec: RunSpec, run_dir: Path) -> tuple[str, ...]:

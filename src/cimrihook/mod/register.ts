@@ -13,6 +13,17 @@
 // Mask-first (opt-in, CIMRIHOOK_MOD_MASK=1): an automatic compaction of the main conversation keeps
 // every message and replaces older tool results with a short placeholder instead of an LLM summary.
 // When that would not shrink the context enough, the engine's own summary runs instead.
+//
+// Boundary compaction (opt-in, CIMRIHOOK_MOD_BOUNDARY_TOKENS): a prompt that enters a main
+// conversation larger than this is preceded by a compaction, so the summary closes the finished
+// task and the new one starts on a small context; the auto-compact window stays the backstop inside
+// a task, where a compaction can cut the agent off mid-work.
+//
+// Limit meter: on a subscription, every measurement of the session (after each turn, and when a
+// 5-hour or weekly window moves a point) appends the session's list-price spend and the windows'
+// use to <CIMRIHOOK_HOME or ~/.cimrihook>/limits/<session id>.jsonl, so `cimrihook limits` can
+// measure what share of each window a dollar of usage takes on your own plan.
+
 import type { Register, SessionMessage, ToolResultSummary } from 'claude-code'
 
 const CACHE_LIFETIME_MS = 60 * 60 * 1000 // main conversation on a subscription
@@ -28,10 +39,16 @@ type Session = {
   running: boolean
   lastTurnEnd: number | undefined
   compacted: boolean
+  limits: { id: string; lines: string[] } | undefined // this session's limit samples so far
 }
 
 export const register: Register = (on) => {
-  const session: Session = { running: false, lastTurnEnd: undefined, compacted: false }
+  const session: Session = {
+    running: false,
+    lastTurnEnd: undefined,
+    compacted: false,
+    limits: undefined,
+  }
 
   on('turn.start', async ($, e, next) => {
     session.running = true
@@ -78,16 +95,49 @@ export const register: Register = (on) => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    if (e.turnId !== undefined || session.compacted || session.lastTurnEnd === undefined) {
-      return next(e)
-    }
-    const idle = (await $.clock.now()) - session.lastTurnEnd
-    const minTokens = Number((await $.env.get('CIMRIHOOK_MOD_MIN_TOKENS')) ?? DEFAULT_MIN_TOKENS)
-    if (idle >= CACHE_LIFETIME_MS && (await worthCompacting($, minTokens))) {
-      session.compacted = true
-      await $.session.compact().catch(() => undefined)
+    if (e.turnId === undefined && !session.compacted) {
+      const idle =
+        session.lastTurnEnd === undefined ? 0 : (await $.clock.now()) - session.lastTurnEnd
+      const minTokens = Number((await $.env.get('CIMRIHOOK_MOD_MIN_TOKENS')) ?? DEFAULT_MIN_TOKENS)
+      const boundary = await $.env.get('CIMRIHOOK_MOD_BOUNDARY_TOKENS')
+      const cold = idle >= CACHE_LIFETIME_MS && (await worthCompacting($, minTokens))
+      const large =
+        boundary !== undefined &&
+        ((await $.session.usage()).context.tokens ?? 0) >= Number(boundary)
+      if (cold || large) {
+        session.compacted = true
+        await $.session.compact().catch(() => undefined)
+      }
     }
     return next(e)
+  })
+
+  on('session.measure', async ($, e, next) => {
+    const result = await next(e)
+    const usd = e.cost?.usd
+    if (e.rateLimits.length === 0 || usd === undefined) return result
+    try {
+      const home =
+        (await $.env.get('CIMRIHOOK_HOME')) ?? `${(await $.env.get('HOME')) ?? '.'}/.cimrihook`
+      const id = await $.session.id()
+      const path = `${home}/limits/${id}.jsonl`
+      if (session.limits?.id !== id) {
+        const lines = (await $.fs.exists(path))
+          ? (await $.fs.read(path)).split('\n').filter((line) => line !== '')
+          : []
+        session.limits = { id, lines }
+      }
+      const limits = e.rateLimits.map((limit) => ({
+        kind: limit.kind,
+        percentUsed: limit.percentUsed,
+        resetsAt: limit.resetsAt,
+      }))
+      session.limits.lines.push(JSON.stringify({ t: await $.clock.now(), usd, limits }))
+      await $.fs.write(path, `${session.limits.lines.join('\n')}\n`)
+    } catch (error) {
+      $.ui.log(`CimriHook limit meter: ${String(error)}`, { to: 'debug' })
+    }
+    return result
   })
 
   // Every compaction of the main conversation counts, not only the mod's own: after Claude Code's

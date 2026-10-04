@@ -15,7 +15,7 @@ yeniden eklenen dosyalar ise yazılmaz, eski bağlam okunurdu. Sıkıştırma ç
 yazılmadığı için gerçek tarafa tahminle eklenir (bağlamın bir kez okunması ve özetin çıktısı).
 Bağlam modelin varsayılan eşiğini geçecek olsaydı Claude Code yine sıkıştırırdı; orada taşınan
 bağlam sıfırlanır. Yeniden okumayı ve ajanın değişen davranışını göremez: A/B koşularında bu tür
-yeniden oynatma 0-7 puan iyimser çıktı.
+yeniden oynatma 0-11 puan iyimser çıktı.
 """
 
 import math
