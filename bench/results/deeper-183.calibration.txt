@@ -1,0 +1,4 @@
+CimriHook calibration: simulated vs measured cost ratio (treatment / baseline)
+  agent   scenario                         mechanism  trigger    post  cached summary predicted  measured     error
+  claude  boltons-twenty-steps/deeper      governor   151,001  40,392  13,583   2,182    x0.466    x0.542   -7.6 pp OFF (measured 95% 0.480-0.611)
+  acceptance: |error| <= 5 points of the measured ratio. The compaction parameters are medians of the very treatment runs being predicted (in-sample), so 'ok' only checks the cost accounting; when the measured interval is wider than the tolerance, the check cannot tell a good simulator from a bad one.
