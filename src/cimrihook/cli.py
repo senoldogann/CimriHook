@@ -51,7 +51,7 @@ from cimrihook.gain import gain_json, measure_gain, render_gain
 from cimrihook.guard import guard_prompt
 from cimrihook.install import apply_init, apply_remove, plan_init, plan_remove, render_plan
 from cimrihook.limits import LimitSample, limits_dir, read_samples
-from cimrihook.mods import mod_dir, write_mod
+from cimrihook.mods import mod_dir, validate_mod, write_mod
 from cimrihook.preparation import (
     DEFAULT_PACKET_BYTES,
     build_packet,
@@ -562,6 +562,8 @@ def main() -> None:
             print(run_codex_init(args, config.home, time.time()))
         elif command == "init":
             path = Path(str(args.settings)).expanduser()
+            if args.mod and not args.remove:
+                validate_mod()
             plan = (
                 plan_remove(path, config.home)
                 if args.remove
