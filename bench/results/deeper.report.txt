@@ -1,0 +1,23 @@
+CimriHook bench: 20 runs, 0 unmeasured, 0 without a provider cost
+Primary cost: Claude = total_cost_usd reported by Claude Code (USD); Codex = per-response usage records priced with the sheet below (base input units). Both include compaction requests; 'transcript' excludes them.
+  price sheet: Claude Code total_cost_usd (includes compaction and auxiliary calls)
+  agent version: claude 2.1.288 (20 runs)
+Cells (geometric mean of costs, medians of the rest):
+  agent   scenario                         mechanism  n runs ok   steps       cost transcript  req  max ctx mean ctx compact  trigger   window   min
+  claude  boltons-twenty-steps/deeper      baseline   5     5/5 100/100    $13.151  3,287,869  140  454,355  350,399       0        -        -   8.5
+  claude  boltons-twenty-steps/deeper      governor   5     5/5 100/100     $8.028  1,873,767  145  201,206  107,136      10  205,368   233000   9.9
+  claude  boltons-twenty-steps/deeper      rtk        5     5/5 100/100    $13.496  3,374,052  141  449,889  348,742       0        -        -   9.1
+  claude  boltons-twenty-steps/deeper      rtk-governor  5     5/5 100/100     $7.912  1,891,414  150  200,955  105,348      10  204,670   233000  10.0
+A/B per scenario vs baseline: provider cost as a ratio of geometric means with a 95% Welch t interval on log cost (none when an arm has fewer than two costed runs or no variation); run success over every measured run, so a run without a provider cost still counts; steps are descriptive only (the steps of a run are dependent):
+  claude  boltons-twenty-steps/deeper      governor  runs 5/5 (costed 5/5) cost x0.610 [0.544-0.685] transcript x0.570 runs ok 5/5 vs 5/5 (diff +0.0 pp [-43.4, +43.4]); steps 100/100 vs 100/100
+  claude  boltons-twenty-steps/deeper      rtk       runs 5/5 (costed 5/5) cost x1.026 [0.912-1.154] transcript x1.026 runs ok 5/5 vs 5/5 (diff +0.0 pp [-43.4, +43.4]); steps 100/100 vs 100/100
+  claude  boltons-twenty-steps/deeper      rtk-governor runs 5/5 (costed 5/5) cost x0.602 [0.535-0.676] transcript x0.575 runs ok 5/5 vs 5/5 (diff +0.0 pp [-43.4, +43.4]); steps 100/100 vs 100/100
+A/B per agent and mechanism: cost is the equal-weight mean of balanced scenarios with two 95% intervals (across scenarios, which generalises beyond them, and within these scenarios); non-inferiority uses the Newcombe interval of the run success difference:
+  claude  governor  cost x0.610 [across scenarios none; these scenarios 0.544-0.685] over 1 scenarios (none excluded); runs ok 5/5 vs 5/5 (diff +0.0 pp [-43.4, +43.4]); steps 100/100 vs 100/100; non-inferiority at -5 pp: not shown (lower bound -43.4 pp)
+  claude  rtk       cost x1.026 [across scenarios none; these scenarios 0.912-1.154] over 1 scenarios (none excluded); runs ok 5/5 vs 5/5 (diff +0.0 pp [-43.4, +43.4]); steps 100/100 vs 100/100; non-inferiority at -5 pp: not shown (lower bound -43.4 pp)
+  claude  rtk-governor cost x0.602 [across scenarios none; these scenarios 0.535-0.676] over 1 scenarios (none excluded); runs ok 5/5 vs 5/5 (diff +0.0 pp [-43.4, +43.4]); steps 100/100 vs 100/100; non-inferiority at -5 pp: not shown (lower bound -43.4 pp)
+Cumulative provider cost at step checkpoints (ratio of geometric means vs baseline):
+  claude  boltons-twenty-steps/deeper      governor  step 5 x0.798  step 10 x0.712  step 20 x0.610
+  claude  boltons-twenty-steps/deeper      rtk       step 5 x1.069  step 10 x1.050  step 20 x1.026
+  claude  boltons-twenty-steps/deeper      rtk-governor step 5 x0.803  step 10 x0.711  step 20 x0.602
+Codex price-sheet sensitivity (pooled ratio over cached x0.1/0.25 and output x4/6/8):
