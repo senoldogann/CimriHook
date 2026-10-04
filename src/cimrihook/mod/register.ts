@@ -106,30 +106,59 @@ async function worthCompacting(
   return usage.rateLimits.length > 0 && (usage.context.tokens ?? 0) >= minTokens
 }
 
-/** Older tool results become a placeholder; the newest messages and errors stay whole. */
+/**
+ * Older tool results become a placeholder; the newest messages and errors stay whole.
+ *
+ * Messages go back rebuilt, without the engine's handle, except the user's prompts and the last
+ * assistant message. A message kept by its handle is the engine's own copy, and in Claude Code
+ * 2.1.288 such copies tie a resumed session to the history before the compaction: an assistant copy
+ * keeps the API message id that its original rows carry, a tool result copy names the original
+ * assistant message as its parent, and `--resume` then loads the whole conversation again. The
+ * last assistant message stays the engine's own: an automatic compaction can run in the middle of
+ * a tool loop, and the API needs that message's thinking block to continue it. Older rows that
+ * held only thinking are left out, since a rebuilt message cannot carry thinking.
+ */
 function maskOlderResults(messages: readonly SessionMessage[]): SessionMessage[] {
   const cut = Math.max(0, messages.length - KEEP_RECENT_MESSAGES)
-  return messages.map((message, index) =>
-    index >= cut || message.toolResults === undefined ? message : masked(message, message.toolResults),
-  )
+  const last = lastAssistantRows(messages)
+  return messages.flatMap((message, index) => {
+    if (message.role === 'assistant') {
+      if (index >= last.start && index <= last.end) return [message]
+      return message.text === '' && message.toolUses.length === 0 ? [] : [rebuilt(message, [])]
+    }
+    if (message.toolResults === undefined) return [message]
+    return [rebuilt(message, index >= cut ? message.toolResults : message.toolResults.map(masked))]
+  })
 }
 
-function masked(message: SessionMessage, results: readonly ToolResultSummary[]): SessionMessage {
-  // The tool's stored record (`result`) is left out: Claude Code rebuilds a resumed conversation's
-  // tool results from it, which would bring the whole output back.
-  const kept = results.map((result) =>
-    result.isError || result.text.length < MASK_MIN_CHARS
-      ? result
-      : {
-          tool_use_id: result.tool_use_id,
-          isError: result.isError,
-          text:
-            `[CimriHook removed this ${result.text.split('\n').length}-line tool result to keep the ` +
-            'context small; run the tool again if you need it]',
-        },
-  )
-  if (kept.every((result, index) => result === results[index])) return message
-  return { role: message.role, text: message.text, toolUses: message.toolUses, toolResults: kept }
+/**
+ * The rows of the last assistant message. Claude Code stores one row per content block (thinking,
+ * text, tool use), so they are the adjacent assistant rows ending at the last one.
+ */
+function lastAssistantRows(messages: readonly SessionMessage[]): { start: number; end: number } {
+  const end = messages.findLastIndex((message) => message.role === 'assistant')
+  let start = end
+  while (start > 0 && messages[start - 1]?.role === 'assistant') start -= 1
+  return { start, end }
+}
+
+function masked(result: ToolResultSummary): ToolResultSummary {
+  return result.isError || result.text.length < MASK_MIN_CHARS
+    ? result
+    : {
+        tool_use_id: result.tool_use_id,
+        isError: result.isError,
+        text:
+          `[CimriHook removed this ${result.text.split('\n').length}-line tool result to keep the ` +
+          'context small; run the tool again if you need it]',
+      }
+}
+
+/** The message as the engine builds it from its fields: no handle, so no link to the old one. */
+function rebuilt(message: SessionMessage, results: readonly ToolResultSummary[]): SessionMessage {
+  return results.length === 0
+    ? { role: message.role, text: message.text, toolUses: message.toolUses }
+    : { role: message.role, text: message.text, toolUses: message.toolUses, toolResults: [...results] }
 }
 
 function size(messages: readonly SessionMessage[]): number {
