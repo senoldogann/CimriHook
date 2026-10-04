@@ -82,6 +82,28 @@ Claude Code 2.1.288, `claude-opus-5-5[1m]`, effort medium, 5 runs per arm, windo
   `deep-233` and `deeper`: 25 runs, 500 steps) no run failed; the one-sided 95% upper bound on
   the run failure rate is 11%.
 
+### Mask-first compaction (`deeper`, pilot of one run)
+
+The `mask` arm adds the CimriHook mod with `CIMRIHOOK_MOD_MASK=1` to the same window: automatic
+compactions replace older tool results with placeholders instead of an LLM summary. The run is in
+`bench/results/deeper-mask`.
+
+| Arm | Runs | Cost | vs window | Steps ok | Requests | Context after the reading phase |
+|---|---|---|---|---|---|---|
+| window | 5 | $8.03 (geometric mean) | - | 100/100 | 145 (median) | 68-76k (run 2) |
+| mask | 1 | $8.85 | x1.10 | 20/20 | 126 | 117-120k |
+
+- Each mask compaction took 2-18 ms; Claude Code's summaries in the window runs took 14-63 s
+  (median about 33 s).
+- The reading phase cost less with masking ($4.75 against $5.12-5.32 in the window runs), because
+  no summary request ran. The run then carried more context out of that phase: its second
+  compaction came earlier in the reading, so more file reads followed it. The first resume after
+  a mask compaction also missed the prompt cache once (106k tokens written, about $0.85); the
+  window runs resume from the cache.
+- Earlier pilots (`bench/results/deeper-mask-v0`, `-v1`) are invalid: `--resume` reloaded the
+  whole pre-compaction conversation (about 400k tokens per step) until the mod handed back
+  rebuilt messages.
+
 ### The window `doctor` recommends (`deep`, Claude Code)
 
 Same scenario and baselines, window 233000 (compaction at about 200k tokens), 5 runs.

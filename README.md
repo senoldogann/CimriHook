@@ -169,15 +169,29 @@ context size:
 - **Cold fallback:** if the timer could not run (the machine slept), the first prompt you send into
   an idle session whose cache has expired is preceded by a compaction: that request was going to
   rewrite the whole context anyway.
-- **Mask-first (opt-in, `CIMRIHOOK_MOD_MASK=1`):** an automatic compaction keeps every message and
-  replaces older tool results with a short placeholder instead of asking the model for a summary
-  (the approach that matched summarisation at lower cost in the JetBrains study); when that would
-  not remove at least 40% of the context, Claude Code's own summary runs.
+- **Mask-first (experimental, `CIMRIHOOK_MOD_MASK=1`):** an automatic compaction keeps the
+  conversation and replaces older tool results with a one-line placeholder instead of asking the
+  model for a summary (observation masking, which matched summarisation at lower cost in the
+  JetBrains study). It takes milliseconds where Claude Code's summary took 14-63 seconds in the A/B
+  runs. The newest tool result stays whole, and older recent ones while they fit in 10% of the
+  context. In one `deeper` run it passed every step at $8.85, against $8.03 for the window alone:
+  faster compactions, no saving. When masking would not remove at least 40% of the context,
+  Claude Code's own summary runs.
 
 `init --mod` writes the plugin to `~/.cimrihook/mod/cimrihook` and adds that folder to
 `CLAUDE_CODE_PLUGIN_DIRS` in your settings, keeping folders you already have there; `--remove`
-puts the variable back. Claude Code has the same warm-compaction idea behind a server flag that is
-off; the mod turns it on for you. With the mod the cold-prompt guard rarely has anything to stop.
+puts the variable back. The mod counts every compaction of the main conversation, so after Claude
+Code's own compaction (including idle compaction where a server flag enables it) or a `/compact`
+it does not compact again before the next turn. With the mod the cold-prompt guard rarely has
+anything to stop.
+
+Mask-first hands its messages back rebuilt rather than by the engine's handles: in Claude Code
+2.1.288 the handles tie a resumed session to the history before the compaction, so `--resume`
+would load the whole conversation again
+([anthropics/claude-code#95328](https://github.com/anthropics/claude-code/issues/95328)).
+Rebuilt messages lose their thinking blocks and attachments, the first resume after a mask
+compaction misses the prompt cache once, and on Opus and Sonnet 5.5 the API may re-think after
+earlier tool results change. Use it where compaction pauses hurt more than these costs.
 
 ## Guard the cache
 
