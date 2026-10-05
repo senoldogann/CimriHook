@@ -26,6 +26,7 @@ from cimrihook.bench_preparation import (
 from cimrihook.bench_preparation_run import (
     active_quota_problem,
     allowance_problem,
+    block_capacity,
     fit_auto_targets,
     guarded_process,
     quota_problem,
@@ -200,6 +201,22 @@ def test_auto_budget_narrowing_is_recorded_and_repeatable(tmp_path: Path) -> Non
     assert result == fit_auto_targets(tmp_path, "request", targets, 1000)
     fitted, notes = result
     assert fitted and notes and fitted[0].start != 1
+
+
+def test_block_preflight_archives_forecast_without_generation(tmp_path: Path) -> None:
+    study = load_study(PROJECT / "bench/preparation/pilot-20261005.json", PROJECT)
+    observed = datetime.now(UTC).isoformat()
+
+    def reader(agent: Agent) -> QuotaSnapshot:
+        return replace(snapshot(64.0, observed), provider=agent.value)
+
+    artifact = tmp_path / "block-quota.jsonl"
+    block_capacity(study, study.jobs, study.tasks[0], artifact, reader)
+    forecast = json.loads(artifact.with_suffix(".forecast.json").read_text())
+    assert forecast["codex_calls"] == 4
+    assert forecast["codex_five_hour_reserved"] == pytest.approx(3.531846824)
+    assert forecast["claude_quota_forecast"] is None
+    assert len(artifact.read_text().splitlines()) == 2
 
 
 def test_host_tests_do_not_reuse_same_size_bytecode(tmp_path: Path) -> None:

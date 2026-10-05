@@ -781,7 +781,9 @@ def verify_versions(study: Study) -> None:
             raise BenchError(f"{command}: registered version {expected}, installed {observed}")
 
 
-def block_capacity(study: Study, jobs: Sequence[Job], task: StudyTask, artifact: Path) -> None:
+def block_capacity(
+    study: Study, jobs: Sequence[Job], task: StudyTask, artifact: Path, quota_reader: QuotaReader
+) -> None:
     """Reserve a complete remaining task block before its first generation."""
     calls = sum(len(task.steps) for job in jobs if job.agent is Agent.CODEX)
     five = 2 * calls * study.allowance.reserve_codex_five_hour_call
@@ -794,7 +796,7 @@ def block_capacity(study: Study, jobs: Sequence[Job], task: StudyTask, artifact:
     )
     observations: list[QuotaSnapshot] = []
     for agent in Agent:
-        snapshot = read_quota(agent)
+        snapshot = quota_reader(agent)
         observations.append(snapshot)
         append_quota(artifact, snapshot, "block_forecast")
         problem = quota_problem(snapshot, datetime.now(UTC))
@@ -812,7 +814,7 @@ def block_capacity(study: Study, jobs: Sequence[Job], task: StudyTask, artifact:
                         f"{agent}: task block forecast plus reserve {forecast:.4f} points "
                         f"does not fit {window.id} at {window.used_percent}%"
                     )
-    artifact.with_suffix("forecast.json").write_text(
+    artifact.with_suffix(".forecast.json").write_text(
         json.dumps(
             {
                 "task_id": task.task.id,
@@ -904,6 +906,7 @@ def execute_study(
                     tuple(j for j in study.jobs if j.task_id == job.task_id),
                     tasks[job.task_id],
                     results / f"{job.task_id}.block-quota.jsonl",
+                    read_quota,
                 )
                 blocks.add(job.task_id)
             episode = run_episode(

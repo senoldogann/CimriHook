@@ -466,3 +466,10 @@ version and installed package versions are archived per episode. Repo SHAs,
 task hashes, implementation commit/source hashes, CLI versions, schedule and
 provider counters are retained. `bench-calibrate` reports measured compaction
 counters separately and makes no simulated preparation-savings claim.
+
+The first execution preflight stopped while writing a forecast artifact because
+the filename suffix lacked its leading dot. No provider generation command was
+constructed or launched; no episode exists. That zero-generation preflight is
+archived with the `-preflight` suffix. The corrected block preflight is exercised
+by a local file/record integration test before the first pilot generation.
+This is an infrastructure correction, not a replacement of a model attempt.
