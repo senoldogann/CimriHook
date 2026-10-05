@@ -12,9 +12,10 @@ from cimrihook.errors import ConfigError
 CHARS_PER_TOKEN: Final = 4
 SECONDS_PER_DAY: Final = 86_400
 WORKFLOW_JOURNAL: Final = "journal.jsonl"
-# Project directories of CimriHook's own A/B runs (workspace .../cimrihook-bench/...): they are not
-# the user's work and would distort the cost anatomy and the window recommendation.
-BENCH_PROJECT_MARKER: Final = "cimrihook-bench"
+# Workspaces of CimriHook's own runs: the A/B harness (.../cimrihook-bench/...) and the pilots
+# under ~/.cimrihook/experiments/. They are not the user's work and would distort the cost
+# anatomy, the gain and the window recommendation.
+BENCH_LOCATION_MARKERS: Final = ("cimrihook-bench", "cimrihook-experiments")
 # Multipliers on the base input price (Anthropic prompt caching pricing).
 WRITE_5M_WEIGHT: Final = 1.25
 WRITE_1H_WEIGHT: Final = 2.0
@@ -61,8 +62,16 @@ def bench_transcripts(projects_dir: Path, days: int, now: float) -> int:
 
 
 def is_bench_transcript(path: Path, projects_dir: Path) -> bool:
-    """Does the transcript belong to a workspace of CimriHook's A/B harness?"""
-    return any(BENCH_PROJECT_MARKER in part for part in path.relative_to(projects_dir).parts)
+    """Does the transcript belong to a workspace of CimriHook's own runs?"""
+    return any(is_bench_location(part) for part in path.relative_to(projects_dir).parts)
+
+
+def is_bench_location(location: str) -> bool:
+    """Is a working directory, or Claude Code's project directory name for one, a workspace of
+    CimriHook's own runs? Claude Code names a project by its path with `/` and `.` as `-`, so the
+    path is compared in that form."""
+    encoded = location.replace("/", "-").replace(".", "-")
+    return any(marker in encoded for marker in BENCH_LOCATION_MARKERS)
 
 
 def entry_time(entry: JsonObject) -> float | None:

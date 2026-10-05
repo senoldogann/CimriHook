@@ -24,11 +24,11 @@ from typing import Final
 from cimrihook.claude import JsonObject
 from cimrihook.errors import ConfigError, TranscriptError
 from cimrihook.transcripts import (
-    BENCH_PROJECT_MARKER,
     SECONDS_PER_DAY,
     Usage,
     average_write_weight,
     estimate_tokens,
+    is_bench_location,
     message_usage,
     parse_line,
     recent_transcripts,
@@ -201,8 +201,7 @@ def simulate_codex(
     files = sorted(
         path
         for path in logs_dir.rglob("rollout-*.jsonl")
-        if path.stat().st_mtime >= min_mtime
-        and BENCH_PROJECT_MARKER not in (rollout_cwd(path) or "")
+        if path.stat().st_mtime >= min_mtime and not is_bench_location(rollout_cwd(path) or "")
     )
     if not files:
         raise ConfigError(f"no Codex rollouts under {logs_dir} modified in the last {days} days")

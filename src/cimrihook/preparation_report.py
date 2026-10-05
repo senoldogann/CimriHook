@@ -12,8 +12,8 @@ from typing import Final, Literal
 
 from cimrihook.errors import ConfigError, TranscriptError
 from cimrihook.transcripts import (
-    BENCH_PROJECT_MARKER,
     SECONDS_PER_DAY,
+    is_bench_location,
     parse_line,
     recent_transcripts,
 )
@@ -271,7 +271,7 @@ def codex_paths(root: Path, days: int, now: float) -> tuple[Path, ...]:
             first = parse_line(handle.readline())
         metadata = object_fields(first.get("payload")) if first is not None else {}
         cwd = metadata.get("cwd")
-        if isinstance(cwd, str) and BENCH_PROJECT_MARKER in cwd:
+        if isinstance(cwd, str) and is_bench_location(cwd):
             continue
         paths.append(path)
     return tuple(sorted(paths, key=lambda path: path.stat().st_mtime))

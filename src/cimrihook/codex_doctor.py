@@ -35,7 +35,7 @@ from cimrihook.doctor import BANDS, TOP_BAND, percent, tokens_text
 from cimrihook.errors import ConfigError
 from cimrihook.limits import LimitSample, WindowUse
 from cimrihook.simulate import OPENAI, rollout_cwd
-from cimrihook.transcripts import BENCH_PROJECT_MARKER, SECONDS_PER_DAY, parse_line
+from cimrihook.transcripts import SECONDS_PER_DAY, is_bench_location, parse_line
 from cimrihook.weights import (
     MIN_EXTRA_SPANS,
     ClassWeight,
@@ -165,8 +165,7 @@ def recent_rollouts(sessions_dir: Path, days: int, now: float) -> list[CodexRoll
     files = sorted(
         path
         for path in sessions_dir.rglob("rollout-*.jsonl")
-        if path.stat().st_mtime >= min_mtime
-        and BENCH_PROJECT_MARKER not in (rollout_cwd(path) or "")
+        if path.stat().st_mtime >= min_mtime and not is_bench_location(rollout_cwd(path) or "")
     )
     if not files:
         raise ConfigError(
