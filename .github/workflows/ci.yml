@@ -3,6 +3,10 @@ name: ci
 on:
   push:
   pull_request:
+  # Weekly, so a new Claude Code release that breaks the mod shows up without a push.
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
