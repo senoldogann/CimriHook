@@ -564,7 +564,7 @@ or installed-setting change is part of this screening. Exact prompts, native out
 host verification and aggregate opportunity JSON are retained locally in
 `/tmp/cimrihook-bench/preparation-screen-20261005/`.
 
-## Preparation study: completed measurement pilot; full study awaiting approval
+## Preparation study: v1 pilot complete; original full run rejected
 
 The [preregistration](preparation-ab-preregistration.md) defines six tasks from
 three repositories, control/oracle/auto/wrong arms and two reflected repeats per
@@ -574,8 +574,8 @@ plan](superpowers/plans/2026-10-05-preparation-ab.md) and
 all six fixtures / ten steps. Each individual mutation fails the public suite;
 reference fixes pass public, hidden, unchanged-test and reference checks.
 
-**Status: the first-approved measurement pilot is complete; no full-study model
-invocation is authorized or started.** The pilot ran T3 `id-salt-rotation` once
+**Status: the v1 pilot is complete; the user rejected the original 96-episode
+full study. No further model invocation is authorized or started.** The pilot ran T3 `id-salt-rotation` once
 per arm per agent, n=1 task, eight episodes / eight generation invocations,
 without retries. Claude order was control/oracle/auto/wrong; Codex was reversed.
 Every episode used a fresh workspace and CLI session. One earlier infrastructure
@@ -655,7 +655,7 @@ Claude five-hour 38%→39% (+1 point), weekly 65%→65%; Codex five-hour 63%→6
 is not measured zero benchmark use. Development and other concurrent sessions
 are outside the benchmark predictor totals above.
 
-### Revised full-study budget for second approval
+### Version-1 full-study budget (rejected)
 
 A fresh read-only `uv run cimrihook limits --agent codex --days 30 --json` gives
 96.59K input / 5.34K output per five-hour point (about 18.08×), and 442.19K pooled
@@ -697,7 +697,7 @@ At the last observed Codex weekly 64%, only 21 points remain before 85%; the
 remaining primary window. Full work must be scheduled in smaller blocks across
 resets, with fresh readings and explicit authorization after an interruption.
 
-**Recommendation:** retain the full study on hold for budget review. Do not enable
+**Version-1 decision:** the user rejected this full study; do not execute it. Do not enable
 auto packets unconditionally based on this pilot. A future selector revision
 could abstain on weak module-only localization, but changing the frozen selector
 or common evidence policy requires a new preregistration amendment; no such
@@ -720,6 +720,108 @@ The zero-generation preflight has a separate retained result directory.
 
 Mandatory verification after the preflight fix: **98 pytest tests**, Ruff check,
 Ruff format check, mypy and **20 mod tests** pass. No Swift change. No push, PR or tag.
+
+## Selector v2: completed local validation, no new model calls
+
+The [v2 amendment](preparation-ab-preregistration.md#selector-v2-amendment-local-only-authorization)
+requires rank >=100: a production inventory path and positive traceback line.
+Rank-50 test-name module matches stay diagnostic and never enter source packets.
+With no production location, auto produces no packet and exactly the control
+prompt. This removes the pilot's 8065-byte module-prefix packet without needing
+another paid trial of an identical prompt.
+
+The [local report](../bench/preparation/selector-v2-validation-20261005.json)
+replays all six pinned tasks / ten steps with frozen gold transitions between
+linked steps. All original and restored-gold public suites pass. Every mutation
+produces a finite public failure. This is source-location validation, not measured
+agent edits, provider cost or v2 agent quality. **New model invocations: 0.**
+
+| Task / step | Packet | Auto / oracle source bytes | Oracle unique lines covered | Oracle targets hit |
+|---|---|---:|---:|---:|
+| mi-count / 1 | abstain | 0 / 821 | 0 / 29 | 0 / 1 |
+| boltons-ranges / 1 | abstain | 0 / 2570 | 0 / 52 | 0 / 1 |
+| id-salt-rotation / 1 | abstain | 0 / 847 | 0 / 24 | 0 / 2 |
+| id-mixed / 1 | emit | 9466 / 804 | **0 / 26** | 0 / 2 |
+| id-stale / 1 | emit | 9499 / 399 | **0 / 15** | 0 / 1 |
+| id-stale / 2 | abstain | 0 / 443 | 0 / 14 | 0 / 2 |
+| id-memory / 1 | emit | 1271 / 494 | **16 / 16 (100%)** | 1 / 1 |
+| id-memory / 2 | emit | 2238 / 3295 | **47 / 87 (54.02%)** | 1 / 1 |
+| id-memory / 3 | abstain | 0 / 83 | 0 / 2 | 0 / 1 |
+| id-memory / 4 | abstain | 0 / 1375 | 0 / 32 | 0 / 1 |
+
+All six abstentions have byte-identical auto/control prompts, no packet file and
+zero preparation bytes. This does not label unmeasured model spend as zero.
+Coverage is the intersection of unique `(file,line)` sets divided by the complete
+oracle span; duplicated overlapping ranges cannot inflate it. A target hit needs
+at least one shared line. These are localization measures, not behavioral accuracy.
+
+**Remaining weakness:** valid production frames can describe propagation rather
+than the faulty function. On id-mixed/id-stale the unchanged path/line ordering
+fills four slots with upstream serializer ranges, including overlap/duplication,
+and misses the oracle entirely. V2 fixes weak module-prefix emission; it is not a
+complete causal-localization solution. Do not enable it unconditionally or spend
+paid repetitions on those known zero-overlap packets in this proposed run.
+
+### Reduced proposal after both weekly resets
+
+The [unapproved draft](../bench/preparation/reduced-v2-20261009.draft.json) keeps
+only `id-memory`'s four linked steps, where v2 has positive oracle coverage.
+Control/oracle/new-auto, two repeats per agent: **12 episodes, at most 48 model
+invocations, 24 per agent**. Claude C O A A O C, Codex A O C C O A; each treatment
+against control is ABBA/BAAB. Wrong is omitted. Workspaces/sessions remain fresh
+per episode and history carries inside each four-step episode.
+
+This one-task case study cannot supply a task-cluster efficacy CI or cross-repo
+savings/quality claim. Report both repeat differences and order diagnostics.
+It tests useful production localization and the inherited constraints/history
+of later abstaining steps. Broader task validity, T5 refactor variants and the
+mixed-target task remain unmeasured by agents. Those limits are explicit rather
+than concealed by treating four dependent steps as four task clusters.
+
+Earliest planned start **9 October 2026 21:35 UTC**, after the last recorded
+Codex reset at 21:34:35 UTC and Claude reset near 21:00 UTC. Helsinki:
+**10 October 00:35 EEST**. No background scheduling or automatic start. Fresh
+reset/quota/version/calibration confirmation and separate user approval are required.
+The current runner does not accept this draft schema; reduced-stage admission
+and accounting must be implemented/verified before any approved execution.
+
+Use the highest v1 arm rate, not an assumed saving, with 2x carried-context growth
+and then 2x reserve. Weekly uses the frozen pooled coefficient upper endpoint.
+
+| Provider/unit | Growth scenario | 2x reserve | User cap |
+|---|---:|---:|---:|
+| Claude provider USD | $6.9354 | **$13.8708** | $15 |
+| Codex five-hour predicted points | 25.1119 | **50.2239** | fresh capacity check |
+| Codex weekly pooled proxy | 4.8772 | **9.7544** | 10 points |
+
+These scenarios fit the requested planning caps but are not guaranteed upper
+bounds. Refit after reset with b13628d-aware experiment exclusion. Refuse launch
+if the new reserve exceeds either user cap or the native windows lack capacity;
+no silent arm/task drop. Preserve the >85% weekly hard stop, all failed spend,
+unknown-cost stops, common $0.50 Claude call ceiling and no retries. The old live
+pilot permission is disabled; immutable v1 observations remain unchanged. Rebase
+onto b13628d only at integration time; no shared-checkout change here.
+
+Raw local evidence/packets are under
+`/tmp/cimrihook-bench/preparation-selector-v2-local-20261005/`. The local selector
+has not demonstrated a v2 provider saving; the original pilot results retain
+version-1 labeling. A further broad study is not approved.
+
+V2 mandatory gates pass: **99 pytest tests**, Ruff check, Ruff format check,
+mypy (54 source files) and **20 mod tests**. No Swift change.
+
+Reproduce the local-only replay with a new, unused work directory:
+
+```bash
+uv run python -m cimrihook.bench_preparation_validation \
+  --study bench/preparation/full-20261005.json \
+  --work-dir /tmp/cimrihook-bench/preparation-selector-v2-recheck \
+  --output /tmp/cimrihook-bench/selector-v2-recheck.json
+```
+
+This command prepares fixtures and runs public tests; it never consumes a provider
+execution approval or calls a model.
+
 
 ## Reproduce existing A/B studies
 

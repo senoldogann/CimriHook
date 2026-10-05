@@ -473,3 +473,97 @@ constructed or launched; no episode exists. That zero-generation preflight is
 archived with the `-preflight` suffix. The corrected block preflight is exercised
 by a local file/record integration test before the first pilot generation.
 This is an infrastructure correction, not a replacement of a model attempt.
+
+## Selector v2 amendment: local-only authorization
+
+The user rejected the original full run after the measurement pilot. Its results
+remain version-1 observations; no full generation or replacement pilot is approved.
+
+Before new local validation, freeze this threshold: source candidates must have
+**rank >=100**, meaning a supported traceback with a production inventory path and
+positive line number. Test-module matches have rank 50 and are diagnostic only:
+never include their lines 1–60 in a packet, even alongside a stronger candidate.
+If no valid production candidate exists, select zero targets and produce no packet;
+the resulting prompt/config must match control exactly. Invalid/out-of-file ranges
+remain protocol errors, not silent recovery. Existing maximum-four ranges, ordering,
+±30 lines, current-file clamping and packet byte fitting remain unchanged.
+
+This rule responds to the pilot's 8065-byte auto source versus 847-byte oracle
+source: the module prefixes omitted both faulty functions yet added input cost.
+The threshold expresses evidence of a location, not evidence that the frame is
+causal. Selection cannot use oracle spans, mutation metadata or hidden tests.
+Host-only overlap analysis uses those spans only after auto selection and packet
+construction. This is a version change learned from a pilot, not an independent
+confirmation of an unchanged hypothesis.
+
+Local validation will replay all six tasks / ten steps, with gold host transitions
+for the dependent steps. For each step, report abstention, selected targets,
+source/packet bytes, unique selected/oracle line counts, intersection, oracle-span
+coverage, and whether an empty auto prompt is byte-identical to control. No
+provider cost or agent quality result is inferred from these local checks.
+
+### V2 local result and reduced paid-study proposal (unapproved)
+
+Local validation emitted packets on 4/10 steps and abstained on 6/10. All six
+empty prompts equal control exactly. Rank 100 does not ensure causal localization:
+T4 and T5 step 1 still select upstream serializer frames with zero oracle overlap.
+Do not spend paid repetitions on those known zero-overlap packets. The three
+wholly abstaining tasks also need no paid duplicate-auto arms.
+
+The new proposal therefore retains only T6 `id-memory`, including all four
+linked steps, with control/oracle/auto and two mirrored repetitions per agent:
+12 episodes / at most 48 generation invocations, 24 per agent. No wrong arm.
+Claude sequence C O A A O C; Codex A O C C O A. Filtering either sequence to
+control versus either treatment yields ABBA or BAAB. A workspace and session are
+fresh per episode; history carries only inside its four steps. Later abstaining
+steps add no packet but can still inherit earlier preparation in that episode.
+This deliberately narrowed case study has **one task cluster**, not four
+independent step clusters: no task-bootstrap efficacy CI or population-level
+quality/savings claim. Retain both repeat-paired differences, order diagnostics,
+all failures/spend, and all four per-step quality flags under the existing rules.
+The five omitted tasks remain in the local selector validation report.
+
+The complete, non-executable proposal is
+`bench/preparation/reduced-v2-20261009.draft.json` (`execution_approved=false`).
+The original 96-episode full study is rejected. The live pilot template's old
+execution permission is revoked; immutable historical pilot artifacts are unchanged.
+Any future reduced-stage adapter must enforce approval and the following admission
+checks before launching provider generation. This turn makes no such launch.
+
+Earliest proposed start: **2026-10-09T21:35:00Z**, after both last-recorded weekly
+resets (Claude ~21:00Z; Codex 21:34:35Z). In Helsinki this is **10 October 00:35
+EEST**. Confirm the actual reset and fresh native readings at execution time;
+this is not a scheduler or permission for an automatic delayed run. Freeze current
+CLI/model versions and recalibration before any new generation. The calibration
+reader must include b13628d's experiment exclusion; rebase onto that commit at
+integration time, without changing the shared main checkout in this phase.
+
+Budget does not assume v2 savings. Use the highest v1 arm per-call rate for every
+invocation: Claude $0.1444878; Codex 0.5231654374 five-hour predicted points and
+0.1016083118 weekly proxy points at the frozen pooled coefficient upper endpoint.
+Allow a **2x carried-context growth scenario**, then a further **2x reserve**:
+
+| All 24 invocations per agent | Growth scenario | With 2x reserve | User ceiling |
+|---|---:|---:|---:|
+| Claude provider USD | $6.9354 | **$13.8708** | **$15** |
+| Codex five-hour predicted points | 25.1119 | **50.2239** | Primary-window capacity guard |
+| Codex weekly upper-coefficient pooled proxy | 4.8772 | **9.7544** | **10 points** |
+
+Growth/reserve are engineering scenarios, not upper bounds. Weekly separated
+input/output weights remain unidentified; this is a labeled proxy, not an
+attributable account percentage. A new weekly upper coefficient above
+0.0000024830082778 would exceed the 10-point reserve at these fixed token/rate
+assumptions: refuse launch, do not silently change n or omit an arm. Likewise
+refuse if the recalculated Claude forecast reserve exceeds $15, or the complete
+block plus reserve lacks primary/weekly capacity. Refresh calibration after reset,
+not after seeing treatment outcomes.
+
+Proposed common Claude per-call ceiling is $0.50 / 12 turns; budget admission must
+reserve a whole $0.50 call against remaining cumulative $15 and keep an in-flight
+request margin. Record provider ceiling overshoot; a forecast is not a provider
+quota cap. Before each Codex call reserve the next growth-scenario allowance
+against the cumulative 10-point weekly proxy ceiling. Stop on exhausted study
+allowance, unknown cost, telemetry/protocol errors, changed account/config or any
+native weekly >85%, without retry or automatic reset-spanning resume. The relevant
+account window may move due to concurrent work; do not attribute its delta to
+these episodes without an otherwise quiet-account measurement.

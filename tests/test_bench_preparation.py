@@ -37,8 +37,9 @@ from cimrihook.bench_preparation_stats import (
     task_bootstrap,
 )
 from cimrihook.bench_preparation_tasks import full_suite
+from cimrihook.bench_preparation_validation import source_overlap
 from cimrihook.errors import BenchError
-from cimrihook.preparation import parse_target, source_excerpt
+from cimrihook.preparation import SourceExcerpt, parse_target, source_excerpt
 from cimrihook.quota import QuotaSnapshot, QuotaWindow
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -68,10 +69,15 @@ File "/outside/signer.py", line 14
     )
     assert [(t.path, t.start, t.end) for t in selected.targets] == [
         ("src/itsdangerous/signer.py", 212, 272),
-        ("src/itsdangerous/serializer.py", 1, 60),
     ]
     assert len(selected.candidates) == 2
     assert any("traversal" in message for message in selected.rejected)
+    assert any("weak localization abstained" in message for message in selected.rejected)
+    weak = select_targets(
+        "FAILED tests/test_signer.py::test_x", "workspace", ("src/itsdangerous",), inventory
+    )
+    assert weak.targets == () and len(weak.candidates) == 1
+    assert weak.candidates[0].rank == 50
     ambiguous = select_targets(
         "FAILED tests/test_signer.py::test_x",
         "workspace",
@@ -79,11 +85,28 @@ File "/outside/signer.py", line 14
         ("src/a/signer.py", "src/b/signer.py"),
     )
     assert ambiguous.targets == ()
-    assert "2 matching sources" in ambiguous.rejected[0]
+    assert any("2 matching sources" in message for message in ambiguous.rejected)
     assert (
         select_targets("no supported failure locations", "workspace", ("src",), inventory).targets
         == ()
     )
+
+
+def test_overlap_uses_unique_lines_and_keeps_abstention_unmeasured() -> None:
+    auto = (
+        SourceExcerpt("module.py", "hash", 1, 4, 10, False, ""),
+        SourceExcerpt("module.py", "hash", 3, 6, 10, False, ""),
+    )
+    oracle = (SourceExcerpt("module.py", "hash", 5, 8, 10, False, ""),)
+    overlap = source_overlap(auto, oracle)
+    assert (
+        overlap.auto_unique_lines,
+        overlap.oracle_unique_lines,
+        overlap.shared_unique_lines,
+    ) == (6, 4, 2)
+    assert overlap.oracle_coverage == 0.5 and overlap.auto_precision == pytest.approx(1 / 3)
+    empty = source_overlap((), oracle)
+    assert empty.auto_precision is None and empty.oracle_coverage == 0.0
 
 
 def test_full_schedule_is_mirrored_and_generic_tasks_are_unchanged() -> None:

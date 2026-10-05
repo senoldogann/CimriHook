@@ -27,6 +27,7 @@ from cimrihook.preparation import SourceTarget
 STUDY_KIND: Final = "preparation-ab"
 SOURCE_BUDGET: Final = 24_000
 SEED: Final = 20_261_005
+AUTO_MIN_RANK: Final = 100
 TRACE_FRAME: Final = re.compile(r'File "([^"\n]+\.py)", line (\d+)')
 PYTEST_FRAME: Final = re.compile(r"(?m)(?:^|\s)([^\s:\n]+\.py):(\d+)(?=[:\s])")
 TEST_NODE: Final = re.compile(r"(?<![\w/])((?:tests?/)[^\s:]+\.py)(?=::)")
@@ -234,7 +235,7 @@ def source_path(path: str, roots: Sequence[str], inventory: Sequence[str]) -> bo
 def select_targets(
     output: str, workspace: str, roots: Sequence[str], inventory: Sequence[str]
 ) -> Selection:
-    """Select from failed traceback paths/lines and unambiguous failing test module names."""
+    """Select production traceback lines; module-only matches remain diagnostic."""
     candidates: list[Candidate] = []
     rejected: list[str] = []
     test_paths: set[str] = set()
@@ -268,11 +269,16 @@ def select_targets(
     for candidate in ranked:
         unique.setdefault((candidate.path, candidate.line), candidate)
     ordered = tuple(unique.values())
+    strong = tuple(c for c in ordered if c.rank >= AUTO_MIN_RANK)
     targets = tuple(
-        SourceTarget(c.path, max(1, c.line - 30), c.line + 30 if c.rank == 100 else 60, None)
-        for c in ordered[:4]
+        SourceTarget(c.path, max(1, c.line - 30), c.line + 30, None) for c in strong[:4]
     )
-    rejected.extend(f"candidate limit:{c.path}:{c.line}" for c in ordered[4:])
+    rejected.extend(
+        f"weak localization abstained:{c.path}:{c.line}" for c in ordered if c.rank < AUTO_MIN_RANK
+    )
+    rejected.extend(f"candidate limit:{c.path}:{c.line}" for c in strong[4:])
+    if not strong:
+        rejected.append("no production traceback location; no preparation packet")
     return Selection(targets, ordered, tuple(sorted(set(rejected))))
 
 

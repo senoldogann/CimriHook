@@ -3,7 +3,7 @@
   "schema_version": 1,
   "stage": "pilot",
   "design_commit": "acd52e4ec69dbf5e5828085877445885c8532ecd",
-  "execution_approved": true,
+  "execution_approved": false,
   "task_paths": [
     "bench/tasks/preparation-ab-id-salt-rotation.json"
   ],
