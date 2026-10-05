@@ -1,0 +1,79 @@
+{
+  "kind": "preparation-ab",
+  "id": "id-salt-rotation",
+  "repo": "https://github.com/pallets/itsdangerous.git",
+  "ref": "2.2.0",
+  "commit": "096c8d42545d3b68ea21a4f890fb2b2d8979c0bd",
+  "source_roots": [
+    "src/itsdangerous"
+  ],
+  "packages": [
+    "iniconfig==2.3.0",
+    "packaging==26.3",
+    "pluggy==1.6.0",
+    "pygments==2.21.0",
+    "pytest==9.1.1",
+    "freezegun==1.4.0",
+    "python-dateutil==2.9.0.post0",
+    "six==1.17.0",
+    "flit_core==3.12.0"
+  ],
+  "test_command": [
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-q"
+  ],
+  "expected_failures": 15,
+  "prompt": "The public test suite fails because of defects in production code. Fix the production code. Do not modify, add, or delete test files. Run the entire suite with `.venv/bin/python -m pytest -q`. Finish when the suite passes. Keep the final answer brief.",
+  "mutations": [
+    {
+      "path": "src/itsdangerous/serializer.py",
+      "find": "return self.signer(self.secret_keys, salt=salt, **self.signer_kwargs)",
+      "replace": "return self.signer(self.secret_keys, salt=self.salt, **self.signer_kwargs)"
+    },
+    {
+      "path": "src/itsdangerous/signer.py",
+      "find": "for secret_key in reversed(self.secret_keys):",
+      "replace": "for secret_key in reversed(self.secret_keys[-1:]):"
+    }
+  ],
+  "study_steps": [
+    {
+      "prompt": "The public test suite fails because of defects in production code. Fix the production code. Do not modify, add, or delete test files. Run the entire suite with `.venv/bin/python -m pytest -q`. Finish when the suite passes. Keep the final answer brief.",
+      "mutations": [
+        {
+          "path": "src/itsdangerous/serializer.py",
+          "find": "return self.signer(self.secret_keys, salt=salt, **self.signer_kwargs)",
+          "replace": "return self.signer(self.secret_keys, salt=self.salt, **self.signer_kwargs)"
+        },
+        {
+          "path": "src/itsdangerous/signer.py",
+          "find": "for secret_key in reversed(self.secret_keys):",
+          "replace": "for secret_key in reversed(self.secret_keys[-1:]):"
+        }
+      ],
+      "oracle": [
+        "src/itsdangerous/serializer.py::Serializer.make_signer",
+        "src/itsdangerous/signer.py::Signer.verify_signature"
+      ],
+      "wrong": [
+        "src/itsdangerous/serializer.py::Serializer.dump_payload",
+        "src/itsdangerous/signer.py::Signer.validate"
+      ],
+      "public_check": "none",
+      "hidden_check": "salt-rotation",
+      "reference": "bytes",
+      "wrong_offsets": [
+        {
+          "first": -4,
+          "last": 6
+        },
+        {
+          "first": -1,
+          "last": 8
+        }
+      ]
+    }
+  ]
+}

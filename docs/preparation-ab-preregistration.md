@@ -286,7 +286,7 @@ The coefficients' CIs are the existing fitting model's 95% intervals, not new st
 bootstrap intervals or out-of-sample forecast intervals.
 
 Let `U` be uncached input, `C` cached input, `O` total output. Effective input is
-`I = U + 0.1*C`. Preserve reasoning as a separate diagnostic; do not add it twice
+`I = U + W + 0.1*C`, where W is cache-write input (zero in the historical Codex pilot). Preserve reasoning as a separate diagnostic; do not add it twice
 if included in provider output. Preserve cache-write counts where the provider has
 them. Codex primary predictor:
 
@@ -412,3 +412,57 @@ vs predicted window points, stops and limitations. Keep **established**, histori
 **screening pilot**, new **measurement pilot**, and preregistered exploratory full
 study distinct. Answer each uncertainty, explicitly leaving it unresolved when
 the sample or measurement does not support an answer.
+
+## Execution freeze after first approval
+
+The user explicitly approved the measurement pilot with “Onayliyorum.” The pilot
+remains one T3 episode per arm per agent, eight scheduled episodes and no efficacy
+CI. The full manifest remains `execution_approved=false`. No model invocation had
+started when this execution amendment was written.
+
+Local eligibility established all six tasks / ten steps: original and reference
+public suites pass, each individual mutation produces finite public failures,
+and reference fixes pass public, private, integrity and reference checks. The
+machine-readable evidence is `bench/preparation/eligibility-20261005.json`; raw
+host evidence is retained at `/tmp/cimrihook-bench/preparation-eligibility-final-20261005/`.
+Expected initial failure counts are T1=2, T2=1, T3=15, T4=235, T5=25, T6=4.
+
+Before generation, local representation corrections resolved the src-layout
+editable install for Itsdangerous, selected the real implementation behind
+`@overload` declarations, and cleared stale bytecode after same-size fast edits.
+Wrong ranges are frozen offsets around the already specified wrong symbols,
+disjoint from oracle excerpts and within 20% of oracle source bytes. T4's
+`URLSafeSerializer` range ends at the actual file end (line 83). T6 step 2 also
+uses `Signer.unsign` as wrong context to satisfy the size match. T5's second
+mutation locates the extracted helper with AST positions, so formatting cannot
+prevent the mutation. These changes preserve tasks, arms, n, metrics and allowance.
+
+Auto budget fitting halves the lowest-ranked remaining range around its midpoint
+until the complete source-and-metadata body fits 24000 bytes; a one-line range
+that still exceeds the budget is explicitly excluded. The fitted ranges and
+narrowing/exclusion reasons are archived. This never invents another target.
+Prompt text is sent through stdin to avoid OS argument-size limits. The complete
+common public failure output remains identical across first-step arms.
+
+Before each task block, reserve 2x the historical Codex per-call rate for every
+scheduled step in that block. Five-hour capacity must remain below 95%; the
+weekly pooled coefficient upper endpoint must remain below 85%. Claude point
+forecast is unavailable; enforce measured windows and the approved USD allowance.
+During generation both providers' relevant native windows are checked, including
+Claude model-specific weekly windows. Reset timestamp changes beyond 60 seconds
+of rounding interrupt the block. Failed quality or a known-cost timeout/turn
+ceiling ends that episode; its spend remains in the analysis. Protocol, telemetry,
+provider, quota or cumulative allowance errors stop the study without replacement.
+
+Complete failure evidence sizes from local eligibility are T1=2038, T2=2458,
+T3=11144, T4=592820 and T5 first step=102970 bytes; T6's four steps total 11410
+bytes. T4 and T5 substantially exceed the pilot input. The historical flat rate
+is not a validated upper bound for the full study, even with 2x reserve. The
+second approval must consider these inputs and carried-session growth; this
+amendment does not silently truncate evidence or authorize the full study.
+
+Host Python is pinned to the fixture's Python 3.12 environment; actual patch
+version and installed package versions are archived per episode. Repo SHAs,
+task hashes, implementation commit/source hashes, CLI versions, schedule and
+provider counters are retained. `bench-calibrate` reports measured compaction
+counters separately and makes no simulated preparation-savings claim.

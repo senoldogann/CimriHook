@@ -494,7 +494,12 @@ def load_tasks(tasks_dir: Path) -> tuple[Task, ...]:
     paths = sorted(tasks_dir.glob("*.json"))
     if not paths:
         raise BenchError(f"no task definitions (*.json) in {tasks_dir}")
-    return tuple(load_task(path) for path in paths)
+    return tuple(
+        load_task(path)
+        for path in paths
+        if json_object(json.loads(path.read_text(encoding="utf-8")), str(path)).get("kind")
+        != "preparation-ab"
+    )
 
 
 def select_tasks(tasks: Sequence[Task], task_ids: Sequence[str]) -> tuple[Task, ...]:

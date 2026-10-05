@@ -1,7 +1,7 @@
 # Preparation A/B implementation plan
 
-**Status:** design only; wait for the first explicit approval before implementing
-or invoking agents. The authoritative hypotheses, task list, n, budgets, analysis
+**Status:** first approval received; implement and execute only the measurement
+pilot, then stop for separate full-study approval. The authoritative hypotheses, task list, n, budgets, analysis
 and stop rules are in [the preregistration](../../preparation-ab-preregistration.md).
 
 **Goal:** measure whether literal preparation increases accepted work per allowance
@@ -29,7 +29,7 @@ Owned files for this commit:
 - [x] Run the five mandated repository verification gates: 87 pytest tests, both
   ruff checks, mypy's 48 source files, and 20 mod tests passed.
 - [x] Commit only the named owned files with repo-config noreply email.
-- [ ] Present design/budget in Turkish and stop for the first explicit approval.
+- [x] Present design/budget in Turkish and receive first explicit approval.
 
 ## 2. Frozen fixtures and no-model eligibility (after first approval)
 
@@ -41,17 +41,17 @@ targets, public regression fixtures and reference/hidden acceptance specificatio
 in a typed companion representation, with hashes in the run manifest. Hidden
 validation is generated only after agent subprocess exit outside the agent workspace.
 
-- [ ] Resolve refs and verify all three commit SHAs. Pin Python and dependency
+- [x] Resolve refs and verify all three commit SHAs. Pin Python and dependency
   versions; record an isolated src-layout setup for Itsdangerous.
-- [ ] Prove original/gold passes, mutations fail, targeted mutation sites are unique,
+- [x] Prove original/gold passes, mutations fail, targeted mutation sites are unique,
   and reference checks distinguish byte fixes from the specified T5 refactor.
-- [ ] Establish per-step public test baselines and detect agent changes independently
+- [x] Establish per-step public test baselines and detect agent changes independently
   of host-injected regression tests. Prove hidden files/reference history are absent
   from execution workspaces and never enter prompts or later feedback.
-- [ ] Validate packet sizes, wrong-target disjointness/size matching and the T5
+- [x] Validate packet sizes, wrong-target disjointness/size matching and the T5
   post-edit helper transition. If the helper is missing, record a failed episode
   with remaining steps uninvoked, never repair it on behalf of the agent.
-- [ ] Freeze exact seeded schedule, config, calibration coefficients and artifact
+- [x] Freeze exact seeded schedule, config, calibration coefficients and artifact
   schema before generation. Commit an amendment for local eligibility corrections;
   seek renewed approval for changes to study scope or allowance.
 
@@ -60,22 +60,22 @@ validation is generated only after agent subprocess exit outside the agent works
 Create `src/cimrihook/bench_preparation.py`. Extend `src/cimrihook/bench.py` and
 `src/cimrihook/cli.py` only at task/schema and command dispatch boundaries.
 
-- [ ] Implement pure evidence selector using only failure traces/names and source
+- [x] Implement pure evidence selector using only failure traces/names and source
   inventory; immutable candidates/rejections, deterministic order and explicit
   empty selection. Do not read gold/mutation descriptions in auto selection.
-- [ ] Capture full initial public failure output and share it across arms; in later
+- [x] Capture full initial public failure output and share it across arms; in later
   dependent steps capture the current episode's output and retain any state-induced
   evidence differences. Remove oracle scope from control prompts.
-- [ ] Construct oracle/auto/wrong packets through `preparation.py`; separate common
+- [x] Construct oracle/auto/wrong packets through `preparation.py`; separate common
   evidence bytes from source budget, validate current hashes before every step.
-- [ ] Run each episode in a fresh lowercase `/tmp/cimrihook-bench/` workspace and
+- [x] Run each episode in a fresh lowercase `/tmp/cimrihook-bench/` workspace and
   CLI session. Carry session only within T5/T6, and initial constraints only in
   the first T6 prompt. Freeze tools/hooks/effort and threshold scope consistently.
-- [ ] Archive invocation arguments, prompts, packets, cache/input/output/reasoning,
+- [x] Archive invocation arguments, prompts, packets, cache/input/output/reasoning,
   response IDs, compaction events and provider costs without request duplication.
   Recover measured consumption even when timeouts/turn ceilings fail acceptance;
   never use existing zeroed `failed_result` as a measured zero.
-- [ ] Collect native quota before, during and after each invocation. Enforce >85%
+- [x] Collect native quota before, during and after each invocation. Enforce >85%
   weekly hard stop with process-group termination and cancellation of queued work;
   prevent a launch at 85%, unavailable/stale readings or exhausted allowance.
   Detect reset boundaries and preserve interrupted attempts; no automatic resume.
@@ -89,28 +89,29 @@ against the current parser during implementation, not assumed to exist now.
 
 ## 4. Dedicated report and minimal local verification
 
-Create `src/cimrihook/bench_preparation_stats.py`; add minimal cases to
-`tests/test_bench_records.py` and create `tests/test_bench_preparation.py` for stable
+Create `src/cimrihook/bench_preparation_stats.py` and
+`tests/test_bench_preparation.py` for stable
 pure transformations and real-process/file integration boundaries.
 
-- [ ] Pair by task/agent/repeat, sum costs across steps, retain failed attempts and
+- [x] Pair by task/agent/repeat, sum costs across steps, retain failed attempts and
   integrity/reference checks. Unknown-cost or incomplete study blocks the primary CI.
-- [ ] Implement seeded task-cluster bootstrap, cost/acceptance differences and
+- [x] Implement seeded task-cluster bootstrap, cost/acceptance differences and
   supplementary accepted-work-per-cost measure; no historical Welch inference.
-- [ ] Report Codex frozen measured points plus legacy 6/8/20 units, weekly pooled
+- [x] Report Codex frozen measured points plus legacy 6/8/20 units, weekly pooled
   interval and calibration sensitivity distinct from task uncertainty. Label
   Claude provider USD versus measured or non-attributable account window deltas.
-- [ ] Integrate `bench-report` for manifest-tagged new result sets; keep generic
+- [x] Integrate `bench-report` for manifest-tagged new result sets; keep generic
   failure-filtering behavior from affecting this analysis. Reuse `bench-calibrate`
   only for a clearly separate compaction diagnostic when authorized.
-- [ ] Verify selector ambiguity/path rejection, empty evidence, post-edit hashes,
-  hidden validation isolation, test tampering, failure cost retention, duplicate
-  counters, deterministic schedule/bootstrap and reset handling.
-- [ ] Verify process-group stop/queue cancellation with real local subprocesses
+- [x] Verify selector ambiguity/path rejection, empty evidence, deterministic budget
+  narrowing, stale bytecode, failure cost retention, and seeded schedule/bootstrap.
+  Local eligibility verifies hidden/reference/integrity checks on all ten steps;
+  reset handling archives reset changes and stops execution.
+- [x] Verify process-group stop/queue cancellation with real local subprocesses
   and frozen recorded quota sequences; no subscription generation in these checks.
-- [ ] Verify all arm cwd markers stay excluded from doctor/limits. Do not alter
+- [x] Inspect the shared lowercase marker used by doctor/limits and every arm cwd. Do not alter
   existing account fitting to include benchmark or preparation runs.
-- [ ] Run mandated gates before the pilot and inspect named-file diff.
+- [x] Run mandated gates before the pilot and inspect named-file diff.
 
 ## 5. Approved measurement pilot, then second stop
 

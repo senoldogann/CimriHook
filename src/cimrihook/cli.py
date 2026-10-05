@@ -13,6 +13,7 @@ from typing import Final, NoReturn
 
 from cimrihook import __version__
 from cimrihook.bench import (
+    SAFE_NAME,
     Agent,
     Protocol,
     RunResult,
@@ -27,6 +28,10 @@ from cimrihook.bench import (
     run_plan,
     select_tasks,
 )
+from cimrihook.bench_preparation import load_study, study_plan_json
+from cimrihook.bench_preparation_run import execute_study
+from cimrihook.bench_preparation_stats import calibration_directory, report_directory
+from cimrihook.bench_preparation_tasks import eligibility
 from cimrihook.closure_probe import run_probe
 from cimrihook.codex_config import (
     apply_codex_remove,
@@ -297,6 +302,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bench.add_argument("--results-dir", default=DEFAULT_RESULTS_DIR)
     bench.add_argument("--work-dir", default=DEFAULT_WORK_DIR)
+    bench.add_argument("--preparation-study", help="registered preparation study manifest")
+    bench.add_argument(
+        "--plan-only", action="store_true", help="print the preparation schedule without generation"
+    )
+    bench.add_argument(
+        "--eligibility-only",
+        action="store_true",
+        help="validate preparation fixtures locally without generation",
+    )
+    bench.add_argument("--eligibility-dir", help="completed local fixture eligibility directory")
     bench_report = commands.add_parser("bench-report", help="summarize an A/B result set")
     bench_report.add_argument("--name", required=True)
     bench_report.add_argument("--results-dir", default=DEFAULT_RESULTS_DIR)
@@ -404,8 +419,13 @@ def parse_variants(raw: str) -> tuple[Variant, ...]:
     return tuple(Variant(value) for value in values)
 
 
-def bench_run(args: argparse.Namespace) -> None:
+def bench_run(args: argparse.Namespace, arguments: Sequence[str]) -> None:
     """Builds the A/B matrix and runs the missing runs."""
+    if args.preparation_study is not None:
+        preparation_run(args, arguments)
+        return
+    if args.plan_only or args.eligibility_only or args.eligibility_dir is not None:
+        raise BenchError("preparation-only options require --preparation-study")
     name = str(args.name)
     all_tasks = load_tasks(Path(str(args.tasks_dir)))
     tasks = all_tasks if args.tasks is None else select_tasks(all_tasks, split_csv(str(args.tasks)))
@@ -426,6 +446,57 @@ def bench_run(args: argparse.Namespace) -> None:
         Path(str(args.work_dir)) / name,
         int(args.concurrency),
         int(args.timeout),
+    )
+
+
+def preparation_run(args: argparse.Namespace, arguments: Sequence[str]) -> None:
+    """The registered manifest owns all matrix/model/budget options; no automatic resume."""
+    if not SAFE_NAME.fullmatch(str(args.name)):
+        raise BenchError("preparation result name must be a plain name")
+    forbidden = {
+        "--tasks",
+        "--tasks-dir",
+        "--protocols",
+        "--agents",
+        "--variants",
+        "--reps",
+        "--claude-model",
+        "--codex-model",
+        "--effort",
+        "--window",
+        "--concurrency",
+        "--timeout",
+    }
+    conflicts = sorted({arg.split("=", 1)[0] for arg in arguments} & forbidden)
+    if conflicts:
+        raise BenchError(f"--preparation-study conflicts with matrix options {conflicts}")
+    if args.plan_only and args.eligibility_only:
+        raise BenchError("--plan-only and --eligibility-only are mutually exclusive")
+    manifest = Path(str(args.preparation_study)).resolve()
+    root = Path.cwd()
+    study = load_study(manifest, root)
+    if args.plan_only:
+        print(study_plan_json(study))
+        return
+    work = Path(str(args.work_dir)).resolve() / str(args.name)
+    if args.eligibility_only:
+        work.mkdir(parents=True, exist_ok=False)
+        for task in study.tasks:
+            report = eligibility(task, work)
+            (work / f"{task.task.id}.json").write_text(
+                json.dumps(report, indent=2) + "\n", encoding="utf-8"
+            )
+            print(json.dumps(report), flush=True)
+        return
+    if args.eligibility_dir is None:
+        raise BenchError("generation requires --eligibility-dir with verified local fixtures")
+    execute_study(
+        study,
+        manifest,
+        root,
+        Path(str(args.results_dir)).resolve() / str(args.name),
+        work,
+        Path(str(args.eligibility_dir)).resolve(),
     )
 
 
@@ -578,9 +649,13 @@ def main() -> None:
                     write_mod(mod_dir(config.home))
                 print(apply_init(plan, config.home, time.time()))
         elif command == "bench-run":
-            bench_run(args)
+            bench_run(args, sys.argv[1:])
         elif command == "bench-report":
             results_dir = Path(str(args.results_dir)) / str(args.name)
+            if (results_dir / "study.json").exists():
+                study = load_study(results_dir / "study.json", Path.cwd())
+                print(report_directory(results_dir, study))
+                return
             results = load_results(results_dir)
             print(
                 bench_report_text(results, results_dir, optional_text(args.background), config.home)
@@ -594,6 +669,9 @@ def main() -> None:
             )
         elif command == "bench-calibrate":
             results_dir = Path(str(args.results_dir)) / str(args.name)
+            if (results_dir / "study.json").exists():
+                print(calibration_directory(results_dir))
+                return
             print(render_calibration(load_results(results_dir)))
         elif command == "settings":
             print(json.dumps(merge_settings(selected_blocks(args, config.home)), indent=2))

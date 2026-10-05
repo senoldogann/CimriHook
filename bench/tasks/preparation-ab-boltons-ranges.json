@@ -1,0 +1,59 @@
+{
+  "kind": "preparation-ab",
+  "id": "boltons-ranges",
+  "repo": "https://github.com/mahmoud/boltons.git",
+  "ref": "26.2.0",
+  "commit": "4332b35a278d694f30c99881faa61cde695c7a96",
+  "source_roots": [
+    "boltons"
+  ],
+  "packages": [
+    "iniconfig==2.3.0",
+    "packaging==26.3",
+    "pluggy==1.6.0",
+    "pygments==2.21.0",
+    "pytest==9.1.1"
+  ],
+  "test_command": [
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-q"
+  ],
+  "expected_failures": 1,
+  "prompt": "The public test suite fails because of defects in production code. Fix the production code. Do not modify, add, or delete test files. Run the entire suite with `.venv/bin/python -m pytest -q`. Finish when the suite passes. Keep the final answer brief.",
+  "mutations": [
+    {
+      "path": "boltons/iterutils.py",
+      "find": "if input_offset + initial_chunk_len >= input_stop:",
+      "replace": "if input_offset + initial_chunk_len > input_stop:"
+    }
+  ],
+  "study_steps": [
+    {
+      "prompt": "The public test suite fails because of defects in production code. Fix the production code. Do not modify, add, or delete test files. Run the entire suite with `.venv/bin/python -m pytest -q`. Finish when the suite passes. Keep the final answer brief.",
+      "mutations": [
+        {
+          "path": "boltons/iterutils.py",
+          "find": "if input_offset + initial_chunk_len >= input_stop:",
+          "replace": "if input_offset + initial_chunk_len > input_stop:"
+        }
+      ],
+      "oracle": [
+        "boltons/iterutils.py::chunk_ranges"
+      ],
+      "wrong": [
+        "boltons/iterutils.py::chunked_iter"
+      ],
+      "public_check": "none",
+      "hidden_check": "ranges",
+      "reference": "bytes",
+      "wrong_offsets": [
+        {
+          "first": -21,
+          "last": 44
+        }
+      ]
+    }
+  ]
+}

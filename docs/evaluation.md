@@ -564,7 +564,7 @@ or installed-setting change is part of this screening. Exact prompts, native out
 host verification and aggregate opportunity JSON are retained locally in
 `/tmp/cimrihook-bench/preparation-screen-20261005/`.
 
-## Preregistered preparation study: awaiting approval
+## Preregistered preparation study: measurement pilot approved
 
 The [preparation A/B preregistration](preparation-ab-preregistration.md) freezes an
 exploratory six-task, three-repository design with control/oracle/auto/wrong arms,
@@ -573,10 +573,10 @@ Its primary comparison is deterministic no-model auto preparation versus governo
 without a packet. The [implementation plan](superpowers/plans/2026-10-05-preparation-ab.md)
 keeps new code beside the existing benchmark runner.
 
-**Current status: design only. Zero new model benchmark invocations or attributable
-benchmark window points.** The proposed measurement pilot needs first explicit
-approval: one episode per arm per agent, eight total, n=1 task and no efficacy CI.
-The full study requires separate approval after that pilot. No new quality or
+**Current status: pilot approved; infrastructure locally verified before generation.
+Zero new model benchmark invocations at the execution freeze.** The approved
+measurement pilot is one episode per arm per agent, eight total, n=1 task and no efficacy CI.
+The full study requires separate approval after that pilot. Six fixtures / ten steps pass no-model eligibility. No agent quality or
 repeatability result is established. Full-run CIs will bootstrap six task clusters;
 shared repository provenance and the small sample limit generalization.
 
