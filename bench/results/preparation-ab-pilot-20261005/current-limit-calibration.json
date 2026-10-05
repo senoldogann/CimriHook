@@ -1,0 +1,25 @@
+{
+  "source_command": "uv run cimrihook limits --agent codex --days 30 --json",
+  "observed_at": "2026-10-05T02:11:53.146061+00:00",
+  "windows": [
+    {
+      "kind": "five_hour",
+      "spans": 1694,
+      "points": 2260.0,
+      "input_tokens": 96587.72983488336,
+      "output_tokens": 5341.958669708432,
+      "output_share": 0.3660471575460789,
+      "base_units": 75919.12533500743
+    },
+    {
+      "kind": "seven_day",
+      "spans": 361,
+      "points": 489.0,
+      "input_tokens": null,
+      "output_tokens": null,
+      "output_share": null,
+      "base_units": 442194.65369098977
+    }
+  ],
+  "interpretation": "Budget diagnostic only; primary pilot report retains preregistered frozen coefficients. Weekly separated weights unidentifiable; current CLI does not expose an interval. Frozen pooled interval reported separately."
+}

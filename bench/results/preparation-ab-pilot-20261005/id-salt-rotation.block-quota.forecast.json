@@ -1,0 +1,54 @@
+{
+  "task_id": "id-salt-rotation",
+  "codex_calls": 4,
+  "codex_five_hour_reserved": 3.5318468239905014,
+  "codex_weekly_upper_proxy_reserved": 0.6471224738100189,
+  "claude_quota_forecast": null,
+  "claude_forecast_status": "USD cannot identify subscription points",
+  "observations": [
+    {
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:03:30.194218+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:09:59.567034+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T20:59:59.567054+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T20:59:59.567214+00:00",
+          "duration_minutes": 10080
+        }
+      ]
+    },
+    {
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:03:31.591937+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 63.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ]
+    }
+  ]
+}

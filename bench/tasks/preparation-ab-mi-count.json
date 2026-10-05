@@ -1,0 +1,59 @@
+{
+  "kind": "preparation-ab",
+  "id": "mi-count",
+  "repo": "https://github.com/more-itertools/more-itertools.git",
+  "ref": "v11.1.0",
+  "commit": "64be96ceb2a6e836f76f069f4a96d2394d59fd0c",
+  "source_roots": [
+    "more_itertools"
+  ],
+  "packages": [
+    "iniconfig==2.3.0",
+    "packaging==26.3",
+    "pluggy==1.6.0",
+    "pygments==2.21.0",
+    "pytest==9.1.1"
+  ],
+  "test_command": [
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-q"
+  ],
+  "expected_failures": 2,
+  "prompt": "The public test suite fails because of defects in production code. Fix the production code. Do not modify, add, or delete test files. Run the entire suite with `.venv/bin/python -m pytest -q`. Finish when the suite passes. Keep the final answer brief.",
+  "mutations": [
+    {
+      "path": "more_itertools/more.py",
+      "find": "iterator = islice(iterator, n - 1, None)",
+      "replace": "iterator = islice(iterator, n, None)"
+    }
+  ],
+  "study_steps": [
+    {
+      "prompt": "The public test suite fails because of defects in production code. Fix the production code. Do not modify, add, or delete test files. Run the entire suite with `.venv/bin/python -m pytest -q`. Finish when the suite passes. Keep the final answer brief.",
+      "mutations": [
+        {
+          "path": "more_itertools/more.py",
+          "find": "iterator = islice(iterator, n - 1, None)",
+          "replace": "iterator = islice(iterator, n, None)"
+        }
+      ],
+      "oracle": [
+        "more_itertools/more.py::exactly_n"
+      ],
+      "wrong": [
+        "more_itertools/more.py::ilen"
+      ],
+      "public_check": "none",
+      "hidden_check": "count",
+      "reference": "bytes",
+      "wrong_offsets": [
+        {
+          "first": 0,
+          "last": 22
+        }
+      ]
+    }
+  ]
+}

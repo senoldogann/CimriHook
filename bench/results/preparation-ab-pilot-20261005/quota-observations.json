@@ -1,0 +1,965 @@
+{
+  "attribution": "account-wide, not attributable; concurrent work unexcluded",
+  "observations": [
+    {
+      "phase": "before",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:03:35.516745+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:09:59.567034+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T20:59:59.567054+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T20:59:59.567214+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.control.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:03:36.967445+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 63.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.control.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:03:50.120337+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:09:59.567034+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T20:59:59.567054+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T20:59:59.567214+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.control.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:03:51.675961+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 63.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.control.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:03:55.133437+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:09:59.567034+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T20:59:59.567054+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T20:59:59.567214+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.oracle.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:03:56.526260+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 63.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.oracle.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:04:07.849119+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:09:59.567034+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T20:59:59.567054+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T20:59:59.567214+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.oracle.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:04:09.474897+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 63.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.oracle.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:04:12.876886+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:09:59.567034+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T20:59:59.567054+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T20:59:59.567214+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.auto.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:04:14.235144+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 63.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.auto.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:04:28.710980+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:09:59.567034+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T20:59:59.567054+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T20:59:59.567214+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.auto.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:04:30.196632+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 63.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.auto.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:04:33.603847+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:09:59.953454+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T20:59:59.953479+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T20:59:59.953691+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.wrong.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:04:35.165712+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 63.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.wrong.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:04:51.085448+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:09:59.953454+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T20:59:59.953479+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T20:59:59.953691+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.wrong.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:04:52.581015+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 63.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.claude.wrong.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:04:55.979247+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:09:59.953454+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T20:59:59.953479+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T20:59:59.953691+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.wrong.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:04:57.464375+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.wrong.r1"
+    },
+    {
+      "phase": "during",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:05:30.204045+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:09:59.953454+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T20:59:59.953479+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T20:59:59.953691+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.wrong.r1"
+    },
+    {
+      "phase": "during",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:05:32.054631+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.wrong.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:05:42.989827+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:10:00.255804+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T21:00:00.255832+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T21:00:00.256081+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.wrong.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:05:44.492229+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.wrong.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:05:47.896514+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:10:00.255804+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T21:00:00.255832+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T21:00:00.256081+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.auto.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:05:49.319596+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.auto.r1"
+    },
+    {
+      "phase": "during",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:06:21.814964+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:10:00.255804+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T21:00:00.255832+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T21:00:00.256081+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.auto.r1"
+    },
+    {
+      "phase": "during",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:06:23.307396+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.auto.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:06:33.178627+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 38.0,
+          "resets_at": "2026-10-05T04:10:00.255804+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T21:00:00.255832+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T21:00:00.256081+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.auto.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:06:34.704527+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.auto.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:06:38.139047+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 39.0,
+          "resets_at": "2026-10-05T04:10:00.464366+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T21:00:00.464391+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T21:00:00.464620+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.oracle.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:06:39.642780+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.oracle.r1"
+    },
+    {
+      "phase": "during",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:07:12.104001+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 39.0,
+          "resets_at": "2026-10-05T04:10:00.464366+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T21:00:00.464391+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T21:00:00.464620+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.oracle.r1"
+    },
+    {
+      "phase": "during",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:07:13.796814+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 66.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.oracle.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:07:24.393402+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 39.0,
+          "resets_at": "2026-10-05T04:10:00.464366+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T21:00:00.464391+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T21:00:00.464620+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.oracle.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:07:25.870088+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 66.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.oracle.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:07:29.282224+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 39.0,
+          "resets_at": "2026-10-05T04:10:00.464366+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T21:00:00.464391+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T21:00:00.464620+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.control.r1"
+    },
+    {
+      "phase": "before",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:07:30.805850+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 66.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.control.r1"
+    },
+    {
+      "phase": "during",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:08:03.427089+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 39.0,
+          "resets_at": "2026-10-05T04:09:59.575306+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T20:59:59.575330+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T20:59:59.575550+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.control.r1"
+    },
+    {
+      "phase": "during",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:08:04.895020+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 67.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.control.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "claude",
+      "observed_at": "2026-10-05T02:08:07.483091+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "five_hour",
+          "used_percent": 39.0,
+          "resets_at": "2026-10-05T04:09:59.575306+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "used_percent": 65.0,
+          "resets_at": "2026-10-09T20:59:59.575330+00:00",
+          "duration_minutes": 10080
+        },
+        {
+          "id": "seven_day_model:Fable",
+          "used_percent": 5.0,
+          "resets_at": "2026-10-09T20:59:59.575550+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.control.r1"
+    },
+    {
+      "phase": "after",
+      "provider": "codex",
+      "observed_at": "2026-10-05T02:08:08.858698+00:00",
+      "available": true,
+      "windows": [
+        {
+          "id": "primary",
+          "used_percent": 67.0,
+          "resets_at": "2026-10-05T03:33:10+00:00",
+          "duration_minutes": 300
+        },
+        {
+          "id": "secondary",
+          "used_percent": 64.0,
+          "resets_at": "2026-10-09T21:34:35+00:00",
+          "duration_minutes": 10080
+        }
+      ],
+      "episode": "id-salt-rotation.codex.control.r1"
+    }
+  ]
+}

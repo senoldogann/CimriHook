@@ -1,0 +1,604 @@
+{
+  "episodes": [
+    {
+      "id": "id-salt-rotation.claude.auto.r1",
+      "measurement": {
+        "agent_version": "2.1.289",
+        "provider": {
+          "cost_by_step": [
+            0.14448779999999997
+          ],
+          "unit": "usd",
+          "price_sheet": "Claude Code total_cost_usd (includes compaction and auxiliary calls)",
+          "uncached": 6,
+          "cache_write": 15440,
+          "cache_read": 41019,
+          "output": 637
+        },
+        "secondary": {
+          "requests": 3,
+          "compactions": 0,
+          "compaction_pre_tokens": [],
+          "max_context": 20219,
+          "mean_context": 18821.666666666668,
+          "uncached": 6,
+          "cache_write": 15440,
+          "cache_read": 41019,
+          "output": 637,
+          "cost_base": 36121.95
+        }
+      },
+      "artifacts": {
+        "prompt.txt": {
+          "bytes": 21271,
+          "sha256": "5ec435ba4f63cfe7ab156fd9fb9d7ef68db403d9c32e122c37c5a33f25b4dd2e"
+        },
+        "evidence.txt": {
+          "bytes": 11144,
+          "sha256": "19f3226bde40055b31295a58f32004791b6e0015a51daa0a95b293122435dd82"
+        },
+        "agent.stdout": {
+          "bytes": 25567,
+          "sha256": "88b202207707ad70bb5cbf3be434a771e7ff95ee43496ee9a3b22e559a67f42c"
+        },
+        "agent.stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "public.after.txt": {
+          "bytes": 420,
+          "sha256": "76f7d0b6de527804b192b769ff1471462d47227f206bbcb8be809726bcb49791"
+        },
+        "hidden.after.txt": {
+          "bytes": 99,
+          "sha256": "aff8e5ff89d08116edebf78700162b7eec86610113b0bc728761e33db63b1fab"
+        },
+        "invocation.json": {
+          "bytes": 1827,
+          "sha256": "9bd052bb94af9e1748b69d8ec0d52a59b73f5e1a5b5d8a2cb92a818aa123b96b"
+        },
+        "quality.json": {
+          "bytes": 107,
+          "sha256": "be25ed05799cd8a301e2b969af9bceb9e0b14ff8ff22e4972c946ecb2d055c98"
+        },
+        "source_hashes.after.json": {
+          "bytes": 808,
+          "sha256": "c07b16918be9058da89f39709bf33eeff9475c80e2d5875fa6cc3c454327b415"
+        },
+        "packet.json": {
+          "bytes": 9776,
+          "sha256": "d2a9b06bc10853b50042e59b59f1ea9c8c32222d98c8eb48afbfb54b1fdef4fa"
+        },
+        "selection.json": {
+          "bytes": 1181,
+          "sha256": "39f0815adaedd16cca6fa082e23441ea8ba8e14bf46750325f3bbd5708560a12"
+        }
+      },
+      "public_result": "297 passed in 0.28s",
+      "hidden_result": "28 passed in 0.01s",
+      "reported_models": [
+        "claude-opus-5-5[1m]"
+      ],
+      "reported_cost_usd": 0.14448779999999997
+    },
+    {
+      "id": "id-salt-rotation.claude.control.r1",
+      "measurement": {
+        "agent_version": "2.1.289",
+        "provider": {
+          "cost_by_step": [
+            0.12334919999999999
+          ],
+          "unit": "usd",
+          "price_sheet": "Claude Code total_cost_usd (includes compaction and auxiliary calls)",
+          "uncached": 8,
+          "cache_write": 12399,
+          "cache_read": 50126,
+          "output": 705
+        },
+        "secondary": {
+          "requests": 4,
+          "compactions": 0,
+          "compaction_pre_tokens": [],
+          "max_context": 17178,
+          "mean_context": 15633.25,
+          "uncached": 8,
+          "cache_write": 12399,
+          "cache_read": 50126,
+          "output": 705,
+          "cost_base": 30837.3
+        }
+      },
+      "artifacts": {
+        "prompt.txt": {
+          "bytes": 11439,
+          "sha256": "e7d448c4f423477acd24a63feba4292b08c8fb2e0539dbc6b764a264c08306c0"
+        },
+        "evidence.txt": {
+          "bytes": 11144,
+          "sha256": "19f3226bde40055b31295a58f32004791b6e0015a51daa0a95b293122435dd82"
+        },
+        "agent.stdout": {
+          "bytes": 32052,
+          "sha256": "6c54ac517c733c4df4865be269cc31e45d079fd653b7981c257a318be076b986"
+        },
+        "agent.stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "public.after.txt": {
+          "bytes": 420,
+          "sha256": "76f7d0b6de527804b192b769ff1471462d47227f206bbcb8be809726bcb49791"
+        },
+        "hidden.after.txt": {
+          "bytes": 99,
+          "sha256": "aff8e5ff89d08116edebf78700162b7eec86610113b0bc728761e33db63b1fab"
+        },
+        "invocation.json": {
+          "bytes": 1827,
+          "sha256": "aa67ede0cfeb71d5a0931b8c9d5c286ecd4ff74614706ad9f42c40a4f4b887d5"
+        },
+        "quality.json": {
+          "bytes": 107,
+          "sha256": "be25ed05799cd8a301e2b969af9bceb9e0b14ff8ff22e4972c946ecb2d055c98"
+        },
+        "source_hashes.after.json": {
+          "bytes": 808,
+          "sha256": "c07b16918be9058da89f39709bf33eeff9475c80e2d5875fa6cc3c454327b415"
+        }
+      },
+      "public_result": "297 passed in 0.28s",
+      "hidden_result": "28 passed in 0.01s",
+      "reported_models": [
+        "claude-opus-5-5[1m]"
+      ],
+      "reported_cost_usd": 0.12334919999999999
+    },
+    {
+      "id": "id-salt-rotation.claude.oracle.r1",
+      "measurement": {
+        "agent_version": "2.1.289",
+        "provider": {
+          "cost_by_step": [
+            0.0834294
+          ],
+          "unit": "usd",
+          "price_sheet": "Claude Code total_cost_usd (includes compaction and auxiliary calls)",
+          "uncached": 4,
+          "cache_write": 8833,
+          "cache_read": 17947,
+          "output": 458
+        },
+        "secondary": {
+          "requests": 2,
+          "compactions": 0,
+          "compaction_pre_tokens": [],
+          "max_context": 13612,
+          "mean_context": 13392.0,
+          "uncached": 4,
+          "cache_write": 8833,
+          "cache_read": 17947,
+          "output": 458,
+          "cost_base": 20857.35
+        }
+      },
+      "artifacts": {
+        "prompt.txt": {
+          "bytes": 12973,
+          "sha256": "3416dafe5407a227ff272f516c46a099fd36584303b6a2ec3e2f11571dfead19"
+        },
+        "evidence.txt": {
+          "bytes": 11144,
+          "sha256": "19f3226bde40055b31295a58f32004791b6e0015a51daa0a95b293122435dd82"
+        },
+        "agent.stdout": {
+          "bytes": 9218,
+          "sha256": "a79edbc78c5638031544e3246dda88795dc3ba787e6ca27657e76a63e7af3ce7"
+        },
+        "agent.stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "public.after.txt": {
+          "bytes": 420,
+          "sha256": "76f7d0b6de527804b192b769ff1471462d47227f206bbcb8be809726bcb49791"
+        },
+        "hidden.after.txt": {
+          "bytes": 99,
+          "sha256": "aff8e5ff89d08116edebf78700162b7eec86610113b0bc728761e33db63b1fab"
+        },
+        "invocation.json": {
+          "bytes": 1827,
+          "sha256": "e06207e381ae597a2f8fa6708e29e7c630d86f9c1dcb3d80cf83e6c6bb814131"
+        },
+        "quality.json": {
+          "bytes": 107,
+          "sha256": "be25ed05799cd8a301e2b969af9bceb9e0b14ff8ff22e4972c946ecb2d055c98"
+        },
+        "source_hashes.after.json": {
+          "bytes": 808,
+          "sha256": "c07b16918be9058da89f39709bf33eeff9475c80e2d5875fa6cc3c454327b415"
+        },
+        "packet.json": {
+          "bytes": 1783,
+          "sha256": "9f12f57aca8c77bae94051b5d22120137bddc9dad8666d0924483aba2c9b40df"
+        }
+      },
+      "public_result": "297 passed in 0.28s",
+      "hidden_result": "28 passed in 0.01s",
+      "reported_models": [
+        "claude-opus-5-5[1m]"
+      ],
+      "reported_cost_usd": 0.0834294
+    },
+    {
+      "id": "id-salt-rotation.claude.wrong.r1",
+      "measurement": {
+        "agent_version": "2.1.289",
+        "provider": {
+          "cost_by_step": [
+            0.1184368
+          ],
+          "unit": "usd",
+          "price_sheet": "Claude Code total_cost_usd (includes compaction and auxiliary calls)",
+          "uncached": 6,
+          "cache_write": 12393,
+          "cache_read": 34644,
+          "output": 617
+        },
+        "secondary": {
+          "requests": 3,
+          "compactions": 0,
+          "compaction_pre_tokens": [],
+          "max_context": 17172,
+          "mean_context": 15681.0,
+          "uncached": 6,
+          "cache_write": 12393,
+          "cache_read": 34644,
+          "output": 617,
+          "cost_base": 29609.199999999997
+        }
+      },
+      "artifacts": {
+        "prompt.txt": {
+          "bytes": 12843,
+          "sha256": "346c491b4a11ccacbabac22d1ea9c3a2ce07734ae82471e6ee7f84e92fdcd68e"
+        },
+        "evidence.txt": {
+          "bytes": 11144,
+          "sha256": "19f3226bde40055b31295a58f32004791b6e0015a51daa0a95b293122435dd82"
+        },
+        "agent.stdout": {
+          "bytes": 27057,
+          "sha256": "7a342812324f620d20241321c515c407ca22422d0de11c17306754c2b78195d5"
+        },
+        "agent.stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "public.after.txt": {
+          "bytes": 420,
+          "sha256": "76f7d0b6de527804b192b769ff1471462d47227f206bbcb8be809726bcb49791"
+        },
+        "hidden.after.txt": {
+          "bytes": 99,
+          "sha256": "257ddafe2b790ab7a9abc6403f6014669d875391381fd08349cf93c21c4694ae"
+        },
+        "invocation.json": {
+          "bytes": 1827,
+          "sha256": "e9cd34f99d8f8810cc9534f8a31d1a4c5a978742ea26b2c799349bf3f977b8f4"
+        },
+        "quality.json": {
+          "bytes": 107,
+          "sha256": "be25ed05799cd8a301e2b969af9bceb9e0b14ff8ff22e4972c946ecb2d055c98"
+        },
+        "source_hashes.after.json": {
+          "bytes": 808,
+          "sha256": "c07b16918be9058da89f39709bf33eeff9475c80e2d5875fa6cc3c454327b415"
+        },
+        "packet.json": {
+          "bytes": 1667,
+          "sha256": "5c9083220fb2fd5dab6556c166cc123313c93b8aa12b4580bfc83ac27494a38c"
+        }
+      },
+      "public_result": "297 passed in 0.28s",
+      "hidden_result": "28 passed in 0.02s",
+      "reported_models": [
+        "claude-opus-5-5[1m]"
+      ],
+      "reported_cost_usd": 0.1184368
+    },
+    {
+      "id": "id-salt-rotation.codex.auto.r1",
+      "measurement": {
+        "agent_version": "0.160.0",
+        "provider": {
+          "cost_by_step": [
+            41951.8
+          ],
+          "unit": "base_input_tokens",
+          "price_sheet": "OpenAI: uncached 1.0, cached 0.1, write 1.25, output 6.0 x base input",
+          "uncached": 21595,
+          "cache_write": 0,
+          "cache_read": 160128,
+          "output": 724
+        },
+        "secondary": {
+          "requests": 6,
+          "compactions": 0,
+          "compaction_pre_tokens": [],
+          "max_context": 32896,
+          "mean_context": 30287.166666666668,
+          "uncached": 21595,
+          "cache_write": 0,
+          "cache_read": 160128,
+          "output": 724,
+          "cost_base": 41951.8
+        }
+      },
+      "artifacts": {
+        "prompt.txt": {
+          "bytes": 21271,
+          "sha256": "80d58872dff4da67fcc34be74bce60d6b0932468773e7e9e23a72b282963f190"
+        },
+        "evidence.txt": {
+          "bytes": 11144,
+          "sha256": "19f3226bde40055b31295a58f32004791b6e0015a51daa0a95b293122435dd82"
+        },
+        "agent.stdout": {
+          "bytes": 30430,
+          "sha256": "bc62602e82bd7494202561fbc6b1fdacda87919c4b13f67dd40d563615a480a7"
+        },
+        "agent.stderr": {
+          "bytes": 184,
+          "sha256": "9dd23139eace96a3da3b56bddc81c337b7fcc855004e4a2c50b7c83e125e310f"
+        },
+        "public.after.txt": {
+          "bytes": 420,
+          "sha256": "76f7d0b6de527804b192b769ff1471462d47227f206bbcb8be809726bcb49791"
+        },
+        "hidden.after.txt": {
+          "bytes": 99,
+          "sha256": "257ddafe2b790ab7a9abc6403f6014669d875391381fd08349cf93c21c4694ae"
+        },
+        "invocation.json": {
+          "bytes": 1554,
+          "sha256": "b7d70efb18af8e5761332f4ea25c19596a5258121cc91b26c96b38c74de7c6ff"
+        },
+        "quality.json": {
+          "bytes": 107,
+          "sha256": "be25ed05799cd8a301e2b969af9bceb9e0b14ff8ff22e4972c946ecb2d055c98"
+        },
+        "source_hashes.after.json": {
+          "bytes": 808,
+          "sha256": "c07b16918be9058da89f39709bf33eeff9475c80e2d5875fa6cc3c454327b415"
+        },
+        "packet.json": {
+          "bytes": 9776,
+          "sha256": "afd59cc8755e220d0c621b69d88ab9e9d2a97e3a4de13769212ff9fde28b160e"
+        },
+        "selection.json": {
+          "bytes": 1181,
+          "sha256": "39f0815adaedd16cca6fa082e23441ea8ba8e14bf46750325f3bbd5708560a12"
+        }
+      },
+      "public_result": "297 passed in 0.28s",
+      "hidden_result": "28 passed in 0.02s"
+    },
+    {
+      "id": "id-salt-rotation.codex.control.r1",
+      "measurement": {
+        "agent_version": "0.160.0",
+        "provider": {
+          "cost_by_step": [
+            31318.4
+          ],
+          "unit": "base_input_tokens",
+          "price_sheet": "OpenAI: uncached 1.0, cached 0.1, write 1.25, output 6.0 x base input",
+          "uncached": 18156,
+          "cache_write": 0,
+          "cache_read": 88064,
+          "output": 726
+        },
+        "secondary": {
+          "requests": 4,
+          "compactions": 0,
+          "compaction_pre_tokens": [],
+          "max_context": 30014,
+          "mean_context": 26555.0,
+          "uncached": 18156,
+          "cache_write": 0,
+          "cache_read": 88064,
+          "output": 726,
+          "cost_base": 31318.4
+        }
+      },
+      "artifacts": {
+        "prompt.txt": {
+          "bytes": 11439,
+          "sha256": "e7d448c4f423477acd24a63feba4292b08c8fb2e0539dbc6b764a264c08306c0"
+        },
+        "evidence.txt": {
+          "bytes": 11144,
+          "sha256": "19f3226bde40055b31295a58f32004791b6e0015a51daa0a95b293122435dd82"
+        },
+        "agent.stdout": {
+          "bytes": 30006,
+          "sha256": "b479abeaa7693d275b45ceab73fde5889c1292e16ca32f59dcfed908ce9ae37e"
+        },
+        "agent.stderr": {
+          "bytes": 184,
+          "sha256": "b8a8fd2bffe06b1ce0e86b2e858138b1f97d4f9995a11fc002759dc72b780baa"
+        },
+        "public.after.txt": {
+          "bytes": 420,
+          "sha256": "76f7d0b6de527804b192b769ff1471462d47227f206bbcb8be809726bcb49791"
+        },
+        "hidden.after.txt": {
+          "bytes": 99,
+          "sha256": "aff8e5ff89d08116edebf78700162b7eec86610113b0bc728761e33db63b1fab"
+        },
+        "invocation.json": {
+          "bytes": 1557,
+          "sha256": "d2171714412dce4c51e616fe2e7387b854352c53bda2f5afc3d73ccb6aca14f5"
+        },
+        "quality.json": {
+          "bytes": 107,
+          "sha256": "be25ed05799cd8a301e2b969af9bceb9e0b14ff8ff22e4972c946ecb2d055c98"
+        },
+        "source_hashes.after.json": {
+          "bytes": 808,
+          "sha256": "c07b16918be9058da89f39709bf33eeff9475c80e2d5875fa6cc3c454327b415"
+        }
+      },
+      "public_result": "297 passed in 0.28s",
+      "hidden_result": "28 passed in 0.01s"
+    },
+    {
+      "id": "id-salt-rotation.codex.oracle.r1",
+      "measurement": {
+        "agent_version": "0.160.0",
+        "provider": {
+          "cost_by_step": [
+            31895.4
+          ],
+          "unit": "base_input_tokens",
+          "price_sheet": "OpenAI: uncached 1.0, cached 0.1, write 1.25, output 6.0 x base input",
+          "uncached": 16501,
+          "cache_write": 0,
+          "cache_read": 114944,
+          "output": 650
+        },
+        "secondary": {
+          "requests": 5,
+          "compactions": 0,
+          "compaction_pre_tokens": [],
+          "max_context": 28086,
+          "mean_context": 26289.0,
+          "uncached": 16501,
+          "cache_write": 0,
+          "cache_read": 114944,
+          "output": 650,
+          "cost_base": 31895.4
+        }
+      },
+      "artifacts": {
+        "prompt.txt": {
+          "bytes": 12973,
+          "sha256": "d227e03396751f81ff1c384924e2946a7469311021332fe6acbc669482624124"
+        },
+        "evidence.txt": {
+          "bytes": 11144,
+          "sha256": "19f3226bde40055b31295a58f32004791b6e0015a51daa0a95b293122435dd82"
+        },
+        "agent.stdout": {
+          "bytes": 21032,
+          "sha256": "27b0a8cee723ca61d8e7fe28e519a1de5d6f76a5b43aa7c4c36c0491fdbfdddc"
+        },
+        "agent.stderr": {
+          "bytes": 184,
+          "sha256": "93b3dd77e83bc02507a011860a57a5b70e13c154da9b5a509a7db2f09c5eac6a"
+        },
+        "public.after.txt": {
+          "bytes": 420,
+          "sha256": "76f7d0b6de527804b192b769ff1471462d47227f206bbcb8be809726bcb49791"
+        },
+        "hidden.after.txt": {
+          "bytes": 99,
+          "sha256": "aff8e5ff89d08116edebf78700162b7eec86610113b0bc728761e33db63b1fab"
+        },
+        "invocation.json": {
+          "bytes": 1556,
+          "sha256": "f9b329261134b741df23664e45813f7aa05915ae4407e9d57bf82af9e4747585"
+        },
+        "quality.json": {
+          "bytes": 107,
+          "sha256": "be25ed05799cd8a301e2b969af9bceb9e0b14ff8ff22e4972c946ecb2d055c98"
+        },
+        "source_hashes.after.json": {
+          "bytes": 808,
+          "sha256": "c07b16918be9058da89f39709bf33eeff9475c80e2d5875fa6cc3c454327b415"
+        },
+        "packet.json": {
+          "bytes": 1783,
+          "sha256": "b38b3b39135038b024eb20e06b30b2e9e4b4d89e08bdd264d63ca95d0f911551"
+        }
+      },
+      "public_result": "297 passed in 0.28s",
+      "hidden_result": "28 passed in 0.01s"
+    },
+    {
+      "id": "id-salt-rotation.codex.wrong.r1",
+      "measurement": {
+        "agent_version": "0.160.0",
+        "provider": {
+          "cost_by_step": [
+            37423.0
+          ],
+          "unit": "base_input_tokens",
+          "price_sheet": "OpenAI: uncached 1.0, cached 0.1, write 1.25, output 6.0 x base input",
+          "uncached": 20437,
+          "cache_write": 0,
+          "cache_read": 122880,
+          "output": 783
+        },
+        "secondary": {
+          "requests": 5,
+          "compactions": 0,
+          "compaction_pre_tokens": [],
+          "max_context": 32116,
+          "mean_context": 28663.4,
+          "uncached": 20437,
+          "cache_write": 0,
+          "cache_read": 122880,
+          "output": 783,
+          "cost_base": 37423.0
+        }
+      },
+      "artifacts": {
+        "prompt.txt": {
+          "bytes": 12843,
+          "sha256": "c123000151449dc09d9918e540d5f33f796e02fef91133f2be2332c0c4d04675"
+        },
+        "evidence.txt": {
+          "bytes": 11144,
+          "sha256": "19f3226bde40055b31295a58f32004791b6e0015a51daa0a95b293122435dd82"
+        },
+        "agent.stdout": {
+          "bytes": 37270,
+          "sha256": "9a86f20114469d91f5c09874a6334bf742c613cbcb7d9f031f65726a008b821f"
+        },
+        "agent.stderr": {
+          "bytes": 184,
+          "sha256": "52e48fa82bfa043db96cee01347697844e9281d46a20aff114731d0e4e2efcaf"
+        },
+        "public.after.txt": {
+          "bytes": 420,
+          "sha256": "76f7d0b6de527804b192b769ff1471462d47227f206bbcb8be809726bcb49791"
+        },
+        "hidden.after.txt": {
+          "bytes": 99,
+          "sha256": "257ddafe2b790ab7a9abc6403f6014669d875391381fd08349cf93c21c4694ae"
+        },
+        "invocation.json": {
+          "bytes": 1555,
+          "sha256": "dbcd92d8b4099ecf0bae2c4d7ce4c0bd4eff21497b8301ae058325d7a6825def"
+        },
+        "quality.json": {
+          "bytes": 107,
+          "sha256": "be25ed05799cd8a301e2b969af9bceb9e0b14ff8ff22e4972c946ecb2d055c98"
+        },
+        "source_hashes.after.json": {
+          "bytes": 808,
+          "sha256": "c07b16918be9058da89f39709bf33eeff9475c80e2d5875fa6cc3c454327b415"
+        },
+        "packet.json": {
+          "bytes": 1667,
+          "sha256": "3613c3a93706438c13b356db316f2dfab9901f1d3e6049f60312e81307984000"
+        }
+      },
+      "public_result": "297 passed in 0.28s",
+      "hidden_result": "28 passed in 0.02s"
+    }
+  ]
+}

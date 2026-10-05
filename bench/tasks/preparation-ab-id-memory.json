@@ -1,0 +1,143 @@
+{
+  "kind": "preparation-ab",
+  "id": "id-memory",
+  "repo": "https://github.com/pallets/itsdangerous.git",
+  "ref": "2.2.0",
+  "commit": "096c8d42545d3b68ea21a4f890fb2b2d8979c0bd",
+  "source_roots": [
+    "src/itsdangerous"
+  ],
+  "packages": [
+    "iniconfig==2.3.0",
+    "packaging==26.3",
+    "pluggy==1.6.0",
+    "pygments==2.21.0",
+    "pytest==9.1.1",
+    "freezegun==1.4.0",
+    "python-dateutil==2.9.0.post0",
+    "six==1.17.0",
+    "flit_core==3.12.0"
+  ],
+  "test_command": [
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-q"
+  ],
+  "expected_failures": 4,
+  "prompt": "The public test suite fails because of defects in production code. Fix the production code. Do not modify, add, or delete test files. Run the entire suite with `.venv/bin/python -m pytest -q`. Finish when the suite passes. Keep the final answer brief. Preserve these constraints for this entire sequence: legacy keys remain accepted in old-to-new key lists, the newest key signs, custom `~` separators continue to work, existing signed-token wire bytes remain compatible, and no runtime dependency is added.",
+  "mutations": [
+    {
+      "path": "src/itsdangerous/signer.py",
+      "find": "for secret_key in reversed(self.secret_keys):",
+      "replace": "for secret_key in reversed(self.secret_keys[-1:]):"
+    }
+  ],
+  "study_steps": [
+    {
+      "prompt": "The public test suite fails because of defects in production code. Fix the production code. Do not modify, add, or delete test files. Run the entire suite with `.venv/bin/python -m pytest -q`. Finish when the suite passes. Keep the final answer brief. Preserve these constraints for this entire sequence: legacy keys remain accepted in old-to-new key lists, the newest key signs, custom `~` separators continue to work, existing signed-token wire bytes remain compatible, and no runtime dependency is added.",
+      "mutations": [
+        {
+          "path": "src/itsdangerous/signer.py",
+          "find": "for secret_key in reversed(self.secret_keys):",
+          "replace": "for secret_key in reversed(self.secret_keys[-1:]):"
+        }
+      ],
+      "oracle": [
+        "src/itsdangerous/signer.py::Signer.verify_signature"
+      ],
+      "wrong": [
+        "src/itsdangerous/signer.py::Signer.sign"
+      ],
+      "public_check": "rotation",
+      "hidden_check": "memory",
+      "reference": "bytes",
+      "wrong_offsets": [
+        {
+          "first": -7,
+          "last": 4
+        }
+      ]
+    },
+    {
+      "prompt": "A new defect has been introduced into production code. Fix it using the current public test failures. Do not modify, add, or delete test files. Run the entire suite with `.venv/bin/python -m pytest -q`. Keep the final answer brief.",
+      "mutations": [
+        {
+          "path": "src/itsdangerous/timed.py",
+          "find": "if age > max_age:",
+          "replace": "if age >= max_age:"
+        }
+      ],
+      "oracle": [
+        "src/itsdangerous/timed.py::TimestampSigner.unsign"
+      ],
+      "wrong": [
+        "src/itsdangerous/timed.py::TimestampSigner.sign",
+        "src/itsdangerous/signer.py::Signer.unsign"
+      ],
+      "public_check": "age",
+      "hidden_check": "memory",
+      "reference": "bytes",
+      "wrong_offsets": [
+        {
+          "first": -21,
+          "last": 16
+        },
+        {
+          "first": -16,
+          "last": 22
+        }
+      ]
+    },
+    {
+      "prompt": "A new defect has been introduced into production code. Fix it using the current public test failures. Do not modify, add, or delete test files. Run the entire suite with `.venv/bin/python -m pytest -q`. Keep the final answer brief.",
+      "mutations": [
+        {
+          "path": "src/itsdangerous/encoding.py",
+          "find": "return _int_to_bytes(num).lstrip(b\"\\x00\")",
+          "replace": "return _int_to_bytes(num).rstrip(b\"\\x00\")"
+        }
+      ],
+      "oracle": [
+        "src/itsdangerous/encoding.py::int_to_bytes"
+      ],
+      "wrong": [
+        "src/itsdangerous/encoding.py::bytes_to_int"
+      ],
+      "public_check": "integer",
+      "hidden_check": "memory",
+      "reference": "bytes",
+      "wrong_offsets": [
+        {
+          "first": 0,
+          "last": 1
+        }
+      ]
+    },
+    {
+      "prompt": "A new defect has been introduced into production code. Fix it using the current public test failures. Do not modify, add, or delete test files. Run the entire suite with `.venv/bin/python -m pytest -q`. Keep the final answer brief.",
+      "mutations": [
+        {
+          "path": "src/itsdangerous/signer.py",
+          "find": "secret_key = self.secret_keys[-1]",
+          "replace": "secret_key = self.secret_keys[0]"
+        }
+      ],
+      "oracle": [
+        "src/itsdangerous/signer.py::Signer.derive_key"
+      ],
+      "wrong": [
+        "src/itsdangerous/signer.py::Signer.validate"
+      ],
+      "public_check": "key",
+      "hidden_check": "memory",
+      "reference": "bytes",
+      "wrong_offsets": [
+        {
+          "first": -28,
+          "last": 8
+        }
+      ]
+    }
+  ]
+}

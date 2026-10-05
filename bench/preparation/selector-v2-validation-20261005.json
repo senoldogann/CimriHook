@@ -1,0 +1,338 @@
+{
+  "kind": "preparation-selector-v2-local-validation",
+  "model_invocations": 0,
+  "minimum_source_rank": 100,
+  "task_n": 6,
+  "step_n": 10,
+  "packets_emitted": 4,
+  "abstentions": 6,
+  "state_basis": "frozen host gold transitions, not observed agent edits",
+  "steps": [
+    {
+      "task_id": "mi-count",
+      "step": 1,
+      "packet_emitted": false,
+      "selected_targets": [],
+      "production_candidates": 0,
+      "weak_module_candidates": 1,
+      "rejected": [
+        "no production traceback location; no preparation packet",
+        "weak localization abstained:more_itertools/more.py:1"
+      ],
+      "auto_source_bytes": 0,
+      "auto_packet_bytes": 0,
+      "oracle_source_bytes": 821,
+      "oracle_packet_bytes": 1413,
+      "common_evidence_bytes": 2039,
+      "common_evidence_sha256": "9b9f012a3ae02077eff25ef5f62113e3e3a02ad4500b50bc855a3e97b5533697",
+      "empty_auto_equals_control": true,
+      "overlap": {
+        "auto_unique_lines": 0,
+        "oracle_unique_lines": 29,
+        "shared_unique_lines": 0,
+        "oracle_coverage": 0.0,
+        "auto_precision": null,
+        "oracle_targets_hit": 0,
+        "oracle_target_count": 1
+      },
+      "gold_public_passed": true
+    },
+    {
+      "task_id": "boltons-ranges",
+      "step": 1,
+      "packet_emitted": false,
+      "selected_targets": [],
+      "production_candidates": 0,
+      "weak_module_candidates": 1,
+      "rejected": [
+        "no production traceback location; no preparation packet",
+        "weak localization abstained:boltons/iterutils.py:1"
+      ],
+      "auto_source_bytes": 0,
+      "auto_packet_bytes": 0,
+      "oracle_source_bytes": 2570,
+      "oracle_packet_bytes": 3244,
+      "common_evidence_bytes": 2458,
+      "common_evidence_sha256": "91286e7ee729d845563018f7efc4badf655ef99e036b144462f9351bed630a98",
+      "empty_auto_equals_control": true,
+      "overlap": {
+        "auto_unique_lines": 0,
+        "oracle_unique_lines": 52,
+        "shared_unique_lines": 0,
+        "oracle_coverage": 0.0,
+        "auto_precision": null,
+        "oracle_targets_hit": 0,
+        "oracle_target_count": 1
+      },
+      "gold_public_passed": true
+    },
+    {
+      "task_id": "id-salt-rotation",
+      "step": 1,
+      "packet_emitted": false,
+      "selected_targets": [],
+      "production_candidates": 0,
+      "weak_module_candidates": 4,
+      "rejected": [
+        "no production traceback location; no preparation packet",
+        "weak localization abstained:src/itsdangerous/serializer.py:1",
+        "weak localization abstained:src/itsdangerous/signer.py:1",
+        "weak localization abstained:src/itsdangerous/timed.py:1",
+        "weak localization abstained:src/itsdangerous/url_safe.py:1"
+      ],
+      "auto_source_bytes": 0,
+      "auto_packet_bytes": 0,
+      "oracle_source_bytes": 847,
+      "oracle_packet_bytes": 1534,
+      "common_evidence_bytes": 11144,
+      "common_evidence_sha256": "7962fce43c95b322bcba84800c644e21cbcbdf95cada6d27d2a641a3d2130fb4",
+      "empty_auto_equals_control": true,
+      "overlap": {
+        "auto_unique_lines": 0,
+        "oracle_unique_lines": 24,
+        "shared_unique_lines": 0,
+        "oracle_coverage": 0.0,
+        "auto_precision": null,
+        "oracle_targets_hit": 0,
+        "oracle_target_count": 2
+      },
+      "gold_public_passed": true
+    },
+    {
+      "task_id": "id-mixed",
+      "step": 1,
+      "packet_emitted": true,
+      "selected_targets": [
+        "src/itsdangerous/serializer.py:233:293",
+        "src/itsdangerous/serializer.py:237:297",
+        "src/itsdangerous/serializer.py:311:371",
+        "src/itsdangerous/serializer.py:315:375"
+      ],
+      "production_candidates": 13,
+      "weak_module_candidates": 4,
+      "rejected": [
+        "candidate limit:src/itsdangerous/serializer.py:349",
+        "candidate limit:src/itsdangerous/signer.py:256",
+        "candidate limit:src/itsdangerous/timed.py:104",
+        "candidate limit:src/itsdangerous/timed.py:130",
+        "candidate limit:src/itsdangerous/timed.py:135",
+        "candidate limit:src/itsdangerous/timed.py:204",
+        "candidate limit:src/itsdangerous/timed.py:220",
+        "candidate limit:src/itsdangerous/timed.py:89",
+        "candidate limit:src/itsdangerous/url_safe.py:53",
+        "weak localization abstained:src/itsdangerous/serializer.py:1",
+        "weak localization abstained:src/itsdangerous/signer.py:1",
+        "weak localization abstained:src/itsdangerous/timed.py:1",
+        "weak localization abstained:src/itsdangerous/url_safe.py:1"
+      ],
+      "auto_source_bytes": 9466,
+      "auto_packet_bytes": 11553,
+      "oracle_source_bytes": 804,
+      "oracle_packet_bytes": 1469,
+      "common_evidence_bytes": 592820,
+      "common_evidence_sha256": "6ac3eba2b48d9664e1048514cdc50a05fe023225c8a65f658a53de96788ea65f",
+      "empty_auto_equals_control": null,
+      "overlap": {
+        "auto_unique_lines": 130,
+        "oracle_unique_lines": 26,
+        "shared_unique_lines": 0,
+        "oracle_coverage": 0.0,
+        "auto_precision": 0.0,
+        "oracle_targets_hit": 0,
+        "oracle_target_count": 2
+      },
+      "gold_public_passed": true
+    },
+    {
+      "task_id": "id-stale",
+      "step": 1,
+      "packet_emitted": true,
+      "selected_targets": [
+        "src/itsdangerous/serializer.py:233:293",
+        "src/itsdangerous/serializer.py:237:297",
+        "src/itsdangerous/serializer.py:311:371",
+        "src/itsdangerous/serializer.py:319:379"
+      ],
+      "production_candidates": 9,
+      "weak_module_candidates": 3,
+      "rejected": [
+        "candidate limit:src/itsdangerous/serializer.py:367",
+        "candidate limit:src/itsdangerous/serializer.py:383",
+        "candidate limit:src/itsdangerous/timed.py:207",
+        "candidate limit:src/itsdangerous/timed.py:228",
+        "candidate limit:src/itsdangerous/url_safe.py:53",
+        "test-module:tests/test_preparation_regression.py: 0 matching sources",
+        "weak localization abstained:src/itsdangerous/serializer.py:1",
+        "weak localization abstained:src/itsdangerous/timed.py:1",
+        "weak localization abstained:src/itsdangerous/url_safe.py:1"
+      ],
+      "auto_source_bytes": 9499,
+      "auto_packet_bytes": 11586,
+      "oracle_source_bytes": 399,
+      "oracle_packet_bytes": 877,
+      "common_evidence_bytes": 102970,
+      "common_evidence_sha256": "630ba7edfbb7e3f439f805991b77a8f8963456316779b4b5aad9daf369886881",
+      "empty_auto_equals_control": null,
+      "overlap": {
+        "auto_unique_lines": 134,
+        "oracle_unique_lines": 15,
+        "shared_unique_lines": 0,
+        "oracle_coverage": 0.0,
+        "auto_precision": 0.0,
+        "oracle_targets_hit": 0,
+        "oracle_target_count": 1
+      },
+      "gold_public_passed": true
+    },
+    {
+      "task_id": "id-stale",
+      "step": 2,
+      "packet_emitted": false,
+      "selected_targets": [],
+      "production_candidates": 0,
+      "weak_module_candidates": 0,
+      "rejected": [
+        "no production traceback location; no preparation packet",
+        "test-module:tests/test_preparation_regression.py: 0 matching sources"
+      ],
+      "auto_source_bytes": 0,
+      "auto_packet_bytes": 0,
+      "oracle_source_bytes": 443,
+      "oracle_packet_bytes": 1060,
+      "common_evidence_bytes": 1731,
+      "common_evidence_sha256": "56d578a3d791e5d40226fbb7c253d106e016209050f4a4eaff634d8e87bb3e1e",
+      "empty_auto_equals_control": true,
+      "overlap": {
+        "auto_unique_lines": 0,
+        "oracle_unique_lines": 14,
+        "shared_unique_lines": 0,
+        "oracle_coverage": 0.0,
+        "auto_precision": null,
+        "oracle_targets_hit": 0,
+        "oracle_target_count": 2
+      },
+      "gold_public_passed": true
+    },
+    {
+      "task_id": "id-memory",
+      "step": 1,
+      "packet_emitted": true,
+      "selected_targets": [
+        "src/itsdangerous/signer.py:226:266"
+      ],
+      "production_candidates": 1,
+      "weak_module_candidates": 2,
+      "rejected": [
+        "test-module:tests/test_preparation_regression.py: 0 matching sources",
+        "weak localization abstained:src/itsdangerous/signer.py:1",
+        "weak localization abstained:src/itsdangerous/timed.py:1"
+      ],
+      "auto_source_bytes": 1271,
+      "auto_packet_bytes": 1895,
+      "oracle_source_bytes": 494,
+      "oracle_packet_bytes": 993,
+      "common_evidence_bytes": 4006,
+      "common_evidence_sha256": "ba067c49258e6c17e7163f01130ea5bff124578a3fdeb5f3a7ce6c380e8e2643",
+      "empty_auto_equals_control": null,
+      "overlap": {
+        "auto_unique_lines": 41,
+        "oracle_unique_lines": 16,
+        "shared_unique_lines": 16,
+        "oracle_coverage": 1.0,
+        "auto_precision": 0.3902439024390244,
+        "oracle_targets_hit": 1,
+        "oracle_target_count": 1
+      },
+      "gold_public_passed": true
+    },
+    {
+      "task_id": "id-memory",
+      "step": 2,
+      "packet_emitted": true,
+      "selected_targets": [
+        "src/itsdangerous/timed.py:112:172"
+      ],
+      "production_candidates": 1,
+      "weak_module_candidates": 0,
+      "rejected": [
+        "test-module:tests/test_preparation_regression.py: 0 matching sources"
+      ],
+      "auto_source_bytes": 2238,
+      "auto_packet_bytes": 2961,
+      "oracle_source_bytes": 3295,
+      "oracle_packet_bytes": 4119,
+      "common_evidence_bytes": 4541,
+      "common_evidence_sha256": "580363d74d1450baa94c4bb967f99e30a723a5cf9dd601c32e79c0514e408c1a",
+      "empty_auto_equals_control": null,
+      "overlap": {
+        "auto_unique_lines": 61,
+        "oracle_unique_lines": 87,
+        "shared_unique_lines": 47,
+        "oracle_coverage": 0.5402298850574713,
+        "auto_precision": 0.7704918032786885,
+        "oracle_targets_hit": 1,
+        "oracle_target_count": 1
+      },
+      "gold_public_passed": true
+    },
+    {
+      "task_id": "id-memory",
+      "step": 3,
+      "packet_emitted": false,
+      "selected_targets": [],
+      "production_candidates": 0,
+      "weak_module_candidates": 1,
+      "rejected": [
+        "no production traceback location; no preparation packet",
+        "test-module:tests/test_preparation_regression.py: 0 matching sources",
+        "weak localization abstained:src/itsdangerous/encoding.py:1"
+      ],
+      "auto_source_bytes": 0,
+      "auto_packet_bytes": 0,
+      "oracle_source_bytes": 83,
+      "oracle_packet_bytes": 509,
+      "common_evidence_bytes": 1708,
+      "common_evidence_sha256": "0782e4e7ecb1c6ab0049c886027ab01b5bf429996da5c1dfbd54be6ea6c9784d",
+      "empty_auto_equals_control": true,
+      "overlap": {
+        "auto_unique_lines": 0,
+        "oracle_unique_lines": 2,
+        "shared_unique_lines": 0,
+        "oracle_coverage": 0.0,
+        "auto_precision": null,
+        "oracle_targets_hit": 0,
+        "oracle_target_count": 1
+      },
+      "gold_public_passed": true
+    },
+    {
+      "task_id": "id-memory",
+      "step": 4,
+      "packet_emitted": false,
+      "selected_targets": [],
+      "production_candidates": 0,
+      "weak_module_candidates": 0,
+      "rejected": [
+        "no production traceback location; no preparation packet",
+        "test-module:tests/test_preparation_regression.py: 0 matching sources"
+      ],
+      "auto_source_bytes": 0,
+      "auto_packet_bytes": 0,
+      "oracle_source_bytes": 1375,
+      "oracle_packet_bytes": 1954,
+      "common_evidence_bytes": 1155,
+      "common_evidence_sha256": "e65e4bb85130eb3d9f89ed2e0ae28c1c9aee881d53dc89183c2975eaff3bdc10",
+      "empty_auto_equals_control": true,
+      "overlap": {
+        "auto_unique_lines": 0,
+        "oracle_unique_lines": 32,
+        "shared_unique_lines": 0,
+        "oracle_coverage": 0.0,
+        "auto_precision": null,
+        "oracle_targets_hit": 0,
+        "oracle_target_count": 1
+      },
+      "gold_public_passed": true
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "kind": "preparation-ab",
+  "stage": "pilot",
+  "execution_approved": true,
+  "design_commit": "acd52e4ec69dbf5e5828085877445885c8532ecd",
+  "episodes": 8,
+  "generation_invocations": 8,
+  "schedule": [
+    {
+      "task_id": "id-salt-rotation",
+      "agent": "claude",
+      "arm": "control",
+      "repetition": 1,
+      "position": 1,
+      "id": "id-salt-rotation.claude.control.r1"
+    },
+    {
+      "task_id": "id-salt-rotation",
+      "agent": "claude",
+      "arm": "oracle",
+      "repetition": 1,
+      "position": 2,
+      "id": "id-salt-rotation.claude.oracle.r1"
+    },
+    {
+      "task_id": "id-salt-rotation",
+      "agent": "claude",
+      "arm": "auto",
+      "repetition": 1,
+      "position": 3,
+      "id": "id-salt-rotation.claude.auto.r1"
+    },
+    {
+      "task_id": "id-salt-rotation",
+      "agent": "claude",
+      "arm": "wrong",
+      "repetition": 1,
+      "position": 4,
+      "id": "id-salt-rotation.claude.wrong.r1"
+    },
+    {
+      "task_id": "id-salt-rotation",
+      "agent": "codex",
+      "arm": "wrong",
+      "repetition": 1,
+      "position": 1,
+      "id": "id-salt-rotation.codex.wrong.r1"
+    },
+    {
+      "task_id": "id-salt-rotation",
+      "agent": "codex",
+      "arm": "auto",
+      "repetition": 1,
+      "position": 2,
+      "id": "id-salt-rotation.codex.auto.r1"
+    },
+    {
+      "task_id": "id-salt-rotation",
+      "agent": "codex",
+      "arm": "oracle",
+      "repetition": 1,
+      "position": 3,
+      "id": "id-salt-rotation.codex.oracle.r1"
+    },
+    {
+      "task_id": "id-salt-rotation",
+      "agent": "codex",
+      "arm": "control",
+      "repetition": 1,
+      "position": 4,
+      "id": "id-salt-rotation.codex.control.r1"
+    }
+  ],
+  "allowance": {
+    "claude_usd": 0.72268,
+    "codex_five_hour": 3.5318468239905014,
+    "codex_weekly_proxy": 0.6040201464699653,
+    "reserve_claude_call": 0.090335,
+    "reserve_codex_five_hour_call": 0.4414808529988127,
+    "reserve_codex_weekly_call": 0.07550251830874566
+  },
+  "calibration": {
+    "observed_at": "2026-10-04T23:18:23.458523Z",
+    "input_weight": 1.0122022951731196e-05,
+    "output_weight": 0.00019682102568602472,
+    "weekly_weight": 2.260703348985432e-06,
+    "weekly_low": 2.0993816176885593e-06,
+    "weekly_high": 2.4220250802823044e-06
+  }
+}

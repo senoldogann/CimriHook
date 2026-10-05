@@ -1,0 +1,156 @@
+{
+  "kind": "preparation-ab-reduced-draft",
+  "schema_version": 1,
+  "execution_approved": false,
+  "selector_version": 2,
+  "not_before_utc": "2026-10-09T21:35:00Z",
+  "reset_basis": {
+    "claude_last_recorded_utc": "2026-10-09T21:00:00Z",
+    "codex_last_recorded_utc": "2026-10-09T21:34:35Z",
+    "local_helsinki": "2026-10-10 00:35 EEST",
+    "fresh_native_confirmation_required": true
+  },
+  "task_paths": [
+    "bench/tasks/preparation-ab-id-memory.json"
+  ],
+  "task_clusters": 1,
+  "steps_per_episode": 4,
+  "arms": [
+    "control",
+    "oracle",
+    "auto"
+  ],
+  "wrong_included": false,
+  "repetitions_per_arm_per_agent": 2,
+  "episodes": 12,
+  "max_model_invocations": 48,
+  "common_protocol_source": "docs/preparation-ab-preregistration.md",
+  "budget": {
+    "rate_basis": "Highest measured version-1 arm per provider; no assumed version-2 savings. Weekly uses frozen coefficient upper endpoint.",
+    "claude_max_pilot_call_usd": 0.14448779999999997,
+    "codex_max_pilot_call_five_hour": 0.5231654373607985,
+    "codex_max_pilot_call_weekly_upper_proxy": 0.10160831176298718,
+    "codex_max_pilot_call_units_6": 41951.8,
+    "calls_per_agent": 24,
+    "carried_context_growth_scenario": 2.0,
+    "reserve_multiplier": 2.0,
+    "claude_usd_growth_scenario": 6.935414399999999,
+    "claude_usd_2x_reserve": 13.870828799999998,
+    "codex_five_hour_growth_scenario": 25.111940993318328,
+    "codex_five_hour_2x_reserve": 50.223881986636655,
+    "codex_weekly_upper_proxy_growth_scenario": 4.877198964623385,
+    "codex_weekly_upper_proxy_2x_reserve": 9.75439792924677,
+    "claude_user_cap_usd": 15.0,
+    "codex_user_weekly_cap_points": 10.0,
+    "critical_weekly_upper_coefficient": 2.483008277753676e-06,
+    "notes": [
+      "Growth and reserve are engineering scenarios, not upper bounds or efficacy confidence intervals.",
+      "Weekly separated weights remain unidentifiable; proxy is not attributable native account use.",
+      "Recalibrate after both weekly resets. If the 2x forecast exceeds either user cap, do not launch or silently shrink the study.",
+      "Claude call ceiling proposed at $0.50 for every arm/step. Reserve this amount before every call against cumulative $15; provider-request overshoot needs monitoring.",
+      "Native weekly >85% kills active generation and stops queue; account changes, missing/stale quota, resets and unknown costs stop without automatic resume.",
+      "Implement reduced-stage admission/cumulative caps before any future execution; this draft cannot be passed to current bench-run."
+    ]
+  },
+  "schedule": [
+    {
+      "task_id": "id-memory",
+      "agent": "claude",
+      "arm": "control",
+      "repetition": 1,
+      "position": 1,
+      "id": "id-memory.claude.control.r1"
+    },
+    {
+      "task_id": "id-memory",
+      "agent": "claude",
+      "arm": "oracle",
+      "repetition": 1,
+      "position": 2,
+      "id": "id-memory.claude.oracle.r1"
+    },
+    {
+      "task_id": "id-memory",
+      "agent": "claude",
+      "arm": "auto",
+      "repetition": 1,
+      "position": 3,
+      "id": "id-memory.claude.auto.r1"
+    },
+    {
+      "task_id": "id-memory",
+      "agent": "claude",
+      "arm": "auto",
+      "repetition": 2,
+      "position": 4,
+      "id": "id-memory.claude.auto.r2"
+    },
+    {
+      "task_id": "id-memory",
+      "agent": "claude",
+      "arm": "oracle",
+      "repetition": 2,
+      "position": 5,
+      "id": "id-memory.claude.oracle.r2"
+    },
+    {
+      "task_id": "id-memory",
+      "agent": "claude",
+      "arm": "control",
+      "repetition": 2,
+      "position": 6,
+      "id": "id-memory.claude.control.r2"
+    },
+    {
+      "task_id": "id-memory",
+      "agent": "codex",
+      "arm": "auto",
+      "repetition": 1,
+      "position": 1,
+      "id": "id-memory.codex.auto.r1"
+    },
+    {
+      "task_id": "id-memory",
+      "agent": "codex",
+      "arm": "oracle",
+      "repetition": 1,
+      "position": 2,
+      "id": "id-memory.codex.oracle.r1"
+    },
+    {
+      "task_id": "id-memory",
+      "agent": "codex",
+      "arm": "control",
+      "repetition": 1,
+      "position": 3,
+      "id": "id-memory.codex.control.r1"
+    },
+    {
+      "task_id": "id-memory",
+      "agent": "codex",
+      "arm": "control",
+      "repetition": 2,
+      "position": 4,
+      "id": "id-memory.codex.control.r2"
+    },
+    {
+      "task_id": "id-memory",
+      "agent": "codex",
+      "arm": "oracle",
+      "repetition": 2,
+      "position": 5,
+      "id": "id-memory.codex.oracle.r2"
+    },
+    {
+      "task_id": "id-memory",
+      "agent": "codex",
+      "arm": "auto",
+      "repetition": 2,
+      "position": 6,
+      "id": "id-memory.codex.auto.r2"
+    }
+  ],
+  "paid_task_selection_reason": "Only id-memory has positive oracle overlap under v2. Do not spend on all-abstaining tasks or known zero-overlap id-mixed/id-stale. Local validation still covers all six original tasks/ten steps.",
+  "inference": "One task cluster: report all repeat-paired costs/quality and order diagnostics, no task-bootstrap efficacy CI or generalization claim.",
+  "base_for_future_merge": "b13628d; rebase at integration time only."
+}

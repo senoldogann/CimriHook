@@ -1,0 +1,43 @@
+{
+  "job": {
+    "task_id": "id-salt-rotation",
+    "agent": "claude",
+    "arm": "control",
+    "repetition": 1,
+    "position": 1
+  },
+  "steps": [
+    {
+      "step": 1,
+      "session_id": "9563d249-307d-42d3-85e0-5a1455ce64ff",
+      "started_at": "2026-10-05T02:03:36.973419+00:00",
+      "finished_at": "2026-10-05T02:03:51.681363+00:00",
+      "duration_seconds": 14.707617250009207,
+      "exit_code": 0,
+      "stop_reason": null,
+      "consumption": {
+        "usd": 0.12334919999999999,
+        "uncached": 8,
+        "cache_write": 12399,
+        "cache_read": 50126,
+        "output": 705,
+        "reasoning": null,
+        "requests": 4,
+        "compactions": 0,
+        "max_context": 17178
+      },
+      "quality": {
+        "public_passed": true,
+        "tests_unchanged": true,
+        "hidden_passed": true,
+        "reference_match": true
+      },
+      "selected_targets": [],
+      "source_bytes": 0,
+      "packet_bytes": 0,
+      "artifact_dir": "/private/tmp/cimrihook-bench/preparation-ab-pilot-20261005/id-salt-rotation.claude.control.r1/step-1"
+    }
+  ],
+  "planned_steps": 1,
+  "uninvoked_reason": null
+}

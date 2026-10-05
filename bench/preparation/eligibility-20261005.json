@@ -1,0 +1,216 @@
+{
+  "kind": "preparation-local-eligibility",
+  "model_invocations": 0,
+  "tasks": [
+    {
+      "task_id": "boltons-ranges",
+      "commit": "4332b35a278d694f30c99881faa61cde695c7a96",
+      "steps": [
+        {
+          "step": 1,
+          "oracle_source_bytes": 2570,
+          "wrong_source_bytes": 2091,
+          "evidence_sha256": "2769e652c7cdcb29270dc29841e1133d9818376164733b72619a953963a0509c",
+          "gold": {
+            "public_passed": true,
+            "tests_unchanged": true,
+            "hidden_passed": true,
+            "reference_match": true
+          },
+          "individual_mutations_failed": [
+            true
+          ],
+          "public_evidence_bytes": 2458
+        }
+      ],
+      "eligible": true,
+      "task_sha256": "518c6e44b1679d70c7ab4dcc97effffbff0e2fefe7b4bcb07d9ed9fcc85c98a2"
+    },
+    {
+      "task_id": "id-memory",
+      "commit": "096c8d42545d3b68ea21a4f890fb2b2d8979c0bd",
+      "steps": [
+        {
+          "step": 1,
+          "oracle_source_bytes": 494,
+          "wrong_source_bytes": 453,
+          "evidence_sha256": "ed6b7c43a3b4b3862408a265e445544c83db8700b3dab75450c7e3c75e023592",
+          "gold": {
+            "public_passed": true,
+            "tests_unchanged": true,
+            "hidden_passed": true,
+            "reference_match": true
+          },
+          "individual_mutations_failed": [
+            true
+          ],
+          "public_evidence_bytes": 4006
+        },
+        {
+          "step": 2,
+          "oracle_source_bytes": 3295,
+          "wrong_source_bytes": 2648,
+          "evidence_sha256": "1b9c3de92f1d67fe499fd86fb917395ae15b56a37e5a932c2d7ceb2a34a9ed84",
+          "gold": {
+            "public_passed": true,
+            "tests_unchanged": true,
+            "hidden_passed": true,
+            "reference_match": true
+          },
+          "individual_mutations_failed": [
+            true
+          ],
+          "public_evidence_bytes": 4541
+        },
+        {
+          "step": 3,
+          "oracle_source_bytes": 83,
+          "wrong_source_bytes": 96,
+          "evidence_sha256": "8440932ce2406463bd0df975803e9ed8d2e20634ead48349049623130f303759",
+          "gold": {
+            "public_passed": true,
+            "tests_unchanged": true,
+            "hidden_passed": true,
+            "reference_match": true
+          },
+          "individual_mutations_failed": [
+            true
+          ],
+          "public_evidence_bytes": 1708
+        },
+        {
+          "step": 4,
+          "oracle_source_bytes": 1375,
+          "wrong_source_bytes": 1116,
+          "evidence_sha256": "972d40d7a8b25e0c59e1300e093a606562f1186f9fab1b22e6c8cf61f9b40435",
+          "gold": {
+            "public_passed": true,
+            "tests_unchanged": true,
+            "hidden_passed": true,
+            "reference_match": true
+          },
+          "individual_mutations_failed": [
+            true
+          ],
+          "public_evidence_bytes": 1155
+        }
+      ],
+      "eligible": true,
+      "task_sha256": "0c2ff7ff38ae6f7b83c7f202c71ab0de19706fa7f23accd71fd4984ebe9dca16"
+    },
+    {
+      "task_id": "id-mixed",
+      "commit": "096c8d42545d3b68ea21a4f890fb2b2d8979c0bd",
+      "steps": [
+        {
+          "step": 1,
+          "oracle_source_bytes": 804,
+          "wrong_source_bytes": 644,
+          "evidence_sha256": "117a2eb263e654de765c44901d62d3f733998a9abe92906fefaa4771d64b6a34",
+          "gold": {
+            "public_passed": true,
+            "tests_unchanged": true,
+            "hidden_passed": true,
+            "reference_match": true
+          },
+          "individual_mutations_failed": [
+            true,
+            true
+          ],
+          "public_evidence_bytes": 592820
+        }
+      ],
+      "eligible": true,
+      "task_sha256": "4aec0cc421124c436d4cd6965606473019001c406120f11b8d1586bd4b972af0"
+    },
+    {
+      "task_id": "id-salt-rotation",
+      "commit": "096c8d42545d3b68ea21a4f890fb2b2d8979c0bd",
+      "steps": [
+        {
+          "step": 1,
+          "oracle_source_bytes": 847,
+          "wrong_source_bytes": 732,
+          "evidence_sha256": "19f3226bde40055b31295a58f32004791b6e0015a51daa0a95b293122435dd82",
+          "gold": {
+            "public_passed": true,
+            "tests_unchanged": true,
+            "hidden_passed": true,
+            "reference_match": true
+          },
+          "individual_mutations_failed": [
+            true,
+            true
+          ],
+          "public_evidence_bytes": 11144
+        }
+      ],
+      "eligible": true,
+      "task_sha256": "435414dec8096a2b191d2c4ab56a303b81d16f06c48d83d147dacd491c1aec48"
+    },
+    {
+      "task_id": "id-stale",
+      "commit": "096c8d42545d3b68ea21a4f890fb2b2d8979c0bd",
+      "steps": [
+        {
+          "step": 1,
+          "oracle_source_bytes": 399,
+          "wrong_source_bytes": 410,
+          "evidence_sha256": "3d5418825b84d245d11c9ad378dcfc1c0d32fec0ac0869c1b804ff08cbd14e29",
+          "gold": {
+            "public_passed": true,
+            "tests_unchanged": true,
+            "hidden_passed": true,
+            "reference_match": true
+          },
+          "individual_mutations_failed": [
+            true
+          ],
+          "public_evidence_bytes": 102970
+        },
+        {
+          "step": 2,
+          "oracle_source_bytes": 443,
+          "wrong_source_bytes": 523,
+          "evidence_sha256": "6441fc00de06056236c6451fc58798314868a7ea4764c0a0a7c48e918e3a3736",
+          "gold": {
+            "public_passed": true,
+            "tests_unchanged": true,
+            "hidden_passed": true,
+            "reference_match": true
+          },
+          "individual_mutations_failed": [
+            true
+          ],
+          "public_evidence_bytes": 1731
+        }
+      ],
+      "eligible": true,
+      "task_sha256": "38537bab9066adfeb8b7275228e3cacf0500af052a3374b901a6435ae8fc4876"
+    },
+    {
+      "task_id": "mi-count",
+      "commit": "64be96ceb2a6e836f76f069f4a96d2394d59fd0c",
+      "steps": [
+        {
+          "step": 1,
+          "oracle_source_bytes": 821,
+          "wrong_source_bytes": 660,
+          "evidence_sha256": "deb23b3f6fc5b48cc23ce63363218a480b8cd8323b7c4d399ccbfb34ff117741",
+          "gold": {
+            "public_passed": true,
+            "tests_unchanged": true,
+            "hidden_passed": true,
+            "reference_match": true
+          },
+          "individual_mutations_failed": [
+            true
+          ],
+          "public_evidence_bytes": 2038
+        }
+      ],
+      "eligible": true,
+      "task_sha256": "49c7070ebb58b990c421694a1a838977cf2c96d813bf52195bccaa5455d810f8"
+    }
+  ]
+}

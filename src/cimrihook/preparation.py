@@ -123,6 +123,12 @@ def symbol_ranges(tree: ast.AST, prefix: str) -> tuple[tuple[str, int, int], ...
     ranges: list[tuple[str, int, int]] = []
     for node in ast.iter_child_nodes(tree):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and any(
+                (isinstance(item, ast.Name) and item.id == "overload")
+                or (isinstance(item, ast.Attribute) and item.attr == "overload")
+                for item in node.decorator_list
+            ):
+                continue
             name = f"{prefix}.{node.name}" if prefix else node.name
             start = min([node.lineno, *(item.lineno for item in node.decorator_list)])
             if node.end_lineno is None:
