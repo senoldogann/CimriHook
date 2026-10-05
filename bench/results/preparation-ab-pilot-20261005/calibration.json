@@ -1,0 +1,63 @@
+{
+  "kind": "preparation-compaction-diagnostic",
+  "preparation_savings_inferred": false,
+  "episodes": [
+    {
+      "id": "id-salt-rotation.claude.auto.r1",
+      "requests": 3,
+      "compactions": 0,
+      "max_context": 20219,
+      "status": "no_compaction_observed"
+    },
+    {
+      "id": "id-salt-rotation.claude.control.r1",
+      "requests": 4,
+      "compactions": 0,
+      "max_context": 17178,
+      "status": "no_compaction_observed"
+    },
+    {
+      "id": "id-salt-rotation.claude.oracle.r1",
+      "requests": 2,
+      "compactions": 0,
+      "max_context": 13612,
+      "status": "no_compaction_observed"
+    },
+    {
+      "id": "id-salt-rotation.claude.wrong.r1",
+      "requests": 3,
+      "compactions": 0,
+      "max_context": 17172,
+      "status": "no_compaction_observed"
+    },
+    {
+      "id": "id-salt-rotation.codex.auto.r1",
+      "requests": 6,
+      "compactions": 0,
+      "max_context": 32896,
+      "status": "no_compaction_observed"
+    },
+    {
+      "id": "id-salt-rotation.codex.control.r1",
+      "requests": 4,
+      "compactions": 0,
+      "max_context": 30014,
+      "status": "no_compaction_observed"
+    },
+    {
+      "id": "id-salt-rotation.codex.oracle.r1",
+      "requests": 5,
+      "compactions": 0,
+      "max_context": 28086,
+      "status": "no_compaction_observed"
+    },
+    {
+      "id": "id-salt-rotation.codex.wrong.r1",
+      "requests": 5,
+      "compactions": 0,
+      "max_context": 32116,
+      "status": "no_compaction_observed"
+    }
+  ],
+  "message": "Native counters only; no causal preparation estimate from simulation."
+}

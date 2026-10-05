@@ -1,0 +1,46 @@
+{
+  "job": {
+    "task_id": "id-salt-rotation",
+    "agent": "codex",
+    "arm": "oracle",
+    "repetition": 1,
+    "position": 3
+  },
+  "steps": [
+    {
+      "step": 1,
+      "session_id": "01a109d0-2a63-7760-893f-61ff4ded8244",
+      "started_at": "2026-10-05T02:06:39.645688+00:00",
+      "finished_at": "2026-10-05T02:07:25.876092+00:00",
+      "duration_seconds": 46.22939245798625,
+      "exit_code": 0,
+      "stop_reason": null,
+      "consumption": {
+        "usd": null,
+        "uncached": 16501,
+        "cache_write": 0,
+        "cache_read": 114944,
+        "output": 650,
+        "reasoning": 28,
+        "requests": 5,
+        "compactions": 0,
+        "max_context": 28086
+      },
+      "quality": {
+        "public_passed": true,
+        "tests_unchanged": true,
+        "hidden_passed": true,
+        "reference_match": true
+      },
+      "selected_targets": [
+        "src/itsdangerous/serializer.py::Serializer.make_signer",
+        "src/itsdangerous/signer.py::Signer.verify_signature"
+      ],
+      "source_bytes": 847,
+      "packet_bytes": 1534,
+      "artifact_dir": "/private/tmp/cimrihook-bench/preparation-ab-pilot-20261005/id-salt-rotation.codex.oracle.r1/step-1"
+    }
+  ],
+  "planned_steps": 1,
+  "uninvoked_reason": null
+}

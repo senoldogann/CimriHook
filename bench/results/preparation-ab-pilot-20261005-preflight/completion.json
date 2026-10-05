@@ -1,0 +1,7 @@
+{
+  "stage": "preflight",
+  "model_invocations": 0,
+  "episodes": 0,
+  "reason": "Invalid filename suffix forecast.json; corrected before any provider generation.",
+  "archived": true
+}

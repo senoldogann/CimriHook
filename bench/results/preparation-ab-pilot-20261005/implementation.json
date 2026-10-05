@@ -1,0 +1,12 @@
+{
+  "commit": "4bf0f1f7ea9a9596bf2cd4ecdb28bce160726f95",
+  "source_hashes": {
+    "src/cimrihook/bench_preparation.py": "7df0a30b3c06764a1e0e7e3df5c07ced86a85dab1fb1f08336b7ca972922989a",
+    "src/cimrihook/bench_preparation_run.py": "f5da1a1a44c37a7b70a5c71fa7e255d1757585839e18c40fd1ae31721f646214",
+    "src/cimrihook/bench_preparation_stats.py": "c0b881615e1113effab3401bcce1c692d5ced3b24810343b2c75b35136dae620",
+    "src/cimrihook/bench_preparation_tasks.py": "d113976ba7e577c8262ae8b6dbca77f58557ac8d3893d33574ee9ae818f2fcc5",
+    "src/cimrihook/preparation.py": "aa39e43eae71be018a610798b7ed295e2b440f81e1a410627ffa71521b44ba04",
+    "src/cimrihook/bench.py": "3859608315f9d1a18287d9841c3501971e31853755d8176d35ae33e24a44161c",
+    "src/cimrihook/cli.py": "259e9330705c7c1ab74b91be6a718f2bb22f51218879e8e2d9d6db633f32ea10"
+  }
+}

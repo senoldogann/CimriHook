@@ -1,0 +1,60 @@
+{
+  "kind": "preparation-full-budget-proposal",
+  "execution_approved": false,
+  "episodes": 96,
+  "max_invocations_per_agent": 80,
+  "max_invocations_total": 160,
+  "pilot_excluded": true,
+  "flat_pilot_extrapolation": {
+    "claude_usd_expected": 9.394064,
+    "claude_usd_2x_allowance": 18.788128,
+    "codex_five_hour_expected": 36.73717188345451,
+    "codex_five_hour_2x_allowance": 73.47434376690902,
+    "codex_weekly_proxy_expected": 6.449132698001474,
+    "codex_weekly_proxy_2x_allowance": 12.898265396002948
+  },
+  "evidence_input_stress": [
+    {
+      "evidence_bytes_per_token": 6,
+      "additional_uncached_tokens": 817508.0,
+      "codex_five_hour_expected": 45.20106270475789,
+      "codex_five_hour_2x_allowance": 90.40212540951578,
+      "codex_weekly_proxy_expected": 8.29788413173383,
+      "codex_weekly_proxy_2x_allowance": 16.59576826346766
+    },
+    {
+      "evidence_bytes_per_token": 4,
+      "additional_uncached_tokens": 1226262.0,
+      "codex_five_hour_expected": 49.43300811540958,
+      "codex_five_hour_2x_allowance": 98.86601623081916,
+      "codex_weekly_proxy_expected": 9.222259848600007,
+      "codex_weekly_proxy_2x_allowance": 18.444519697200015
+    },
+    {
+      "evidence_bytes_per_token": 2,
+      "additional_uncached_tokens": 2452524.0,
+      "codex_five_hour_expected": 62.12884434736465,
+      "codex_five_hour_2x_allowance": 124.2576886947293,
+      "codex_weekly_proxy_expected": 11.995386999198542,
+      "codex_weekly_proxy_2x_allowance": 23.990773998397085
+    }
+  ],
+  "stress_notes": [
+    "Engineering scenarios, not tokenizer measurements, confidence intervals, or bounds.",
+    "Each extra byte is counted once as uncached input; repeated requests, output, compaction and carried-context growth can add cost.",
+    "Claude USD extrapolation uses provider-billed pilot costs only; additional-input USD/window-point upper bounds are unidentified.",
+    "Current weekly separated input/output weights remain unidentifiable.",
+    "All forecasts require fresh native quota readings and separate explicit approval; any weekly >85% kills active generation.",
+    "The full manifest retains its old provisional allowance and execution_approved=false; update authorized allowances only after review."
+  ],
+  "frozen_weekly_coefficient_only_intervals": {
+    "pilot": [
+      0.2993478857319469,
+      0.3453531653623414
+    ],
+    "full_flat_nominal": [
+      5.9869577146389386,
+      6.907063307246828
+    ]
+  }
+}

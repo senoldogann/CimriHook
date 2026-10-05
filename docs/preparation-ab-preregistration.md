@@ -307,7 +307,7 @@ ratio to weekly. Report weekly `P7d_proxy = 0.00000226070335*(I+6*O)` and its po
 coefficient interval, with the fixed 6× aggregation assumption explicit. It is not
 a guarantee about the true weekly charge of an output-heavy run.
 
-Also report Codex fixed API-equivalent units `I + 6*O`, with sensitivity
+Also report Codex fixed API-equivalent units `U + 1.25W + 0.1C + 6O`, with sensitivity
 `I + 8*O` and `I + 20*O`. These use the repository's frozen legacy price ratios,
 not current model-specific USD or an actual subscription bill. For the historical
 control these are 33397.8 / 34917.8 / 44037.8 units. Study task-bootstrap CIs hold

@@ -564,31 +564,162 @@ or installed-setting change is part of this screening. Exact prompts, native out
 host verification and aggregate opportunity JSON are retained locally in
 `/tmp/cimrihook-bench/preparation-screen-20261005/`.
 
-## Preregistered preparation study: measurement pilot approved
+## Preparation study: completed measurement pilot; full study awaiting approval
 
-The [preparation A/B preregistration](preparation-ab-preregistration.md) freezes an
-exploratory six-task, three-repository design with control/oracle/auto/wrong arms,
-two repeats per arm and agent (96 episodes, at most 160 generation invocations).
-Its primary comparison is deterministic no-model auto preparation versus governor
-without a packet. The [implementation plan](superpowers/plans/2026-10-05-preparation-ab.md)
-keeps new code beside the existing benchmark runner.
+The [preregistration](preparation-ab-preregistration.md) defines six tasks from
+three repositories, control/oracle/auto/wrong arms and two reflected repeats per
+agent: 96 episodes, at most 160 generation invocations. The [implementation
+plan](superpowers/plans/2026-10-05-preparation-ab.md) and
+[local eligibility record](../bench/preparation/eligibility-20261005.json) cover
+all six fixtures / ten steps. Each individual mutation fails the public suite;
+reference fixes pass public, hidden, unchanged-test and reference checks.
 
-**Current status: pilot approved; infrastructure locally verified before generation.
-Zero new model benchmark invocations at the execution freeze.** The approved
-measurement pilot is one episode per arm per agent, eight total, n=1 task and no efficacy CI.
-The full study requires separate approval after that pilot. Six fixtures / ten steps pass no-model eligibility. No agent quality or
-repeatability result is established. Full-run CIs will bootstrap six task clusters;
-shared repository provenance and the small sample limit generalization.
+**Status: the first-approved measurement pilot is complete; no full-study model
+invocation is authorized or started.** The pilot ran T3 `id-salt-rotation` once
+per arm per agent, n=1 task, eight episodes / eight generation invocations,
+without retries. Claude order was control/oracle/auto/wrong; Codex was reversed.
+Every episode used a fresh workspace and CLI session. One earlier infrastructure
+preflight failed before any model invocation and is retained separately.
 
-The stage-1 estimate uses historical control consumption for every arm, without
-assuming savings. Pilot expected/reserved consumption is Claude $0.3613/$0.7227,
-Codex 1.7659/3.5318 predicted five-hour points and 0.3020/0.6040 weekly pooled proxy
-points. Full-study estimates, excluding pilot, are $7.2268/$14.4536,
-35.3185/70.6369 five-hour points and 6.0402/12.0804 weekly proxy points.
-The reserve is 2×, not a bound. Separate weekly input/output weights are
-unidentifiable; the pooled estimate's coefficient-only 95% interval is documented
-in the preregistration. No Claude window-point conversion is supported by these USD.
-Every relevant weekly window exceeding 85% stops active and queued generation.
+### Pilot results
+
+| Agent | Arm | Primary consumed cost | Difference vs control | Accepted |
+|---|---|---:|---:|---|
+| Claude | control | $0.1233492 provider USD | — | yes |
+| Claude | oracle | $0.0834294 provider USD | −32.36% | yes |
+| Claude | auto | $0.1444878 provider USD | +17.14% | yes |
+| Claude | wrong | $0.1184368 provider USD | −3.98% | yes |
+| Codex | control | 0.415806 predicted five-hour points | — | yes |
+| Codex | oracle | 0.411304 predicted five-hour points | −1.08% | yes |
+| Codex | auto | 0.523165 predicted five-hour points | +25.82% | yes |
+| Codex | wrong | 0.485354 predicted five-hour points | +16.73% | yes |
+
+All eight episodes passed all 297 public tests and 28 hidden tests, preserved
+protected test/config files and matched the byte reference. These four flags
+are recorded separately per episode. No failure was dropped. There were zero
+compactions. There is **no efficacy CI**: one task / one observation per arm
+cannot establish repeatability, quality noninferiority or an average saving.
+Full-study cost and acceptance CIs will resample six task clusters; repository
+sharing and the small selected task sample limit generalization.
+
+| Codex arm | API-equivalent units, output 6× | Output 8× units | Output 20× units |
+|---|---:|---:|---:|
+| control | 31318.4 | 32770.4 | 41482.4 |
+| oracle | 31895.4 (+1.84%) | 33195.4 (+1.30%) | 40995.4 (−1.17%) |
+| auto | 41951.8 (+33.95%) | 43399.8 (+32.44%) | 52087.8 (+25.57%) |
+| wrong | 37423.0 (+19.49%) | 38989.0 (+18.98%) | 48385.0 (+16.64%) |
+
+The fixed table uses `U + 1.25W + 0.1C + kO`, in base-input-token units, not
+subscription dollars. Primary Codex points retain the preregistered measured
+five-hour weights (about 98.8K input / 5.1K output per point). Oracle changes
+sign between the 6× and measured-window metrics; the choice of cost unit matters.
+Reasoning is retained separately and is not added twice to output.
+
+### What the pilot resolves, and what remains open
+
+1. **Repeatability:** unresolved. The infrastructure supports the fixed ABBA/BAAB
+   reflected per-task schedule and fresh workspaces, but the pilot has only n=1.
+2. **Realistic targets:** the deterministic selector runs without a model. This
+   task has no supported production traceback frame: it selects four weak test-name
+   module matches, each lines 1–60. Its 8065 source bytes do not include either
+   faulty function. Oracle gives 847 bytes; wrong gives 732 disjoint bytes, within
+   the preregistered size tolerance. Auto's 9832-byte packet adds broad context
+   and costs more on both agents. This is a task-specific counterexample to an
+   unconditional auto-preparation saving, not a population estimate.
+3. **External validity:** three repositories, multi-file, mixed range/symbol,
+   stale-after-edit and four dependent steps are locally eligible. Agent results
+   for the five other tasks, actual post-edit helper variants and long carried
+   sessions remain unmeasured. The pilot observed no compaction.
+4. **Subscription relevance:** measured-window weighting and 6/8/20 sensitivity
+   now produce distinct reproducible numbers. Weekly separate input/output weights
+   remain unidentifiable; use the labeled pooled proxy and coefficient interval.
+   Claude primary cost is provider-reported USD; Claude quota-point conversion is
+   unidentified. Account-wide deltas cannot be attributed to these runs while
+   concurrent work is unexcluded.
+5. **Quality:** all four quality flags pass in all eight episodes. Wrong context
+   did not harm measured quality here, but increased Codex cost. Rare failures,
+   quality noninferiority and task-wide generalization remain unresolved.
+
+### Consumed pilot allowance and native observations
+
+Pilot provider-reported Claude total: **$0.4697032** of the $0.72268 allowance.
+Codex frozen predictor: **1.835629 five-hour points** of 3.531847;
+**0.322351 weekly pooled proxy points** of 0.604020. Its frozen pooled
+coefficient-only 95% interval is **[0.299348, 0.345353]** weekly points, not an
+effect CI or a prediction interval for another task.
+
+From 2026-10-05T02:03:35Z to 02:08:09Z, native account observations changed:
+Claude five-hour 38%→39% (+1 point), weekly 65%→65%; Codex five-hour 63%→67%
+(+4 points), weekly 64%→64%. No reset or >85% weekly reading occurred. These are
+**account-wide, non-attributable observations**; a displayed weekly zero delta
+is not measured zero benchmark use. Development and other concurrent sessions
+are outside the benchmark predictor totals above.
+
+### Revised full-study budget for second approval
+
+A fresh read-only `uv run cimrihook limits --agent codex --days 30 --json` gives
+96.59K input / 5.34K output per five-hour point (about 18.08×), and 442.19K pooled
+6× units per weekly point. The weekly separated weights are still unidentified.
+This current fit is used for the budget diagnostic, not to change primary pilot
+weights after observing results. The CLI summary does not expose a current CI;
+the frozen pooled interval stays explicitly labeled.
+
+| Full study, excluding pilot | Nominal estimate | 2× engineering allowance |
+|---|---:|---:|
+| Claude provider USD, flat pilot extrapolation | $9.3941 | $18.7881 |
+| Codex five-hour points, flat extrapolation/current fit | 36.7372 | 73.4743 |
+| Codex weekly pooled proxy, flat extrapolation/current fit | 6.4491 | 12.8983 |
+
+The flat extrapolation is 20× the four-arm pilot total per agent, retaining every
+arm rather than assuming a saving. Frozen-fit flat full weekly coefficient-only
+95% interval: [5.9870, 6.9071] nominal, [11.9739, 13.8141] at 2×.
+Neither interval includes new-task or carried-session variation.
+
+Full failure evidence is much larger on T4 (592820 bytes) and T5's first step
+(102970 bytes) than on T3 (11144 bytes). The ten frozen step outputs total
+724571 bytes. Across eight episodes per task per agent, this is 4.905 MB more
+common evidence than assigning the pilot input size to all 80 invocations.
+Counting these extra bytes once as uncached input, using an engineering range
+of 2–6 bytes/token, gives:
+
+| Codex evidence-input scenario | Nominal five-hour points | 2× allowance | Nominal weekly proxy | 2× allowance |
+|---|---:|---:|---:|---:|
+| 6 bytes/token | 45.2011 | 90.4021 | 8.2979 | 16.5958 |
+| 4 bytes/token | 49.4330 | 98.8660 | 9.2223 | 18.4445 |
+| 2 bytes/token | 62.1288 | 124.2577 | 11.9954 | 23.9908 |
+
+These are scenarios, **not tokenizer measurements, CIs or upper bounds**. Later
+requests, output, compaction and carried context may add cost. The Claude flat
+USD estimate also has unmeasured extra-input risk; aggregate pilot USD alone
+cannot establish its quota conversion or a reliable new-task upper bound.
+At the last observed Codex weekly 64%, only 21 points remain before 85%; the
+23.99-point stress reserve does not fit. The five-hour reserves do not fit the
+remaining primary window. Full work must be scheduled in smaller blocks across
+resets, with fresh readings and explicit authorization after an interruption.
+
+**Recommendation:** retain the full study on hold for budget review. Do not enable
+auto packets unconditionally based on this pilot. A future selector revision
+could abstain on weak module-only localization, but changing the frozen selector
+or common evidence policy requires a new preregistration amendment; no such
+revision or additional paid run has been made here. The existing full manifest
+remains unapproved with its old provisional allowance. The updated budget
+proposal must be accepted and its allowance configured before execution.
+
+### Artifacts and verification
+
+The [complete pilot report](../bench/results/preparation-ab-pilot-20261005/report.json),
+[eight retained episodes and native-counter audit](../bench/results/preparation-ab-pilot-20261005/audit.json),
+[account-wide observations](../bench/results/preparation-ab-pilot-20261005/quota-observations.json),
+[separate compaction diagnostic](../bench/results/preparation-ab-pilot-20261005/calibration.json),
+[current read-only fit](../bench/results/preparation-ab-pilot-20261005/current-limit-calibration.json)
+and [full-budget proposal](../bench/results/preparation-ab-pilot-20261005/full-budget-proposal.json)
+are stored under `bench/results/`. Raw prompts, outputs, public/private reports,
+packets, environment/package versions and provenance remain under
+`/tmp/cimrihook-bench/preparation-ab-pilot-20261005/`; the audit records their hashes.
+The zero-generation preflight has a separate retained result directory.
+
+Mandatory verification after the preflight fix: **98 pytest tests**, Ruff check,
+Ruff format check, mypy and **20 mod tests** pass. No Swift change. No push, PR or tag.
 
 ## Reproduce existing A/B studies
 

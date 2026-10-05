@@ -1,7 +1,7 @@
 # Preparation A/B implementation plan
 
-**Status:** first approval received; implement and execute only the measurement
-pilot, then stop for separate full-study approval. The authoritative hypotheses, task list, n, budgets, analysis
+**Status:** measurement pilot complete (8/8 accepted); stopped for separate
+full-study budget review and approval. No full generation started. The authoritative hypotheses, task list, n, budgets, analysis
 and stop rules are in [the preregistration](../../preparation-ab-preregistration.md).
 
 **Goal:** measure whether literal preparation increases accepted work per allowance
@@ -115,16 +115,16 @@ pure transformations and real-process/file integration boundaries.
 
 ## 5. Approved measurement pilot, then second stop
 
-- [ ] Re-read native quota and confirm the first approval and pilot allowance.
-- [ ] Invoke T3 once per arm per agent, serially in the preregistered orders:
+- [x] Re-read native quota and confirm the first approval and pilot allowance.
+- [x] Invoke T3 once per arm per agent, serially in the preregistered orders:
   eight episodes / eight generation invocations at maximum, no retries.
-- [ ] Verify complete counters, host/hidden/reference acceptance, isolation and
+- [x] Verify complete counters, host/hidden/reference acceptance, isolation and
   all four arm artifacts. Retain errors and exhausted-budget attempts.
-- [ ] Run `bench-report`, check host reports against raw artifacts, and update
+- [x] Run `bench-report`, check host reports against raw artifacts, and update
   `docs/evaluation.md` with n=1, no efficacy CI and actual consumed/predicted points.
-- [ ] Re-estimate the full run from pilot costs including failures, with explicit
+- [x] Re-estimate the full run from pilot costs including failures, with explicit
   remaining headroom and longer-task uncertainty. Commit named owned files only.
-- [ ] STOP: show pilot results and revised full-study budget; request second approval.
+- [x] STOP: show pilot results and revised full-study budget; request second approval.
 
 ## 6. Full study only after explicit second approval
 

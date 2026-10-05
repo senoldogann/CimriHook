@@ -1,0 +1,46 @@
+{
+  "job": {
+    "task_id": "id-salt-rotation",
+    "agent": "codex",
+    "arm": "wrong",
+    "repetition": 1,
+    "position": 1
+  },
+  "steps": [
+    {
+      "step": 1,
+      "session_id": "01a109ce-9b55-7053-a15e-9bee5da2ef8a",
+      "started_at": "2026-10-05T02:04:57.467223+00:00",
+      "finished_at": "2026-10-05T02:05:44.495456+00:00",
+      "duration_seconds": 47.02721020800527,
+      "exit_code": 0,
+      "stop_reason": null,
+      "consumption": {
+        "usd": null,
+        "uncached": 20437,
+        "cache_write": 0,
+        "cache_read": 122880,
+        "output": 783,
+        "reasoning": 47,
+        "requests": 5,
+        "compactions": 0,
+        "max_context": 32116
+      },
+      "quality": {
+        "public_passed": true,
+        "tests_unchanged": true,
+        "hidden_passed": true,
+        "reference_match": true
+      },
+      "selected_targets": [
+        "src/itsdangerous/serializer.py:269:279",
+        "src/itsdangerous/signer.py:257:266"
+      ],
+      "source_bytes": 732,
+      "packet_bytes": 1404,
+      "artifact_dir": "/private/tmp/cimrihook-bench/preparation-ab-pilot-20261005/id-salt-rotation.codex.wrong.r1/step-1"
+    }
+  ],
+  "planned_steps": 1,
+  "uninvoked_reason": null
+}
